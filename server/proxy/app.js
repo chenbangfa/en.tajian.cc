@@ -58,7 +58,7 @@ app.post('/proxy/generate-image', auth, async (req, res) => {
         console.log(`[Proxy] 生成图片, prompt: ${prompt.substring(0, 80)}...`);
 
         const response = await axios.post(
-            `${GEMINI_BASE}/models/gemini-2.0-flash-exp-image-generation:generateContent?key=${GOOGLE_AI_KEY}`,
+            `${GEMINI_BASE}/models/gemini-2.0-flash-preview-image-generation:generateContent?key=${GOOGLE_AI_KEY}`,
             {
                 contents: [{ parts: [{ text: prompt }] }],
                 generationConfig: { responseModalities: ['image', 'text'] }
