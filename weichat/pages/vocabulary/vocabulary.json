@@ -1,6 +1,0 @@
-{
-    "navigationBarTitleText": "看图识字",
-    "enablePullDownRefresh": true,
-    "onReachBottomDistance": 200,
-    "usingComponents": {}
-}

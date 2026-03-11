@@ -13,7 +13,9 @@ server/.env
 # 上传的文件（体积大，走服务器本地存储）
 server/uploads/
 
-# 微信开发者工具私有配置
+# 微信小程序（本地开发，通过微信开发者工具直接发布，无需部署到服务器）
+weichat/
+project.config.json
 project.private.config.json
 
 # 日志
