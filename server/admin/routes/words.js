@@ -111,10 +111,23 @@ router.post('/', async (req, res) => {
         }
 
         const result = await query(`
-      INSERT INTO words 
+      INSERT INTO words
       (word, phonetic, translation, category_id, difficulty_level, word_type, display_mode, image_url, audio_url, example_sentence, example_translation, image_hint)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [word, phonetic, translation, category_id, difficulty_level, word_type, display_mode, image_url, audio_url, example_sentence, example_translation, image_hint || null]);
+    `, [
+            word,
+            phonetic || null,
+            translation,
+            category_id || null,
+            difficulty_level,
+            word_type,
+            display_mode,
+            image_url || null,
+            audio_url || null,
+            example_sentence || null,
+            example_translation || null,
+            image_hint || null
+        ]);
 
         res.json({
             success: true,
