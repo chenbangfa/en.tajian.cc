@@ -103,7 +103,7 @@ IMPORTANT:
 
             // 使用 Gemini 2.0 Flash Image Generation 模型
             const response = await axios.post(
-                `${this.baseUrl}/models/gemini-2.0-flash-preview-image-generation:generateContent?key=${this.apiKey}`,
+                `${this.baseUrl}/models/gemini-2.5-flash-image:generateContent?key=${this.apiKey}`,
                 {
                     contents: [{
                         parts: [{
