@@ -88,10 +88,15 @@ IMPORTANT:
     }
 
     /**
-     * 通用图片生成方法 - 使用 Gemini 2.5 Flash Image (Nano Banana)
+     * 通用图片生成方法 - 优先走代理（腾讯云），直连作为降级
      * @param {string} prompt - 完整的图片生成提示词
      */
     async generateImage(prompt) {
+        // 配置了 PROXY_BASE_URL 时，走美国服务器代理
+        if (process.env.PROXY_BASE_URL) {
+            return this._generateImageViaProxy(prompt);
+        }
+
         try {
             console.log('[AIService] 开始生成图片 (Nano Banana)...');
             console.log('[AIService] Prompt:', prompt.substring(0, 100) + '...');
@@ -544,6 +549,37 @@ Only return the JSON array, no other text.`
     }
 
     /**
+     * 通过美国代理服务器生成图片
+     */
+    async _generateImageViaProxy(prompt) {
+        try {
+            console.log('[AIService] 通过代理生成图片...');
+            const response = await axios.post(
+                `${process.env.PROXY_BASE_URL}/proxy/generate-image`,
+                { prompt },
+                {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Proxy-Key': process.env.PROXY_API_KEY || ''
+                    },
+                    timeout: 130000
+                }
+            );
+
+            if (response.data.success && response.data.imageData) {
+                const imageUrl = await this.saveBase64Image(response.data.imageData, `gen_${Date.now()}`);
+                console.log('[AIService] 代理图片生成成功:', imageUrl);
+                return { success: true, imageUrl };
+            }
+
+            return { success: false, error: response.data.error || '代理返回失败' };
+        } catch (error) {
+            console.error('[AIService] 代理图片生成失败:', error.message);
+            return { success: false, error: `代理服务不可用: ${error.message}` };
+        }
+    }
+
+    /**
      * 保存Base64图片：优先上传 COS，不可用时回退到本地
      */
     async saveBase64Image(base64Data, prefix) {
@@ -633,6 +669,11 @@ Only return the JSON array, no other text.`
      * @returns {Object} 增强后的单词数据
      */
     async enhanceWordData(word, translation = '', customPrompt = null) {
+        // 配置了 PROXY_BASE_URL 时，走美国服务器代理
+        if (process.env.PROXY_BASE_URL) {
+            return this._enhanceWordViaProxy(word, translation, customPrompt);
+        }
+
         try {
             console.log(`[AIService] 增强单词数据: ${word}`);
 
@@ -757,6 +798,62 @@ Respond ONLY with a valid JSON object in this exact format:
             await new Promise(resolve => setTimeout(resolve, 500));
         }
         return { results, promptUsed };
+    }
+
+    /**
+     * 通过美国代理服务器增强单词数据
+     */
+    async _enhanceWordViaProxy(word, translation, customPrompt) {
+        try {
+            console.log(`[AIService] 通过代理增强单词: ${word}`);
+
+            // 先从本地数据库读取提示词模板（数据库在腾讯云，可直接访问）
+            let prompt = customPrompt;
+            if (!prompt) {
+                const template = await this.getPromptTemplate('word_enhance');
+                if (template) {
+                    const needTranslation = !translation || !translation.trim();
+                    prompt = this.replaceTemplateVariables(template, {
+                        word,
+                        translation: needTranslation ? '' : translation
+                    });
+                }
+            }
+
+            const response = await axios.post(
+                `${process.env.PROXY_BASE_URL}/proxy/enhance-word`,
+                { word, translation, prompt },
+                {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Proxy-Key': process.env.PROXY_API_KEY || ''
+                    },
+                    timeout: 35000
+                }
+            );
+
+            if (response.data.success && response.data.data) {
+                const data = response.data.data;
+                console.log(`[AIService] 代理增强成功: ${word}`);
+                return {
+                    success: true,
+                    prompt,
+                    data: {
+                        word: data.word || word,
+                        phonetic: data.phonetic || '',
+                        translation: data.translation || data.chinese_translation || translation,
+                        example_sentence: data.example_sentence || '',
+                        example_translation: data.example_translation || data.example_sentence_translation || '',
+                        grammar_explanation: data.grammar_explanation || data.grammar_explanation_cn || ''
+                    }
+                };
+            }
+
+            return { success: false, error: response.data.error || '代理返回失败', word };
+        } catch (error) {
+            console.error(`[AIService] 代理增强失败 [${word}]:`, error.message);
+            return { success: false, error: `代理服务不可用: ${error.message}`, word };
+        }
     }
 
     /**
