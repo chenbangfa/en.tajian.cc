@@ -1,0 +1,2431 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>英语学习平台 - 管理后台</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #4F46E5;
+            --primary-light: #818CF8;
+            --success: #10B981;
+            --warning: #F59E0B;
+            --danger: #EF4444;
+            --text: #1F2937;
+            --text-secondary: #6B7280;
+            --bg: #F3F4F6;
+            --card: #FFFFFF;
+            --border: #E5E7EB;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+        }
+
+        /* Sidebar */
+        .sidebar {
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 240px;
+            height: 100vh;
+            background: var(--card);
+            border-right: 1px solid var(--border);
+            padding: 20px 0;
+        }
+
+        .sidebar-logo {
+            padding: 0 20px 20px;
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--primary);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .sidebar-menu {
+            padding: 20px 0;
+        }
+
+        .menu-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 20px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .menu-item:hover,
+        .menu-item.active {
+            background: rgba(79, 70, 229, 0.1);
+            color: var(--primary);
+        }
+
+        .menu-item i {
+            margin-right: 12px;
+            font-size: 18px;
+        }
+
+        /* Main Content */
+        .main {
+            margin-left: 240px;
+            padding: 24px;
+            min-height: 100vh;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        /* Cards */
+        .card {
+            background: var(--card);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .card-title {
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        /* Buttons */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: #fff;
+        }
+
+        .btn-primary:hover {
+            background: #4338CA;
+        }
+
+        .btn-success {
+            background: var(--success);
+            color: #fff;
+        }
+
+        .btn-warning {
+            background: var(--warning);
+            color: #fff;
+        }
+
+        .btn-danger {
+            background: var(--danger);
+            color: #fff;
+        }
+
+        .btn-outline {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text);
+        }
+
+        .btn-sm {
+            padding: 4px 8px;
+            font-size: 12px;
+        }
+
+        .btn i {
+            margin-right: 6px;
+        }
+
+        /* Table */
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .table th,
+        .table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .table th {
+            font-weight: 600;
+            color: var(--text-secondary);
+            font-size: 12px;
+            text-transform: uppercase;
+        }
+
+        .table tr:hover {
+            background: rgba(0, 0, 0, 0.02);
+        }
+
+        /* Form */
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+        }
+
+        .form-select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 14px;
+            background: #fff;
+        }
+
+        .form-textarea {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 14px;
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: var(--card);
+            border-radius: 16px;
+            padding: 24px;
+            width: 90%;
+            max-width: 500px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .modal-title {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: var(--text-secondary);
+        }
+
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border);
+        }
+
+        /* Image Preview */
+        .img-preview {
+            width: 60px;
+            height: 60px;
+            aspect-ratio: 1 / 1;
+            border-radius: 8px;
+            object-fit: cover;
+            background: var(--bg);
+            flex-shrink: 0;
+        }
+
+        .img-placeholder {
+            width: 60px;
+            height: 60px;
+            aspect-ratio: 1 / 1;
+            border-radius: 8px;
+            background: var(--bg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-secondary);
+            font-size: 20px;
+            flex-shrink: 0;
+        }
+
+        /* AI Action Buttons in Modal */
+        .ai-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            padding: 12px;
+            background: #f0f4ff;
+            border-radius: 10px;
+            border: 1px dashed #a5b4fc;
+            margin-bottom: 16px;
+        }
+
+        .ai-actions .ai-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            border: 1px solid transparent;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        .ai-btn-blue { background: #dbeafe; color: #1d4ed8; border-color: #93c5fd; }
+        .ai-btn-blue:hover { background: #bfdbfe; }
+        .ai-btn-green { background: #dcfce7; color: #15803d; border-color: #86efac; }
+        .ai-btn-green:hover { background: #bbf7d0; }
+        .ai-btn-pink { background: #fce7f3; color: #be185d; border-color: #f9a8d4; }
+        .ai-btn-pink:hover { background: #fbcfe8; }
+        .ai-btn-orange { background: #ffedd5; color: #c2410c; border-color: #fdba74; }
+        .ai-btn-orange:hover { background: #fed7aa; }
+        .ai-btn-purple { background: #f3e8ff; color: #7e22ce; border-color: #c4b5fd; }
+        .ai-btn-purple:hover { background: #e9d5ff; }
+
+        .ai-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 20px;
+        }
+
+        .tab {
+            padding: 12px 20px;
+            cursor: pointer;
+            color: var(--text-secondary);
+            border-bottom: 2px solid transparent;
+            margin-bottom: -1px;
+        }
+
+        .tab.active {
+            color: var(--primary);
+            border-bottom-color: var(--primary);
+        }
+
+        /* Badge */
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .badge-success {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success);
+        }
+
+        .badge-warning {
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--warning);
+        }
+
+        /* Grid */
+        .grid {
+            display: grid;
+            gap: 20px;
+        }
+
+        .grid-2 {
+            grid-template-columns: repeat(2, 1fr);
+        }
+
+        .grid-3 {
+            grid-template-columns: repeat(3, 1fr);
+        }
+
+        .grid-4 {
+            grid-template-columns: repeat(4, 1fr);
+        }
+
+        /* Pagination */
+        .pagination {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 20px;
+        }
+
+        .page-btn {
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--card);
+            cursor: pointer;
+        }
+
+        .page-btn.active {
+            background: var(--primary);
+            color: #fff;
+            border-color: var(--primary);
+        }
+
+        /* Progress */
+        .progress {
+            height: 8px;
+            background: var(--bg);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: var(--primary);
+            transition: width 0.3s;
+        }
+
+        /* Alert */
+        .alert {
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+        }
+
+        .alert-success {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success);
+        }
+
+        .alert-warning {
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--warning);
+        }
+
+        .alert-danger {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger);
+        }
+
+        /* Word Card for Batch */
+        .word-card {
+            background: var(--card);
+            border-radius: 12px;
+            padding: 16px;
+            border: 1px solid var(--border);
+            transition: all 0.2s;
+        }
+
+        .word-card:hover {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .word-card-img {
+            width: 100%;
+            height: 120px;
+            border-radius: 8px;
+            object-fit: cover;
+            background: var(--bg);
+            margin-bottom: 12px;
+        }
+
+        .word-card-word {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .word-card-trans {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+        }
+
+        .word-card-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+        }
+
+        .status-pending {
+            color: var(--text-secondary);
+        }
+
+        .status-generating {
+            color: var(--warning);
+        }
+
+        .status-done {
+            color: var(--success);
+        }
+
+        .status-error {
+            color: var(--danger);
+        }
+
+        /* Hidden */
+        .hidden {
+            display: none !important;
+        }
+
+        /* Filter Bar */
+        .filter-bar {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .filter-bar .form-input,
+        .filter-bar .form-select {
+            width: auto;
+            min-width: 150px;
+        }
+
+        /* Loading Spinner */
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--border);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            display: inline-block;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <div class="sidebar-logo">📚 英语学习后台</div>
+        <div class="sidebar-menu">
+            <div class="menu-item active" data-page="categories">📁 分类管理</div>
+            <div class="menu-item" data-page="words">📖 单词管理</div>
+            <div class="menu-item" data-page="batch-import">📥 批量导入</div>
+            <div class="menu-item" data-page="batch-generate">🎨 批量生成图片</div>
+            <div class="menu-item" data-page="prompts">🤖 提示词管理</div>
+            <div class="menu-item" data-page="podcast-cat">🎧 磨耳朵分类</div>
+            <div class="menu-item" data-page="podcast-content">📻 磨耳朵内容</div>
+            <div class="menu-item" data-page="stats">📊 数据统计</div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main">
+        <!-- Categories Page -->
+        <div id="page-categories" class="page">
+            <div class="header">
+                <h1>分类管理</h1>
+                <button class="btn btn-primary" onclick="showAddCategoryModal()">➕ 添加分类</button>
+            </div>
+            <div class="card">
+                <table class="table" id="categories-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>图标</th>
+                            <th>名称</th>
+                            <th>英文名</th>
+                            <th>父分类</th>
+                            <th>单词数量</th>
+                            <th>排序</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Words Page -->
+        <div id="page-words" class="page hidden">
+            <div class="header">
+                <h1>单词管理</h1>
+                <button class="btn btn-primary" onclick="showAddWordModal()">➕ 添加单词</button>
+            </div>
+            <div class="filter-bar">
+                <select class="form-select" id="filter-category" onchange="loadWords()">
+                    <option value="">全部分类</option>
+                </select>
+                <select class="form-select" id="filter-image" onchange="loadWords()">
+                    <option value="">全部状态</option>
+                    <option value="with">有图片</option>
+                    <option value="without">无图片</option>
+                </select>
+                <input type="text" class="form-input" id="filter-search" placeholder="搜索单词..."
+                    onkeyup="debounceSearch()">
+                <button class="btn btn-outline" onclick="loadWords()">🔍 搜索</button>
+            </div>
+            <div class="card">
+                <table class="table" id="words-table">
+                    <thead>
+                        <tr>
+                            <th>图片</th>
+                            <th>单词</th>
+                            <th>音标</th>
+                            <th>翻译</th>
+                            <th>分类</th>
+                            <th class="text-center">女声</th>
+                            <th class="text-center">男声</th>
+                            <th>例句</th>
+                            <th class="text-center">例句♀</th>
+                            <th class="text-center">例句♂</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+                <div class="pagination" id="words-pagination"></div>
+            </div>
+        </div>
+
+        <!-- Batch Import Page -->
+        <div id="page-batch-import" class="page hidden">
+            <div class="header">
+                <h1>批量导入</h1>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">📝 输入单词</span>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">每行一个单词，格式：<code>英文/中文翻译</code>（翻译可选，AI会自动补全）</label>
+                    <textarea class="form-textarea" id="import-text" rows="8" placeholder="apple/苹果
+banana
+orange/橙子
+grape"></textarea>
+                </div>
+                <div class="form-group" style="display: flex; gap: 12px; align-items: center;">
+                    <button class="btn btn-success" onclick="aiEnhanceWords()">🤖 AI自动补全</button>
+                    <span style="color: var(--text-secondary); font-size: 13px;">点击后AI会自动生成音标、例句、翻译和语法详解</span>
+                </div>
+            </div>
+
+            <!-- AI增强预览 -->
+            <div class="card" id="import-preview-card" style="display: none;">
+                <div class="card-header">
+                    <span class="card-title">📋 预览增强结果</span>
+                    <div>
+                        <select class="form-select" id="import-category"
+                            style="width: 150px; margin-right: 12px;"></select>
+                        <label style="margin-right: 12px;"><input type="checkbox" id="import-auto-image"> 自动生成图片</label>
+                        <button class="btn btn-primary" onclick="batchImportEnhanced()">📥 确认导入</button>
+                    </div>
+                </div>
+                <div style="overflow-x: auto;">
+                    <table class="data-table" id="import-preview-table" style="width: 100%; table-layout: fixed;">
+                        <thead>
+                            <tr>
+                                <th style="width: 10%;">单词</th>
+                                <th style="width: 10%;">音标</th>
+                                <th style="width: 10%;">翻译</th>
+                                <th style="width: 25%;">例句</th>
+                                <th style="width: 20%;">例句翻译</th>
+                                <th style="width: 25%;">语法详解</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="import-result" style="margin-top: 16px;"></div>
+        </div>
+
+        <!-- Batch Generate Page -->
+        <div id="page-batch-generate" class="page hidden">
+            <div class="header">
+                <h1>批量生成图片</h1>
+            </div>
+            <!-- Stats Section -->
+            <div class="grid grid-4" style="margin-bottom: 20px;">
+                <div class="card" style="text-align: center;">
+                    <div style="font-size: 36px; font-weight: 700; color: var(--primary);" id="gen-stat-total">0</div>
+                    <div style="color: var(--text-secondary); font-size: 14px;">总单词数</div>
+                </div>
+                <div class="card" style="text-align: center;">
+                    <div style="font-size: 36px; font-weight: 700; color: var(--success);" id="gen-stat-with">0</div>
+                    <div style="color: var(--text-secondary); font-size: 14px;">✅ 有图片</div>
+                </div>
+                <div class="card" style="text-align: center;">
+                    <div style="font-size: 36px; font-weight: 700; color: var(--warning);" id="gen-stat-without">0</div>
+                    <div style="color: var(--text-secondary); font-size: 14px;">⏳ 待生成</div>
+                </div>
+                <div class="card" style="text-align: center;">
+                    <div style="font-size: 36px; font-weight: 700; color: var(--primary);" id="gen-stat-percent">0%
+                    </div>
+                    <div style="color: var(--text-secondary); font-size: 14px;">完成率</div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <div>
+                        <span class="card-title">选择要生成图片的单词</span>
+                        <p style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">
+                            仅显示没有图片的单词，点击开始后会逐个调用AI生成
+                        </p>
+                    </div>
+                    <div>
+                        <select class="form-select" id="generate-category" onchange="loadWordsForGenerate()"
+                            style="width: 150px; margin-right: 12px;">
+                            <option value="">全部分类</option>
+                        </select>
+                        <button class="btn btn-success" id="btn-start-generate" onclick="startBatchGenerate()">🚀
+                            开始生成</button>
+                        <button class="btn btn-danger hidden" id="btn-stop-generate" onclick="stopBatchGenerate()">⏹
+                            停止</button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">提示词模板</label>
+                    <select class="form-select" id="generate-prompt-key" style="width: 250px;">
+                        <option value="image_generate">通用图片生成</option>
+                        <option value="image_abstract">抽象词图片生成</option>
+                        <option value="image_color">颜色词图片生成</option>
+                        <option value="image_number">数字词图片生成</option>
+                    </select>
+                    <button class="btn btn-sm btn-outline" onclick="window.location.hash='prompts'"
+                        style="margin-left: 8px;">编辑模板</button>
+                </div>
+                <div id="generate-progress" class="hidden" style="margin-bottom: 20px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span id="progress-text">生成中...</span>
+                        <span id="progress-count">0/0</span>
+                    </div>
+                    <div class="progress">
+                        <div class="progress-bar" id="progress-bar" style="width: 0%;"></div>
+                    </div>
+                </div>
+                <div class="grid grid-4" id="generate-words-grid"></div>
+            </div>
+        </div>
+
+
+        <!-- Podcast Categories Page -->
+        <div id="page-podcast-cat" class="page hidden">
+            <div class="header">
+                <h1>🎧 磨耳朵分类</h1>
+                <button class="btn btn-primary" onclick="openPodcastCatModal()">+ 新增分类</button>
+            </div>
+            <div class="card">
+                <table class="data-table" id="podcast-categories-table" style="width:100%;">
+                    <thead>
+                        <tr>
+                            <th style="width:60px">ID</th>
+                            <th style="width:80px">图标</th>
+                            <th>名称</th>
+                            <th>英文标识</th>
+                            <th style="width:100px">排序</th>
+                            <th style="width:100px">状态</th>
+                            <th style="width:160px">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Podcast Contents Page -->
+        <div id="page-podcast-content" class="page hidden">
+            <div class="header">
+                <h1>📻 磨耳朵内容</h1>
+                <div>
+                    <select class="form-select" id="podcast-filter-cat" style="width:150px;margin-right:12px;"
+                        onchange="loadPodcastContents()">
+                        <option value="">全部分类</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="openPodcastContentModal()">+ 新增内容</button>
+                </div>
+            </div>
+            <div class="card">
+                <table class="data-table" id="podcast-contents-table" style="width:100%;">
+                    <thead>
+                        <tr>
+                            <th style="width:60px">ID</th>
+                            <th>标题</th>
+                            <th style="width:120px">分类</th>
+                            <th style="width:80px">难度</th>
+                            <th style="width:140px">音频状态</th>
+                            <th style="width:220px">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Podcast Category Modal -->
+        <div class="modal hidden" id="podcast-cat-modal">
+            <div class="modal-content" style="max-width:500px;">
+                <div class="modal-header">
+                    <span class="modal-title" id="podcast-cat-modal-title">新增分类</span>
+                    <span class="modal-close" onclick="closePodcastCatModal()">×</span>
+                </div>
+                <form id="podcast-cat-form">
+                    <input type="hidden" id="pcat-id">
+                    <div class="form-group">
+                        <label class="form-label">分类名称 *</label>
+                        <input type="text" class="form-input" id="pcat-name" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">英文标识</label>
+                        <input type="text" class="form-input" id="pcat-name-en" placeholder="例如: daily_phrases">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">图标 (Emoji)</label>
+                        <input type="text" class="form-input" id="pcat-icon" placeholder="例如: 📖">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">排序</label>
+                        <input type="number" class="form-input" id="pcat-sort" value="0">
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn" onclick="closePodcastCatModal()">取消</button>
+                        <button type="submit" class="btn btn-primary">保存</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Podcast Content Modal -->
+        <div class="modal hidden" id="podcast-content-modal">
+            <div class="modal-content" style="max-width:700px;">
+                <div class="modal-header">
+                    <span class="modal-title" id="podcast-content-modal-title">新增内容</span>
+                    <span class="modal-close" onclick="closePodcastContentModal()">×</span>
+                </div>
+                <form id="podcast-content-form">
+                    <input type="hidden" id="pcontent-id">
+                    <div class="form-row">
+                        <div class="form-group" style="flex:1">
+                            <label class="form-label">标题 *</label>
+                            <input type="text" class="form-input" id="pcontent-title" required>
+                        </div>
+                        <div class="form-group" style="width:150px">
+                            <label class="form-label">分类</label>
+                            <select class="form-select" id="pcontent-category"></select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">英文内容 *</label>
+                        <textarea class="form-textarea" id="pcontent-text" rows="4" required
+                            placeholder="英文对话或句子"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">中文翻译</label>
+                        <textarea class="form-textarea" id="pcontent-translation" rows="3"
+                            placeholder="对应的中文翻译"></textarea>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group" style="flex:1">
+                            <label class="form-label">难度等级 (1-5)</label>
+                            <input type="number" class="form-input" id="pcontent-difficulty" min="1" max="5" value="1">
+                        </div>
+                        <div class="form-group" style="flex:1">
+                            <label class="form-label">排序</label>
+                            <input type="number" class="form-input" id="pcontent-sort" value="0">
+                        </div>
+                        <div class="form-group" style="flex:1">
+                            <label class="form-label" style="visibility:hidden;">免费</label>
+                            <label><input type="checkbox" id="pcontent-free" checked> 免费内容</label>
+                        </div>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn" onclick="closePodcastContentModal()">取消</button>
+                        <button type="submit" class="btn btn-primary">保存</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Stats Page -->
+        <div id="page-stats" class="page hidden">
+            <div class="header">
+                <h1>数据统计</h1>
+            </div>
+            <div class="grid grid-4">
+                <div class="card">
+                    <div style="font-size: 32px; font-weight: 700; color: var(--primary);" id="stat-words">0</div>
+                    <div style="color: var(--text-secondary);">总单词数</div>
+                </div>
+                <div class="card">
+                    <div style="font-size: 32px; font-weight: 700; color: var(--success);" id="stat-with-image">0</div>
+                    <div style="color: var(--text-secondary);">有图片</div>
+                </div>
+                <div class="card">
+                    <div style="font-size: 32px; font-weight: 700; color: var(--warning);" id="stat-without-image">0
+                    </div>
+                    <div style="color: var(--text-secondary);">无图片</div>
+                </div>
+                <div class="card">
+                    <div style="font-size: 32px; font-weight: 700; color: var(--primary);" id="stat-categories">0</div>
+                    <div style="color: var(--text-secondary);">分类数</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Prompts Management Page -->
+        <div id="page-prompts" class="page hidden">
+            <div class="header">
+                <h1>提示词管理</h1>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">AI提示词列表</span>
+                    <p style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">
+                        管理用于AI生成内容的提示词模板。支持变量: <code>{{word}}</code>, <code>{{translation}}</code>,
+                        <code>{{number}}</code>
+                    </p>
+                </div>
+                <table class="table" id="prompts-table">
+                    <thead>
+                        <tr>
+                            <th>标识</th>
+                            <th>名称</th>
+                            <th>说明</th>
+                            <th>状态</th>
+                            <th>更新时间</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Prompt Modal -->
+    <div class="modal" id="prompt-modal">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <span class="modal-title" id="prompt-modal-title">编辑提示词</span>
+                <button class="modal-close" onclick="closePromptModal()">&times;</button>
+            </div>
+            <form id="prompt-form" onsubmit="savePrompt(event)">
+                <input type="hidden" id="prompt-id">
+                <div class="form-group">
+                    <label class="form-label">标识 (只读)</label>
+                    <input type="text" class="form-input" id="prompt-key" readonly style="background: #f5f5f5;">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">名称</label>
+                    <input type="text" class="form-input" id="prompt-name" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">说明</label>
+                    <input type="text" class="form-input" id="prompt-description">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">提示词模板</label>
+                    <textarea class="form-textarea" id="prompt-template" rows="15"
+                        style="font-family: monospace; font-size: 13px;" required></textarea>
+                </div>
+                <div class="form-group">
+                    <label><input type="checkbox" id="prompt-active" checked> 启用</label>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline" onclick="closePromptModal()">取消</button>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Add/Edit Category Modal -->
+    <div class="modal" id="category-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span class="modal-title" id="category-modal-title">添加分类</span>
+                <button class="modal-close" onclick="closeCategoryModal()">&times;</button>
+            </div>
+            <form id="category-form">
+                <input type="hidden" id="category-id">
+                <div class="form-group">
+                    <label class="form-label">分类名称 *</label>
+                    <input type="text" class="form-input" id="category-name" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">英文名称</label>
+                    <input type="text" class="form-input" id="category-name-en">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">图标 (Emoji)</label>
+                    <input type="text" class="form-input" id="category-icon" placeholder="🐾">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">父分类</label>
+                    <select class="form-select" id="category-parent">
+                        <option value="0">（无，作为顶级分类）</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">排序</label>
+                    <input type="number" class="form-input" id="category-sort" value="0">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline" onclick="closeCategoryModal()">取消</button>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Add/Edit Word Modal -->
+    <div class="modal" id="word-modal">
+        <div class="modal-content" style="max-width: 650px;">
+            <div class="modal-header">
+                <span class="modal-title" id="word-modal-title">添加单词</span>
+                <button class="modal-close" onclick="closeWordModal()">&times;</button>
+            </div>
+            <form id="word-form">
+                <input type="hidden" id="word-id">
+
+                <!-- AI Quick Actions (only shown in edit mode) -->
+                <div class="ai-actions" id="word-ai-actions" style="display: none;">
+                    <span style="font-size: 12px; color: #4338ca; font-weight: 600; width: 100%; margin-bottom: 2px;">AI 快捷操作</span>
+                    <button type="button" class="ai-btn ai-btn-blue" onclick="aiRegenerateFields()" id="btn-ai-regen">
+                        🤖 AI补全音标/例句
+                    </button>
+                    <button type="button" class="ai-btn ai-btn-orange" onclick="regenerateWordImage()" id="btn-ai-img">
+                        🎨 重新生成图片
+                    </button>
+                    <button type="button" class="ai-btn ai-btn-pink" onclick="generateWordVoice('female')" id="btn-ai-voice-f">
+                        🔊 生成女声
+                    </button>
+                    <button type="button" class="ai-btn ai-btn-purple" onclick="generateWordVoice('male')" id="btn-ai-voice-m">
+                        🔊 生成男声
+                    </button>
+                    <button type="button" class="ai-btn ai-btn-green" onclick="generateExampleVoiceFromModal('female')" id="btn-ai-ex-f">
+                        📝 例句女声
+                    </button>
+                    <button type="button" class="ai-btn ai-btn-green" onclick="generateExampleVoiceFromModal('male')" id="btn-ai-ex-m">
+                        📝 例句男声
+                    </button>
+                </div>
+
+                <div class="grid grid-2">
+                    <div class="form-group">
+                        <label class="form-label">单词 *</label>
+                        <input type="text" class="form-input" id="word-word" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">翻译 *</label>
+                        <input type="text" class="form-input" id="word-translation" required>
+                    </div>
+                </div>
+                <div class="grid grid-2">
+                    <div class="form-group">
+                        <label class="form-label">音标</label>
+                        <input type="text" class="form-input" id="word-phonetic">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">分类</label>
+                        <select class="form-select" id="word-category"></select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">例句</label>
+                    <input type="text" class="form-input" id="word-example">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">例句翻译</label>
+                    <input type="text" class="form-input" id="word-example-trans">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">语法详解</label>
+                    <textarea class="form-textarea" id="word-grammar" rows="2" style="min-height: 50px;"></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">图片建议 <span style="color: #999; font-weight: normal;">(AI生图参考描述)</span></label>
+                    <input type="text" class="form-input" id="word-image-hint" placeholder="例如：背书包、戴红领巾的小男孩">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">图片URL</label>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="text" class="form-input" id="word-image-url" style="flex: 1;">
+                    </div>
+                    <img id="word-image-preview" src=""
+                        style="max-width: 200px; margin-top: 12px; border-radius: 8px; display: none;">
+                </div>
+
+                <!-- Audio Status (only in edit mode) -->
+                <div id="word-audio-status" style="display: none;" class="form-group">
+                    <label class="form-label">发音状态</label>
+                    <div style="display: flex; gap: 12px; flex-wrap: wrap; font-size: 13px; color: var(--text-secondary);">
+                        <span id="audio-status-female">♀ 女声: <span id="audio-female-label">-</span></span>
+                        <span id="audio-status-male">♂ 男声: <span id="audio-male-label">-</span></span>
+                        <span>|</span>
+                        <span>例句♀: <span id="audio-ex-female-label">-</span></span>
+                        <span>例句♂: <span id="audio-ex-male-label">-</span></span>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline" onclick="closeWordModal()">取消</button>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // 使用相对路径，自动适应当前服务器地址
+        const API_BASE = '/api/admin';
+        let categories = [];
+        let currentPage = 1;
+        let searchTimeout;
+        let isGenerating = false;
+        let generateQueue = [];
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            loadCategories();
+            setupNavigation();
+            setupForms();
+            // 从URL hash恢复页面状态
+            handleHashChange();
+        });
+
+        // 监听URL hash变化
+        window.addEventListener('hashchange', handleHashChange);
+
+        function handleHashChange() {
+            const hash = window.location.hash.slice(1) || 'categories';
+            navigateToPage(hash);
+        }
+
+        function navigateToPage(page) {
+            document.querySelectorAll('.menu-item').forEach(i => i.classList.remove('active'));
+            document.querySelectorAll('.page').forEach(p => p.classList.add('hidden'));
+
+            const menuItem = document.querySelector(`.menu-item[data-page="${page}"]`);
+            const pageEl = document.getElementById(`page-${page}`);
+
+            if (menuItem && pageEl) {
+                menuItem.classList.add('active');
+                pageEl.classList.remove('hidden');
+
+                if (page === 'words') loadWords();
+                if (page === 'batch-import') loadCategoriesForImport();
+                if (page === 'batch-generate') { loadCategoriesForGenerate(); loadWordsForGenerate(); }
+                if (page === 'prompts') loadPrompts();
+                if (page === 'podcast-cat') { loadPodcastCategories(); }
+                if (page === 'podcast-content') { loadPodcastCategories(); loadPodcastContents(); }
+                if (page === 'stats') loadStats();
+            }
+        }
+
+        // Navigation
+        function setupNavigation() {
+            document.querySelectorAll('.menu-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    const page = item.dataset.page;
+                    // 更新URL hash（不刷新页面）
+                    window.location.hash = page;
+                });
+            });
+        }
+
+        // Forms
+        function setupForms() {
+            document.getElementById('category-form').addEventListener('submit', saveCategory);
+            document.getElementById('word-form').addEventListener('submit', saveWord);
+            document.getElementById('word-image-url').addEventListener('change', previewImage);
+        }
+
+        // ========== Categories ==========
+        async function loadCategories() {
+            try {
+                const res = await fetch(`${API_BASE}/categories`);
+                const data = await res.json();
+                if (data.success) {
+                    categories = data.data;
+                    renderCategories();
+                    populateCategorySelects();
+                }
+            } catch (e) { console.error(e); }
+        }
+
+        function renderCategories() {
+            const tbody = document.querySelector('#categories-table tbody');
+            // 获取父分类名称
+            const getParentName = (parentId) => {
+                if (!parentId || parentId === 0) return '-';
+                const parent = categories.find(c => c.id === parentId);
+                return parent ? `${parent.icon || ''} ${parent.name}` : '-';
+            };
+
+            // 构建层级结构：父分类后面紧跟子分类
+            const parentCats = categories.filter(c => !c.parent_id || c.parent_id === 0)
+                .sort((a, b) => a.sort_order - b.sort_order);
+            const childCats = categories.filter(c => c.parent_id && c.parent_id !== 0);
+
+            const sorted = [];
+            parentCats.forEach(parent => {
+                sorted.push(parent);
+                // 添加该父分类的所有子分类
+                const children = childCats.filter(c => c.parent_id === parent.id)
+                    .sort((a, b) => a.sort_order - b.sort_order);
+                sorted.push(...children);
+            });
+            // 添加没有父分类的孤儿子分类（如果有）
+            const orphans = childCats.filter(c => !parentCats.some(p => p.id === c.parent_id));
+            sorted.push(...orphans);
+
+            tbody.innerHTML = sorted.map(c => `
+                <tr${c.parent_id ? ' style="background: #f8f9fa;"' : ''}>
+                    <td>${c.id}</td>
+                    <td>${c.icon || '-'}</td>
+                    <td>${c.parent_id ? '&nbsp;&nbsp;↳ ' : ''}<strong>${c.name}</strong></td>
+                    <td>${c.name_en || '-'}</td>
+                    <td>${getParentName(c.parent_id)}</td>
+                    <td>${c.sort_order}</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline" onclick="editCategory(${c.id})">编辑</button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteCategory(${c.id})">删除</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function populateCategorySelects() {
+            // 生成带层级的选项
+            const parentCats = categories.filter(c => !c.parent_id || c.parent_id === 0);
+            const childCats = categories.filter(c => c.parent_id && c.parent_id !== 0);
+            let options = '';
+            parentCats.forEach(p => {
+                options += `<option value="${p.id}">${p.icon || ''} ${p.name}</option>`;
+                const children = childCats.filter(c => c.parent_id === p.id);
+                children.forEach(c => {
+                    options += `<option value="${c.id}">　↳ ${c.icon || ''} ${c.name}</option>`;
+                });
+            });
+            // 没有父分类的子分类（孤儿）
+            const orphans = childCats.filter(c => !parentCats.some(p => p.id === c.parent_id));
+            orphans.forEach(c => {
+                options += `<option value="${c.id}">${c.icon || ''} ${c.name}</option>`;
+            });
+
+            ['filter-category', 'word-category', 'import-category', 'generate-category'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    const firstOption = el.querySelector('option:first-child');
+                    el.innerHTML = (firstOption ? firstOption.outerHTML : '') + options;
+                }
+            });
+
+            // 更新父分类选择器
+            const parentSelect = document.getElementById('category-parent');
+            if (parentSelect) {
+                let parentOptions = '<option value="0">（无，作为顶级分类）</option>';
+                parentCats.forEach(p => {
+                    parentOptions += `<option value="${p.id}">${p.icon || ''} ${p.name}</option>`;
+                });
+                parentSelect.innerHTML = parentOptions;
+            }
+        }
+
+        function showAddCategoryModal() {
+            document.getElementById('category-modal-title').textContent = '添加分类';
+            document.getElementById('category-form').reset();
+            document.getElementById('category-id').value = '';
+            document.getElementById('category-modal').classList.add('active');
+        }
+
+        function editCategory(id) {
+            const cat = categories.find(c => c.id === id);
+            if (!cat) return;
+            document.getElementById('category-modal-title').textContent = '编辑分类';
+            document.getElementById('category-id').value = cat.id;
+            document.getElementById('category-name').value = cat.name;
+            document.getElementById('category-name-en').value = cat.name_en || '';
+            document.getElementById('category-icon').value = cat.icon || '';
+            document.getElementById('category-parent').value = cat.parent_id || 0;
+            document.getElementById('category-sort').value = cat.sort_order;
+            document.getElementById('category-modal').classList.add('active');
+        }
+
+        function closeCategoryModal() {
+            document.getElementById('category-modal').classList.remove('active');
+        }
+
+        async function saveCategory(e) {
+            e.preventDefault();
+            const id = document.getElementById('category-id').value;
+            const data = {
+                name: document.getElementById('category-name').value,
+                name_en: document.getElementById('category-name-en').value,
+                icon: document.getElementById('category-icon').value,
+                sort_order: parseInt(document.getElementById('category-sort').value) || 0,
+                parent_id: parseInt(document.getElementById('category-parent').value) || 0
+            };
+
+            try {
+                const url = id ? `${API_BASE}/categories/${id}` : `${API_BASE}/categories`;
+                const method = id ? 'PUT' : 'POST';
+                const res = await fetch(url, {
+                    method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                const result = await res.json();
+                if (result.success) {
+                    closeCategoryModal();
+                    loadCategories();
+                    alert('保存成功！');
+                } else {
+                    alert(result.message || '保存失败');
+                }
+            } catch (e) { alert('保存失败: ' + e.message); }
+        }
+
+        async function deleteCategory(id) {
+            if (!confirm('确定要删除这个分类吗？')) return;
+            try {
+                const res = await fetch(`${API_BASE}/categories/${id}`, { method: 'DELETE' });
+                const result = await res.json();
+                if (result.success) {
+                    loadCategories();
+                } else {
+                    alert(result.message || '删除失败');
+                }
+            } catch (e) { alert('删除失败: ' + e.message); }
+        }
+
+        // ========== Words ==========
+        async function loadWords(page = 1) {
+            currentPage = page;
+            const category = document.getElementById('filter-category').value;
+            const search = document.getElementById('filter-search').value;
+            const imageFilter = document.getElementById('filter-image').value;
+
+            let url = `${API_BASE}/words?page=${page}&limit=20`;
+            if (category) url += `&category_id=${category}`;
+            if (search) url += `&search=${encodeURIComponent(search)}`;
+
+            try {
+                const res = await fetch(url);
+                const data = await res.json();
+                if (data.success) {
+                    let words = data.data.list;
+                    // Client-side filter for image
+                    if (imageFilter === 'with') words = words.filter(w => w.image_url);
+                    if (imageFilter === 'without') words = words.filter(w => !w.image_url);
+                    renderWords(words, data.data.pagination);
+                }
+            } catch (e) { console.error(e); }
+        }
+
+        // Helper: escape string for use in HTML onclick attributes
+        function escHtml(str) {
+            if (!str) return '';
+            return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        function renderWords(words, pagination) {
+            const tbody = document.querySelector('#words-table tbody');
+            tbody.innerHTML = words.map(w => {
+                const safeWord = escHtml(w.word);
+                const safeTrans = escHtml(w.translation);
+                const safeExample = escHtml(w.example_sentence || '');
+                const safeAudioF = escHtml(w.audio_url_female || '');
+                const safeAudioM = escHtml(w.audio_url_male || '');
+                const safeExAudioF = escHtml(w.example_audio_female || '');
+                const safeExAudioM = escHtml(w.example_audio_male || '');
+                return `
+                <tr class="hover:bg-gray-50">
+                    <td>
+                        ${w.image_url
+                    ? `<img src="${escHtml(w.image_url)}" class="img-preview" onerror="this.style.display='none'">`
+                    : `<div class="img-placeholder">📷</div>`}
+                    </td>
+                    <td><strong class="text-gray-900">${safeWord}</strong></td>
+                    <td class="text-gray-500 text-sm">${escHtml(w.phonetic) || '-'}</td>
+                    <td>${safeTrans}</td>
+                    <td><span class="badge badge-success">${escHtml(w.category_name) || '-'}</span></td>
+                    <td class="text-center">
+                        ${w.audio_url_female
+                    ? `<button class="btn btn-sm bg-pink-100 text-pink-600 hover:bg-pink-200" onclick="playAudio('${safeAudioF}')" title="播放女声">🔊</button>`
+                    : `<button class="btn btn-sm bg-gray-100 text-gray-600 hover:bg-gray-200" onclick="generateAudio(${w.id}, '${safeWord}', 'female')" title="生成女声">♀+</button>`
+                }
+                    </td>
+                    <td class="text-center">
+                        ${w.audio_url_male
+                    ? `<button class="btn btn-sm bg-blue-100 text-blue-600 hover:bg-blue-200" onclick="playAudio('${safeAudioM}')" title="播放男声">🔊</button>`
+                    : `<button class="btn btn-sm bg-gray-100 text-gray-600 hover:bg-gray-200" onclick="generateAudio(${w.id}, '${safeWord}', 'male')" title="生成男声">♂+</button>`
+                }
+                    </td>
+                    <td class="text-sm text-gray-600" style="max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${safeExample}">${safeExample || '-'}</td>
+                    <td class="text-center">
+                        ${w.example_audio_female
+                    ? `<button class="btn btn-sm bg-pink-100 text-pink-600 hover:bg-pink-200" onclick="playAudio('${safeExAudioF}')" title="播放例句女声">🔊</button>`
+                    : w.example_sentence
+                        ? `<button class="btn btn-sm bg-gray-100 text-gray-600 hover:bg-gray-200" onclick="generateExampleAudio(${w.id}, '${safeExample}', 'female')" title="生成例句女声">♀+</button>`
+                        : '-'
+                }
+                    </td>
+                    <td class="text-center">
+                        ${w.example_audio_male
+                    ? `<button class="btn btn-sm bg-blue-100 text-blue-600 hover:bg-blue-200" onclick="playAudio('${safeExAudioM}')" title="播放例句男声">🔊</button>`
+                    : w.example_sentence
+                        ? `<button class="btn btn-sm bg-gray-100 text-gray-600 hover:bg-gray-200" onclick="generateExampleAudio(${w.id}, '${safeExample}', 'male')" title="生成例句男声">♂+</button>`
+                        : '-'
+                }
+                    </td>
+                    <td style="white-space: nowrap;">
+                        <button class="btn btn-sm btn-outline" onclick="editWord(${w.id})">编辑</button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteWord(${w.id})">删除</button>
+                    </td>
+                </tr>
+            `}).join('');
+
+            // Pagination
+            const totalPages = Math.ceil(pagination.total / pagination.limit);
+            let paginationHtml = '';
+            for (let i = 1; i <= totalPages && i <= 10; i++) {
+                paginationHtml += `<button class="page-btn ${i === currentPage ? 'active' : ''}" onclick="loadWords(${i})">${i}</button>`;
+            }
+            document.getElementById('words-pagination').innerHTML = paginationHtml;
+        }
+
+        function debounceSearch() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => loadWords(), 300);
+        }
+
+        function showAddWordModal() {
+            document.getElementById('word-modal-title').textContent = '添加单词';
+            document.getElementById('word-form').reset();
+            document.getElementById('word-id').value = '';
+            document.getElementById('word-grammar').value = '';
+            document.getElementById('word-image-preview').style.display = 'none';
+            document.getElementById('word-ai-actions').style.display = 'none';
+            document.getElementById('word-audio-status').style.display = 'none';
+            document.getElementById('word-modal').classList.add('active');
+        }
+
+        // Store current editing word data for AI actions
+        let currentEditWord = null;
+
+        async function editWord(id) {
+            try {
+                const res = await fetch(`${API_BASE}/words/${id}`);
+                const data = await res.json();
+                if (data.success) {
+                    const w = data.data;
+                    currentEditWord = w;
+
+                    document.getElementById('word-modal-title').textContent = '编辑单词 - ' + w.word;
+                    document.getElementById('word-id').value = w.id;
+                    document.getElementById('word-word').value = w.word;
+                    document.getElementById('word-translation').value = w.translation;
+                    document.getElementById('word-phonetic').value = w.phonetic || '';
+                    document.getElementById('word-category').value = w.category_id || '';
+                    document.getElementById('word-example').value = w.example_sentence || '';
+                    document.getElementById('word-example-trans').value = w.example_translation || '';
+                    document.getElementById('word-grammar').value = w.grammar_explanation || '';
+                    document.getElementById('word-image-hint').value = w.image_hint || '';
+                    document.getElementById('word-image-url').value = w.image_url || '';
+
+                    const preview = document.getElementById('word-image-preview');
+                    if (w.image_url) {
+                        preview.src = w.image_url;
+                        preview.style.display = 'block';
+                    } else {
+                        preview.style.display = 'none';
+                    }
+
+                    // Show AI actions in edit mode
+                    document.getElementById('word-ai-actions').style.display = 'flex';
+
+                    // Show audio status
+                    document.getElementById('word-audio-status').style.display = 'block';
+                    document.getElementById('audio-female-label').innerHTML = w.audio_url_female
+                        ? '<span style="color: var(--success); cursor: pointer;" onclick="playAudio(\'' + escHtml(w.audio_url_female) + '\')">✅ 已有</span>'
+                        : '<span style="color: var(--danger);">❌ 无</span>';
+                    document.getElementById('audio-male-label').innerHTML = w.audio_url_male
+                        ? '<span style="color: var(--success); cursor: pointer;" onclick="playAudio(\'' + escHtml(w.audio_url_male) + '\')">✅ 已有</span>'
+                        : '<span style="color: var(--danger);">❌ 无</span>';
+                    document.getElementById('audio-ex-female-label').innerHTML = w.example_audio_female
+                        ? '<span style="color: var(--success); cursor: pointer;" onclick="playAudio(\'' + escHtml(w.example_audio_female) + '\')">✅ 已有</span>'
+                        : (w.example_sentence ? '<span style="color: var(--danger);">❌ 无</span>' : '<span>-</span>');
+                    document.getElementById('audio-ex-male-label').innerHTML = w.example_audio_male
+                        ? '<span style="color: var(--success); cursor: pointer;" onclick="playAudio(\'' + escHtml(w.example_audio_male) + '\')">✅ 已有</span>'
+                        : (w.example_sentence ? '<span style="color: var(--danger);">❌ 无</span>' : '<span>-</span>');
+
+                    document.getElementById('word-modal').classList.add('active');
+                }
+            } catch (e) { console.error(e); }
+        }
+
+        function closeWordModal() {
+            document.getElementById('word-modal').classList.remove('active');
+        }
+
+        function previewImage() {
+            const url = document.getElementById('word-image-url').value;
+            const preview = document.getElementById('word-image-preview');
+            if (url) {
+                preview.src = url;
+                preview.style.display = 'block';
+            } else {
+                preview.style.display = 'none';
+            }
+        }
+
+        async function saveWord(e) {
+            e.preventDefault();
+            const id = document.getElementById('word-id').value;
+            const data = {
+                word: document.getElementById('word-word').value,
+                translation: document.getElementById('word-translation').value,
+                phonetic: document.getElementById('word-phonetic').value,
+                category_id: document.getElementById('word-category').value || null,
+                example_sentence: document.getElementById('word-example').value,
+                example_translation: document.getElementById('word-example-trans').value,
+                grammar_explanation: document.getElementById('word-grammar').value,
+                image_hint: document.getElementById('word-image-hint').value,
+                image_url: document.getElementById('word-image-url').value,
+                difficulty_level: 1,
+                word_type: 'noun',
+                display_mode: 'image'
+            };
+
+            try {
+                const url = id ? `${API_BASE}/words/${id}` : `${API_BASE}/words`;
+                const method = id ? 'PUT' : 'POST';
+                const res = await fetch(url, {
+                    method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                const result = await res.json();
+                if (result.success) {
+                    closeWordModal();
+                    loadWords(currentPage);
+                    alert('保存成功！');
+                } else {
+                    alert(result.message || '保存失败');
+                }
+            } catch (e) { alert('保存失败: ' + e.message); }
+        }
+
+        // ========== Modal AI Quick Actions ==========
+
+        /**
+         * AI补全音标、例句、翻译、语法详解
+         */
+        async function aiRegenerateFields() {
+            const word = document.getElementById('word-word').value;
+            const translation = document.getElementById('word-translation').value;
+            if (!word) { alert('请先输入单词'); return; }
+
+            const btn = document.getElementById('btn-ai-regen');
+            btn.disabled = true;
+            btn.textContent = '🤖 AI处理中...';
+
+            try {
+                const res = await fetch(`${API_BASE}/batch/ai-enhance`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ words: [{ word, translation }] })
+                });
+                const result = await res.json();
+
+                if (result.success && result.data && result.data.length > 0) {
+                    const enhanced = result.data[0];
+                    // Fill in the fields (only if currently empty or user wants to overwrite)
+                    if (enhanced.phonetic) document.getElementById('word-phonetic').value = enhanced.phonetic;
+                    if (enhanced.translation) document.getElementById('word-translation').value = enhanced.translation;
+                    if (enhanced.example_sentence) document.getElementById('word-example').value = enhanced.example_sentence;
+                    if (enhanced.example_translation) document.getElementById('word-example-trans').value = enhanced.example_translation;
+                    if (enhanced.grammar_explanation) document.getElementById('word-grammar').value = enhanced.grammar_explanation;
+                    alert('AI补全完成！请检查各字段内容，确认后点击保存。');
+                } else {
+                    alert(result.message || 'AI处理失败');
+                }
+            } catch (e) {
+                alert('AI请求失败: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🤖 AI补全音标/例句';
+            }
+        }
+
+        /**
+         * 在编辑弹窗中生成单词发音
+         */
+        async function generateWordVoice(voice) {
+            const wordId = document.getElementById('word-id').value;
+            const word = document.getElementById('word-word').value;
+            if (!word) { alert('请先输入单词'); return; }
+
+            const btnId = voice === 'male' ? 'btn-ai-voice-m' : 'btn-ai-voice-f';
+            const btn = document.getElementById(btnId);
+            btn.disabled = true;
+            btn.textContent = '🔊 生成中...';
+
+            try {
+                const res = await fetch(`${API_BASE}/batch/generate-audio-single`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ word_id: wordId || undefined, word, voice })
+                });
+                const result = await res.json();
+
+                if (result.success) {
+                    const labelId = voice === 'male' ? 'audio-male-label' : 'audio-female-label';
+                    const audioUrl = result.data.audio_url;
+                    document.getElementById(labelId).innerHTML =
+                        '<span style="color: var(--success); cursor: pointer;" onclick="playAudio(\'' + escHtml(audioUrl) + '\')">✅ 已生成</span>';
+                    alert(`${voice === 'male' ? '男声' : '女声'}生成成功！`);
+                } else {
+                    alert(result.message || '生成失败');
+                }
+            } catch (e) {
+                alert('生成失败: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = voice === 'male' ? '🔊 生成男声' : '🔊 生成女声';
+            }
+        }
+
+        /**
+         * 在编辑弹窗中生成例句发音
+         */
+        async function generateExampleVoiceFromModal(voice) {
+            const wordId = document.getElementById('word-id').value;
+            const example = document.getElementById('word-example').value;
+            if (!example) { alert('请先填写例句'); return; }
+
+            const btnId = voice === 'male' ? 'btn-ai-ex-m' : 'btn-ai-ex-f';
+            const btn = document.getElementById(btnId);
+            btn.disabled = true;
+            btn.textContent = '📝 生成中...';
+
+            try {
+                const res = await fetch(`${API_BASE}/batch/generate-example-audio`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ word_id: wordId || undefined, example_sentence: example, voice })
+                });
+                const result = await res.json();
+
+                if (result.success) {
+                    const labelId = voice === 'male' ? 'audio-ex-male-label' : 'audio-ex-female-label';
+                    const audioUrl = result.data.audio_url;
+                    document.getElementById(labelId).innerHTML =
+                        '<span style="color: var(--success); cursor: pointer;" onclick="playAudio(\'' + escHtml(audioUrl) + '\')">✅ 已生成</span>';
+                    alert(`例句${voice === 'male' ? '男声' : '女声'}生成成功！`);
+                } else {
+                    alert(result.message || '生成失败');
+                }
+            } catch (e) {
+                alert('生成失败: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = voice === 'male' ? '📝 例句男声' : '📝 例句女声';
+            }
+        }
+
+        async function deleteWord(id) {
+            if (!confirm('确定要删除这个单词吗？')) return;
+            try {
+                const res = await fetch(`${API_BASE}/words/${id}`, { method: 'DELETE' });
+                const result = await res.json();
+                if (result.success) {
+                    loadWords(currentPage);
+                } else {
+                    alert(result.message || '删除失败');
+                }
+            } catch (e) { alert('删除失败: ' + e.message); }
+        }
+
+        // Regenerate image for single word
+        async function regenerateImage(id, word, translation) {
+            if (!confirm(`确定要为 "${word}" 重新生成图片吗？`)) return;
+
+            const style = 'realistic';
+            try {
+                const btn = event.target;
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner"></span>';
+
+                const res = await fetch(`${API_BASE}/batch/generate-single`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ word_id: id, word, translation, style })
+                });
+                const result = await res.json();
+
+                if (result.success) {
+                    alert('图片生成成功！');
+                    loadWords(currentPage);
+                } else {
+                    alert(result.message || '生成失败');
+                }
+            } catch (e) {
+                alert('生成失败: ' + e.message);
+            } finally {
+                event.target.disabled = false;
+                event.target.innerHTML = '🎨';
+            }
+        }
+
+        // Play audio
+        function playAudio(audioUrl) {
+            // Handle relative URLs
+            let fullUrl = audioUrl;
+            if (audioUrl.startsWith('/')) {
+                fullUrl = window.location.origin + audioUrl;
+            }
+            const audio = new Audio(fullUrl);
+            audio.play().catch(e => alert('播放失败: ' + e.message));
+        }
+
+        // Generate audio for single word
+        async function generateAudio(id, word, voice = 'female') {
+            const btn = event.target;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span>';
+
+            try {
+                const res = await fetch(`${API_BASE}/batch/generate-audio-single`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ word_id: id, word, voice })
+                });
+                const result = await res.json();
+
+                if (result.success) {
+                    alert('音频生成成功！');
+                    loadWords(currentPage);
+                } else {
+                    alert(result.message || '生成失败');
+                }
+            } catch (e) {
+                alert('生成失败: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = voice === 'male' ? '♂+' : '♀+';
+            }
+        }
+
+        // Generate audio for example sentence
+        async function generateExampleAudio(id, exampleSentence, voice = 'female') {
+            const btn = event.target;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span>';
+
+            try {
+                const res = await fetch(`${API_BASE}/batch/generate-example-audio`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ word_id: id, example_sentence: exampleSentence, voice })
+                });
+                const result = await res.json();
+
+                if (result.success) {
+                    alert('例句音频生成成功！');
+                    loadWords(currentPage);
+                } else {
+                    alert(result.message || '生成失败');
+                }
+            } catch (e) {
+                alert('生成失败: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = voice === 'male' ? '♂+' : '♀+';
+            }
+        }
+
+        async function regenerateWordImage() {
+            const word = document.getElementById('word-word').value;
+            const translation = document.getElementById('word-translation').value;
+            const image_hint = document.getElementById('word-image-hint').value;
+            const word_id = document.getElementById('word-id').value;
+            if (!word) { alert('请先输入单词'); return; }
+
+            const btn = event.target;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> 生成中...';
+
+            try {
+                const res = await fetch(`${API_BASE}/batch/generate-single`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ word, translation, image_hint, word_id: word_id || undefined })
+                });
+                const result = await res.json();
+
+                if (result.success && result.data.image_url) {
+                    document.getElementById('word-image-url').value = result.data.image_url;
+                    document.getElementById('word-image-preview').src = result.data.image_url;
+                    document.getElementById('word-image-preview').style.display = 'block';
+                } else {
+                    alert(result.message || '生成失败');
+                }
+            } catch (e) {
+                alert('生成失败: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '🎨 生成';
+            }
+        }
+
+        // ========== Batch Import ==========
+        let enhancedWordsData = []; // Store enhanced words for import
+
+        function loadCategoriesForImport() {
+            populateCategorySelects();
+        }
+
+        // AI增强单词数据
+        async function aiEnhanceWords() {
+            const text = document.getElementById('import-text').value.trim();
+            if (!text) {
+                alert('请输入单词列表');
+                return;
+            }
+
+            const resultDiv = document.getElementById('import-result');
+            resultDiv.innerHTML = '<span class="spinner"></span> AI正在处理中，请稍候...';
+
+            try {
+                const res = await fetch(`${API_BASE}/batch/ai-enhance`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text })
+                });
+                const result = await res.json();
+
+                if (result.success && result.data) {
+                    enhancedWordsData = result.data;
+                    renderEnhancedPreview(result.data);
+                    document.getElementById('import-preview-card').style.display = 'block';
+
+                    // 显示使用的提示词
+                    let promptHtml = '';
+                    if (result.promptUsed) {
+                        promptHtml = `
+                            <details style="margin-top: 12px; background: #f8f9fa; padding: 12px; border-radius: 6px;">
+                                <summary style="cursor: pointer; font-weight: 500;">📝 查看使用的AI提示词</summary>
+                                <pre style="margin-top: 10px; padding: 10px; background: #fff; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; white-space: pre-wrap; overflow-x: auto;">${result.promptUsed.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
+                            </details>
+                        `;
+                    }
+                    resultDiv.innerHTML = `<div class="alert alert-success">✅ ${result.message}</div>${promptHtml}`;
+                } else {
+                    resultDiv.innerHTML = `<div class="alert alert-danger">❌ ${result.message || 'AI处理失败'}</div>`;
+                }
+            } catch (e) {
+                resultDiv.innerHTML = `<div class="alert alert-danger">❌ 请求失败: ${e.message}</div>`;
+            }
+        }
+
+        // 渲染预览表格
+        function renderEnhancedPreview(words) {
+            const tbody = document.querySelector('#import-preview-table tbody');
+            tbody.innerHTML = words.map((w, i) => `
+                <tr${w.error ? ' style="background: #fff3cd;"' : ''}>
+                    <td><strong>${w.word}</strong></td>
+                    <td>${w.phonetic || '-'}</td>
+                    <td>${w.translation || '-'}</td>
+                    <td style="max-width: 200px;">${w.example_sentence || '-'}</td>
+                    <td style="max-width: 150px;">${w.example_translation || '-'}</td>
+                    <td style="max-width: 200px; font-size: 12px;">${w.grammar_explanation || '-'}</td>
+                </tr>
+            `).join('');
+        }
+
+        // 导入增强后的单词
+        async function batchImportEnhanced() {
+            if (enhancedWordsData.length === 0) {
+                alert('没有可导入的数据，请先使用AI补全');
+                return;
+            }
+
+            const categoryId = document.getElementById('import-category').value;
+            const autoImage = document.getElementById('import-auto-image').checked;
+
+            // 添加category_id
+            const words = enhancedWordsData.map(w => ({
+                ...w,
+                category_id: categoryId ? parseInt(categoryId) : null
+            }));
+
+            const resultDiv = document.getElementById('import-result');
+            resultDiv.innerHTML = '<span class="spinner"></span> 正在导入...';
+
+            try {
+                const res = await fetch(`${API_BASE}/batch/words`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ words, auto_generate_image: autoImage })
+                });
+                const result = await res.json();
+
+                if (result.success) {
+                    resultDiv.innerHTML = `
+                        <div class="alert alert-success">
+                            ✅ 导入完成！成功: ${result.data.success.length}, 失败: ${result.data.failed.length}
+                        </div>
+                    `;
+                    // 清空数据
+                    enhancedWordsData = [];
+                    document.getElementById('import-text').value = '';
+                    document.getElementById('import-preview-card').style.display = 'none';
+                } else {
+                    resultDiv.innerHTML = `<div class="alert alert-danger">❌ ${result.message}</div>`;
+                }
+            } catch (e) {
+                resultDiv.innerHTML = `<div class="alert alert-danger">❌ 导入失败: ${e.message}</div>`;
+            }
+        }
+
+        // ========== Batch Generate ==========
+        function loadCategoriesForGenerate() {
+            populateCategorySelects();
+        }
+
+        async function loadWordsForGenerate() {
+            const category = document.getElementById('generate-category').value;
+            let url = `${API_BASE}/words?limit=1000`;
+            if (category) url += `&category_id=${category}`;
+
+            try {
+                const res = await fetch(url);
+                const data = await res.json();
+                if (data.success) {
+                    const allWords = data.data.list;
+                    const wordsWithImage = allWords.filter(w => w.image_url);
+                    const wordsWithoutImage = allWords.filter(w => !w.image_url);
+
+                    // Update stats
+                    const total = allWords.length;
+                    const withImg = wordsWithImage.length;
+                    const withoutImg = wordsWithoutImage.length;
+                    const percent = total > 0 ? Math.round(withImg / total * 100) : 0;
+
+                    document.getElementById('gen-stat-total').textContent = total;
+                    document.getElementById('gen-stat-with').textContent = withImg;
+                    document.getElementById('gen-stat-without').textContent = withoutImg;
+                    document.getElementById('gen-stat-percent').textContent = percent + '%';
+
+                    // Render words without images
+                    renderWordsForGenerate(wordsWithoutImage);
+                }
+            } catch (e) { console.error(e); }
+        }
+
+        function renderWordsForGenerate(words) {
+            generateQueue = words;
+            const grid = document.getElementById('generate-words-grid');
+            grid.innerHTML = words.map(w => `
+                <div class="word-card" id="word-card-${w.id}">
+                    <div class="word-card-img" id="word-img-${w.id}" style="display: flex; align-items: center; justify-content: center; color: var(--text-secondary);">
+                        📷 待生成
+                    </div>
+                    <div class="word-card-word">${w.word}</div>
+                    <div class="word-card-trans">${w.translation}</div>
+                    <div class="word-card-status status-pending" id="word-status-${w.id}">⏳ 等待中</div>
+                </div>
+            `).join('');
+
+            if (words.length === 0) {
+                grid.innerHTML = '<div style="text-align: center; padding: 40px; color: var(--text-secondary);">所有单词都已有图片 ✅</div>';
+            }
+        }
+
+        async function startBatchGenerate() {
+            if (generateQueue.length === 0) {
+                alert('没有需要生成图片的单词');
+                return;
+            }
+
+            isGenerating = true;
+            document.getElementById('btn-start-generate').classList.add('hidden');
+            document.getElementById('btn-stop-generate').classList.remove('hidden');
+            document.getElementById('generate-progress').classList.remove('hidden');
+
+            const promptKey = document.getElementById('generate-prompt-key').value;
+            let completed = 0;
+            const total = generateQueue.length;
+
+            for (const word of generateQueue) {
+                if (!isGenerating) break;
+
+                updateProgress(completed, total, `生成: ${word.word}`);
+                updateWordStatus(word.id, 'generating', '🔄 生成中...');
+
+                try {
+                    const res = await fetch(`${API_BASE}/batch/generate-single`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            word_id: word.id,
+                            word: word.word,
+                            translation: word.translation,
+                            promptKey
+                        })
+                    });
+                    const result = await res.json();
+
+                    if (result.success && result.data.image_url) {
+                        updateWordImage(word.id, result.data.image_url);
+                        updateWordStatus(word.id, 'done', '✅ 完成');
+                    } else {
+                        updateWordStatus(word.id, 'error', '❌ 失败');
+                    }
+                } catch (e) {
+                    updateWordStatus(word.id, 'error', `❌ ${e.message}`);
+                }
+
+                completed++;
+                updateProgress(completed, total, '');
+            }
+
+            isGenerating = false;
+            document.getElementById('btn-start-generate').classList.remove('hidden');
+            document.getElementById('btn-stop-generate').classList.add('hidden');
+            updateProgress(completed, total, '完成');
+        }
+
+        function stopBatchGenerate() {
+            isGenerating = false;
+            document.getElementById('btn-start-generate').classList.remove('hidden');
+            document.getElementById('btn-stop-generate').classList.add('hidden');
+        }
+
+        function updateProgress(completed, total, text) {
+            const percent = total > 0 ? (completed / total * 100) : 0;
+            document.getElementById('progress-bar').style.width = `${percent}%`;
+            document.getElementById('progress-count').textContent = `${completed}/${total}`;
+            if (text) document.getElementById('progress-text').textContent = text;
+        }
+
+        function updateWordStatus(id, status, text) {
+            const el = document.getElementById(`word-status-${id}`);
+            if (el) {
+                el.className = `word-card-status status-${status}`;
+                el.textContent = text;
+            }
+        }
+
+        function updateWordImage(id, url) {
+            const el = document.getElementById(`word-img-${id}`);
+            if (el) {
+                el.innerHTML = `<img src="${url}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 8px;">`;
+            }
+        }
+
+        // ========== Stats ==========
+        async function loadStats() {
+            try {
+                const res = await fetch(`${API_BASE}/stats/overview`);
+                const data = await res.json();
+                if (data.success) {
+                    document.getElementById('stat-words').textContent = data.data.words || 0;
+                    document.getElementById('stat-categories').textContent = data.data.categories || categories.length;
+                }
+
+                // Count words with/without images
+                const wordsRes = await fetch(`${API_BASE}/words?limit=1000`);
+                const wordsData = await wordsRes.json();
+                if (wordsData.success) {
+                    const words = wordsData.data.list;
+                    const withImage = words.filter(w => w.image_url).length;
+                    document.getElementById('stat-with-image').textContent = withImage;
+                    document.getElementById('stat-without-image').textContent = words.length - withImage;
+                }
+            } catch (e) { console.error(e); }
+        }
+
+        // ========== Prompts Management ==========
+        let prompts = [];
+
+        async function loadPrompts() {
+            try {
+                const res = await fetch(`${API_BASE}/prompts`);
+                const data = await res.json();
+                if (data.success) {
+                    prompts = data.data;
+                    renderPrompts();
+                }
+            } catch (e) { console.error(e); }
+        }
+
+        function renderPrompts() {
+            const tbody = document.querySelector('#prompts-table tbody');
+            tbody.innerHTML = prompts.map(p => `
+                <tr>
+                    <td><code>${p.prompt_key}</code></td>
+                    <td><strong>${p.prompt_name}</strong></td>
+                    <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${p.description || '-'}</td>
+                    <td>${p.is_active ? '<span style="color: var(--success);">✅ 启用</span>' : '<span style="color: var(--text-secondary);">❌ 禁用</span>'}</td>
+                    <td>${p.updated_at ? new Date(p.updated_at).toLocaleDateString() : '-'}</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline" onclick="editPrompt(${p.id})">编辑</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function editPrompt(id) {
+            const p = prompts.find(pr => pr.id === id);
+            if (!p) return;
+            document.getElementById('prompt-modal-title').textContent = '编辑提示词 - ' + p.prompt_name;
+            document.getElementById('prompt-id').value = p.id;
+            document.getElementById('prompt-key').value = p.prompt_key;
+            document.getElementById('prompt-name').value = p.prompt_name;
+            document.getElementById('prompt-description').value = p.description || '';
+            document.getElementById('prompt-template').value = p.prompt_template;
+            document.getElementById('prompt-active').checked = p.is_active;
+            document.getElementById('prompt-modal').classList.add('active');
+        }
+
+        function closePromptModal() {
+            document.getElementById('prompt-modal').classList.remove('active');
+        }
+
+        async function savePrompt(e) {
+            e.preventDefault();
+            const id = document.getElementById('prompt-id').value;
+            const data = {
+                prompt_name: document.getElementById('prompt-name').value,
+                prompt_template: document.getElementById('prompt-template').value,
+                description: document.getElementById('prompt-description').value,
+                is_active: document.getElementById('prompt-active').checked
+            };
+
+            try {
+                const res = await fetch(`${API_BASE}/prompts/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                const result = await res.json();
+                if (result.success) {
+                    closePromptModal();
+                    loadPrompts();
+                    alert('保存成功！');
+                } else {
+                    alert(result.message || '保存失败');
+                }
+            } catch (e) { alert('保存失败: ' + e.message); }
+        }
+
+        // Update page switching to handle prompts page
+        const originalShowPage = document.querySelectorAll('.menu-item').forEach(item => {
+            item.addEventListener('click', function () {
+                if (this.dataset.page === 'prompts') {
+                    loadPrompts();
+                }
+            });
+        });
+
+        // ==================== 磨耳朵管理 ====================
+        let podcastCategories = [];
+        let podcastContents = [];
+
+        async function loadPodcastCategories() {
+            try {
+                const res = await fetch(`${API_BASE}/podcast/categories`);
+                const data = await res.json();
+                if (data.success) {
+                    podcastCategories = data.data;
+                    renderPodcastCategories();
+                    populatePodcastCategorySelects();
+                }
+            } catch (e) { console.error('加载播客分类失败:', e); }
+        }
+
+        async function loadPodcastContents() {
+            try {
+                const categoryId = document.getElementById('podcast-filter-cat').value;
+                const url = categoryId ? `${API_BASE}/podcast?category_id=${categoryId}` : `${API_BASE}/podcast`;
+                const res = await fetch(url);
+                const data = await res.json();
+                if (data.success) {
+                    podcastContents = data.data.list;
+                    renderPodcastContents();
+                }
+            } catch (e) { console.error('加载播客内容失败:', e); }
+        }
+
+        function renderPodcastCategories() {
+            const tbody = document.querySelector('#podcast-categories-table tbody');
+            tbody.innerHTML = podcastCategories.map(c => `
+                <tr>
+                    <td>${c.id}</td>
+                    <td>${c.icon || '-'}</td>
+                    <td><strong>${c.name}</strong></td>
+                    <td>${c.name_en || '-'}</td>
+                    <td>${c.sort_order}</td>
+                    <td>${c.is_active ? '<span style="color:green">启用</span>' : '<span style="color:gray">禁用</span>'}</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline" onclick="editPodcastCategory(${c.id})">编辑</button>
+                        <button class="btn btn-sm btn-danger" onclick="deletePodcastCategory(${c.id})">删除</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function renderPodcastContents() {
+            const tbody = document.querySelector('#podcast-contents-table tbody');
+            tbody.innerHTML = podcastContents.map(c => {
+                const hasM = c.male_audio_url ? '✅' : '❌';
+                const hasF = c.female_audio_url ? '✅' : '❌';
+                const hasC = c.chinese_audio_url ? '✅' : '❌';
+                return `
+                <tr>
+                    <td>${c.id}</td>
+                    <td><strong>${c.title}</strong></td>
+                    <td>${c.category_name || '-'}</td>
+                    <td>${'⭐'.repeat(c.difficulty_level || 1)}</td>
+                    <td>男${hasM} 女${hasF} 中${hasC}</td>
+                    <td>
+                        <button class="btn btn-sm btn-success" onclick="generatePodcastAudio(${c.id})">🔊 生成</button>
+                        <button class="btn btn-sm btn-outline" onclick="editPodcastContent(${c.id})">编辑</button>
+                        <button class="btn btn-sm btn-danger" onclick="deletePodcastContent(${c.id})">删除</button>
+                    </td>
+                </tr>
+            `}).join('');
+        }
+
+        function populatePodcastCategorySelects() {
+            const options = podcastCategories.map(c => `<option value="${c.id}">${c.icon || ''} ${c.name}</option>`).join('');
+            document.getElementById('podcast-filter-cat').innerHTML = '<option value="">全部分类</option>' + options;
+            document.getElementById('pcontent-category').innerHTML = '<option value="">选择分类</option>' + options;
+        }
+
+        function openPodcastCatModal(id = null) {
+            document.getElementById('pcat-id').value = '';
+            document.getElementById('pcat-name').value = '';
+            document.getElementById('pcat-name-en').value = '';
+            document.getElementById('pcat-icon').value = '';
+            document.getElementById('pcat-sort').value = '0';
+            document.getElementById('podcast-cat-modal-title').textContent = id ? '编辑分类' : '新增分类';
+            document.getElementById('podcast-cat-modal').classList.remove('hidden');
+        }
+
+        function closePodcastCatModal() {
+            document.getElementById('podcast-cat-modal').classList.add('hidden');
+        }
+
+        function editPodcastCategory(id) {
+            const cat = podcastCategories.find(c => c.id === id);
+            if (cat) {
+                document.getElementById('pcat-id').value = cat.id;
+                document.getElementById('pcat-name').value = cat.name;
+                document.getElementById('pcat-name-en').value = cat.name_en || '';
+                document.getElementById('pcat-icon').value = cat.icon || '';
+                document.getElementById('pcat-sort').value = cat.sort_order;
+                document.getElementById('podcast-cat-modal-title').textContent = '编辑分类';
+                document.getElementById('podcast-cat-modal').classList.remove('hidden');
+            }
+        }
+
+        async function deletePodcastCategory(id) {
+            if (!confirm('确定删除此分类？')) return;
+            try {
+                await fetch(`${API_BASE}/podcast/categories/${id}`, { method: 'DELETE' });
+                loadPodcastCategories();
+            } catch (e) { alert('删除失败'); }
+        }
+
+        document.getElementById('podcast-cat-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const id = document.getElementById('pcat-id').value;
+            const data = {
+                name: document.getElementById('pcat-name').value,
+                name_en: document.getElementById('pcat-name-en').value,
+                icon: document.getElementById('pcat-icon').value,
+                sort_order: parseInt(document.getElementById('pcat-sort').value) || 0
+            };
+            try {
+                const url = id ? `${API_BASE}/podcast/categories/${id}` : `${API_BASE}/podcast/categories`;
+                await fetch(url, {
+                    method: id ? 'PUT' : 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                closePodcastCatModal();
+                loadPodcastCategories();
+            } catch (e) { alert('保存失败'); }
+        });
+
+        function openPodcastContentModal() {
+            document.getElementById('pcontent-id').value = '';
+            document.getElementById('pcontent-title').value = '';
+            document.getElementById('pcontent-text').value = '';
+            document.getElementById('pcontent-translation').value = '';
+            document.getElementById('pcontent-category').value = '';
+            document.getElementById('pcontent-difficulty').value = '1';
+            document.getElementById('pcontent-sort').value = '0';
+            document.getElementById('pcontent-free').checked = true;
+            document.getElementById('podcast-content-modal-title').textContent = '新增内容';
+            document.getElementById('podcast-content-modal').classList.remove('hidden');
+        }
+
+        function closePodcastContentModal() {
+            document.getElementById('podcast-content-modal').classList.add('hidden');
+        }
+
+        async function editPodcastContent(id) {
+            try {
+                const res = await fetch(`${API_BASE}/podcast/${id}`);
+                const data = await res.json();
+                if (data.success) {
+                    const c = data.data;
+                    document.getElementById('pcontent-id').value = c.id;
+                    document.getElementById('pcontent-title').value = c.title;
+                    document.getElementById('pcontent-text').value = c.content_text || '';
+                    document.getElementById('pcontent-translation').value = c.translation || '';
+                    document.getElementById('pcontent-category').value = c.category_id || '';
+                    document.getElementById('pcontent-difficulty').value = c.difficulty_level || 1;
+                    document.getElementById('pcontent-sort').value = c.sort_order || 0;
+                    document.getElementById('pcontent-free').checked = c.is_free;
+                    document.getElementById('podcast-content-modal-title').textContent = '编辑内容';
+                    document.getElementById('podcast-content-modal').classList.remove('hidden');
+                }
+            } catch (e) { alert('获取详情失败'); }
+        }
+
+        async function deletePodcastContent(id) {
+            if (!confirm('确定删除此内容？')) return;
+            try {
+                await fetch(`${API_BASE}/podcast/${id}`, { method: 'DELETE' });
+                loadPodcastContents();
+            } catch (e) { alert('删除失败'); }
+        }
+
+        document.getElementById('podcast-content-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const id = document.getElementById('pcontent-id').value;
+            const data = {
+                title: document.getElementById('pcontent-title').value,
+                content_text: document.getElementById('pcontent-text').value,
+                translation: document.getElementById('pcontent-translation').value,
+                category_id: document.getElementById('pcontent-category').value || null,
+                difficulty_level: parseInt(document.getElementById('pcontent-difficulty').value) || 1,
+                sort_order: parseInt(document.getElementById('pcontent-sort').value) || 0,
+                is_free: document.getElementById('pcontent-free').checked
+            };
+            try {
+                const url = id ? `${API_BASE}/podcast/${id}` : `${API_BASE}/podcast`;
+                await fetch(url, {
+                    method: id ? 'PUT' : 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                closePodcastContentModal();
+                loadPodcastContents();
+            } catch (e) { alert('保存失败'); }
+        });
+
+        async function generatePodcastAudio(id) {
+            if (!confirm('将生成男声、女声和中文三个音频，是否继续？')) return;
+            try {
+                const btn = event.target;
+                btn.disabled = true;
+                btn.textContent = '生成中...';
+
+                const res = await fetch(`${API_BASE}/podcast/generate-all-audio`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content_id: id })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    alert('音频生成完成！');
+                    loadPodcastContents();
+                } else {
+                    alert('生成失败: ' + (data.message || '未知错误'));
+                }
+            } catch (e) {
+                alert('生成失败: ' + e.message);
+            } finally {
+                event.target.disabled = false;
+                event.target.textContent = '🔊 生成';
+            }
+        }
+    </script>
+</body>
+
+</html>

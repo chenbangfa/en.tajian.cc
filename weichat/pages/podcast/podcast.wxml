@@ -1,0 +1,113 @@
+<!--pages/podcast/podcast.wxml-->
+<view class="container">
+  <!-- 顶部标题区 -->
+  <view class="page-header">
+    <view class="header-left">
+      <text class="page-title">磨耳朵</text>
+      <text class="page-subtitle">听听这些有趣的内容</text>
+    </view>
+    <!-- 筛选按钮 -->
+    <view class="filter-btn" bindtap="openDrawer">
+      <image class="filter-icon" src="/assets/icons/icon-filter.svg"></image>
+      <text class="filter-label">{{currentCategoryName}}</text>
+      <image class="filter-arrow" src="/assets/icons/icon-chevron-down.svg"></image>
+    </view>
+  </view>
+
+  <!-- 分类抽屉 (复用 Scene 样式) -->
+  <view class="drawer-mask {{showDrawer ? 'show' : ''}}" bindtap="closeDrawer"></view>
+  <view class="drawer-panel {{showDrawer ? 'show' : ''}}">
+    <view class="drawer-header">
+      <text class="drawer-title">选择分类</text>
+      <view class="drawer-close" bindtap="closeDrawer">
+        <image class="close-icon" src="/assets/icons/icon-close.svg"></image>
+      </view>
+    </view>
+    <view class="drawer-body">
+      <!-- 左侧一级分类 -->
+      <scroll-view class="parent-list" scroll-y>
+        <view 
+          class="parent-item {{selectedParent === 0 ? 'active' : ''}}"
+          bindtap="selectParent"
+          data-id="0">
+          全部
+        </view>
+        <view 
+          class="parent-item {{selectedParent === item.id ? 'active' : ''}}"
+          wx:for="{{parentCategories}}"
+          wx:key="id"
+          bindtap="selectParent"
+          data-id="{{item.id}}"
+          data-name="{{item.name}}">
+          {{item.name}}
+        </view>
+      </scroll-view>
+      <!-- 右侧二级分类 -->
+      <scroll-view class="child-list" scroll-y>
+        <view 
+          class="child-item {{currentCategory === selectedParent && !currentSubCategory ? 'active' : ''}}"
+          bindtap="selectChild"
+          data-id="0"
+          wx:if="{{selectedParent > 0}}">
+          全部{{selectedParentName}}
+        </view>
+        <view 
+          class="child-item {{currentSubCategory === item.id ? 'active' : ''}}"
+          wx:for="{{childCategories}}"
+          wx:key="id"
+          bindtap="selectChild"
+          data-id="{{item.id}}"
+          data-name="{{item.name}}">
+          {{item.name}}
+        </view>
+        <view class="child-empty" wx:if="{{selectedParent === 0}}">
+          <text>请先选择左侧分类</text>
+        </view>
+        <view class="child-empty" wx:if="{{selectedParent > 0 && childCategories.length === 0}}">
+          <text>该分类暂无子分类</text>
+        </view>
+      </scroll-view>
+    </view>
+  </view>
+
+  <!-- 内容列表 -->
+  <view class="content-list">
+    <view 
+      class="content-card" 
+      wx:for="{{contents}}" 
+      wx:key="id" 
+      bindtap="goToPlayer" 
+      data-id="{{item.id}}">
+      
+      <!-- 左侧图标容器 (根据一级分类显示不同颜色/图标) -->
+      <view class="icon-box {{item.category_id % 4 === 0 ? 'blue' : item.category_id % 4 === 1 ? 'orange' : item.category_id % 4 === 2 ? 'green' : 'purple'}}">
+        <image class="content-icon-img" src="{{item.category_name_en === 'stories' ? '/assets/icons/icon-book.svg' : item.category_name_en === 'songs' ? '/assets/icons/icon-music.svg' : '/assets/icons/icon-chat.svg'}}" mode="aspectFit"></image>
+      </view>
+      
+      <!-- 中间信息 -->
+      <view class="content-info">
+        <text class="content-title">{{item.title}}</text>
+        <view class="meta-row">
+          <text class="difficulty-tag">难度 {{item.difficulty_level || 1}}</text>
+          <text class="vip-tag" wx:if="{{!item.is_free}}">VIP</text>
+          <!-- <text class="duration-text">3:24</text> -->
+        </view>
+      </view>
+      
+      <!-- 右侧播放按钮 -->
+      <view class="play-btn-small">
+        <image class="play-small-icon" src="/assets/icons/icon-play.svg" mode="aspectFit"></image>
+      </view>
+    </view>
+  </view>
+
+  <!-- 空状态 -->
+  <view class="empty-state" wx:if="{{!loading && contents.length === 0}}">
+    <image class="empty-img" src="/assets/images/empty_box.png" mode="widthFix"></image>
+    <text>暂无内容</text>
+  </view>
+  
+  <view class="loading-state" wx:if="{{loading}}">
+    <text>加载中...</text>
+  </view>
+</view>

@@ -1,0 +1,352 @@
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <section class="bg-white rounded-xl shadow-sm border border-gray-100">
+        <div class="p-6 border-b border-gray-100 bg-gray-50 rounded-t-xl flex items-center justify-between">
+            <h2 class="text-lg font-bold text-gray-800">打卡课程</h2>
+            <button onclick="openCourseModal()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm">
+                <i class="fas fa-plus mr-2"></i>新增课程
+            </button>
+        </div>
+        <div class="p-4">
+            <div id="course-list" class="space-y-2"></div>
+        </div>
+    </section>
+
+    <section class="bg-white rounded-xl shadow-sm border border-gray-100">
+        <div class="p-6 border-b border-gray-100 bg-gray-50 rounded-t-xl flex items-center justify-between">
+            <div>
+                <h2 class="text-lg font-bold text-gray-800">课程内容</h2>
+                <p id="course-items-title" class="text-sm text-gray-500 mt-1">请先在左侧选择课程</p>
+            </div>
+            <button id="add-item-btn" onclick="openItemModal()" disabled class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm disabled:opacity-40 disabled:cursor-not-allowed">
+                <i class="fas fa-plus mr-2"></i>新增内容
+            </button>
+        </div>
+        <div class="p-4">
+            <table class="w-full text-left text-sm">
+                <thead>
+                    <tr class="text-gray-500 border-b">
+                        <th class="py-2">排序</th>
+                        <th class="py-2">类型</th>
+                        <th class="py-2">目标</th>
+                        <th class="py-2">难度</th>
+                        <th class="py-2 text-right">操作</th>
+                    </tr>
+                </thead>
+                <tbody id="item-table-body"></tbody>
+            </table>
+        </div>
+    </section>
+</div>
+
+<div id="course-modal" class="fixed inset-0 bg-black/50 hidden z-50 items-center justify-center">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6">
+        <h3 id="course-modal-title" class="text-lg font-bold mb-4">新增课程</h3>
+        <form id="course-form" class="space-y-3">
+            <input type="hidden" id="course-id">
+            <div>
+                <label class="block text-sm text-gray-700 mb-1">课程名称</label>
+                <input id="course-name" required class="w-full px-3 py-2 border border-gray-200 rounded-lg" />
+            </div>
+            <div>
+                <label class="block text-sm text-gray-700 mb-1">描述</label>
+                <textarea id="course-description" rows="2" class="w-full px-3 py-2 border border-gray-200 rounded-lg"></textarea>
+            </div>
+            <div class="grid grid-cols-3 gap-3">
+                <div>
+                    <label class="block text-sm text-gray-700 mb-1">等级</label>
+                    <input id="course-level" type="number" min="0" max="9" value="1" class="w-full px-3 py-2 border border-gray-200 rounded-lg" />
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-700 mb-1">排序</label>
+                    <input id="course-sort" type="number" value="0" class="w-full px-3 py-2 border border-gray-200 rounded-lg" />
+                </div>
+                <div class="flex items-end pb-2">
+                    <label class="inline-flex items-center text-sm text-gray-700">
+                        <input id="course-active" type="checkbox" checked class="mr-2" />启用
+                    </label>
+                </div>
+            </div>
+            <div class="flex justify-end gap-2 pt-4">
+                <button type="button" onclick="closeCourseModal()" class="px-4 py-2 border rounded-lg">取消</button>
+                <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg">保存</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div id="item-modal" class="fixed inset-0 bg-black/50 hidden z-50 items-center justify-center">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl p-6">
+        <h3 id="item-modal-title" class="text-lg font-bold mb-4">新增课程内容</h3>
+        <form id="item-form" class="space-y-3">
+            <input type="hidden" id="item-id">
+            <div class="grid grid-cols-3 gap-3">
+                <div>
+                    <label class="block text-sm text-gray-700 mb-1">类型</label>
+                    <select id="item-type" class="w-full px-3 py-2 border border-gray-200 rounded-lg" onchange="searchSources()">
+                        <option value="word">单词</option>
+                        <option value="scene">场景</option>
+                        <option value="podcast">播客</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-700 mb-1">搜索关键词</label>
+                    <input id="source-keyword" class="w-full px-3 py-2 border border-gray-200 rounded-lg" />
+                </div>
+                <div class="flex items-end">
+                    <button type="button" onclick="searchSources()" class="w-full px-3 py-2 bg-gray-100 border rounded-lg">查询素材</button>
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm text-gray-700 mb-1">选择素材</label>
+                <select id="item-target" required class="w-full px-3 py-2 border border-gray-200 rounded-lg">
+                    <option value="">请先查询素材</option>
+                </select>
+            </div>
+
+            <div class="grid grid-cols-3 gap-3">
+                <div>
+                    <label class="block text-sm text-gray-700 mb-1">排序</label>
+                    <input id="item-sort" type="number" value="0" class="w-full px-3 py-2 border border-gray-200 rounded-lg" />
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-700 mb-1">备注</label>
+                    <input id="item-note" class="w-full px-3 py-2 border border-gray-200 rounded-lg" />
+                </div>
+                <div class="flex items-end pb-2">
+                    <label class="inline-flex items-center text-sm text-gray-700">
+                        <input id="item-active" type="checkbox" checked class="mr-2" />启用
+                    </label>
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-2 pt-4">
+                <button type="button" onclick="closeItemModal()" class="px-4 py-2 border rounded-lg">取消</button>
+                <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded-lg">保存</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    let courses = [];
+    let selectedCourseId = null;
+    let courseItems = [];
+
+    function openCourseModal(course) {
+        document.getElementById('course-modal').classList.remove('hidden');
+        document.getElementById('course-modal').classList.add('flex');
+        document.getElementById('course-form').reset();
+        document.getElementById('course-id').value = course ? course.id : '';
+        document.getElementById('course-modal-title').textContent = course ? '编辑课程' : '新增课程';
+        if (course) {
+            document.getElementById('course-name').value = course.name || '';
+            document.getElementById('course-description').value = course.description || '';
+            document.getElementById('course-level').value = course.level || 1;
+            document.getElementById('course-sort').value = course.sort_order || 0;
+            document.getElementById('course-active').checked = !!course.is_active;
+        }
+    }
+
+    function closeCourseModal() {
+        document.getElementById('course-modal').classList.add('hidden');
+        document.getElementById('course-modal').classList.remove('flex');
+    }
+
+    function openItemModal(item) {
+        if (!selectedCourseId) return;
+        document.getElementById('item-modal').classList.remove('hidden');
+        document.getElementById('item-modal').classList.add('flex');
+        document.getElementById('item-form').reset();
+        document.getElementById('item-id').value = item ? item.id : '';
+        document.getElementById('item-modal-title').textContent = item ? '编辑课程内容' : '新增课程内容';
+        if (item) {
+            document.getElementById('item-type').value = item.task_type;
+            document.getElementById('item-sort').value = item.sort_order || 0;
+            document.getElementById('item-note').value = item.note || '';
+            document.getElementById('item-active').checked = !!item.is_active;
+            searchSources(item.target_id);
+        } else {
+            document.getElementById('item-target').innerHTML = '<option value="">请先查询素材</option>';
+        }
+    }
+
+    function closeItemModal() {
+        document.getElementById('item-modal').classList.add('hidden');
+        document.getElementById('item-modal').classList.remove('flex');
+    }
+
+    async function loadCourses() {
+        const res = await fetch(`${API_BASE}/checkin-curriculum/courses`);
+        const data = await res.json();
+        if (!data.success) return showToast(data.message || '加载课程失败', 'error');
+
+        courses = data.data || [];
+        const wrap = document.getElementById('course-list');
+        if (!courses.length) {
+            wrap.innerHTML = '<div class="text-sm text-gray-500 py-10 text-center">暂无课程，点击右上角新增</div>';
+            return;
+        }
+
+        wrap.innerHTML = courses.map(c => {
+            const activeClass = String(selectedCourseId) === String(c.id) ? 'border-blue-500 bg-blue-50' : 'border-gray-200';
+            return `
+            <div class="border ${activeClass} rounded-lg p-3 cursor-pointer" onclick="selectCourse(${c.id})">
+                <div class="flex items-start justify-between">
+                    <div>
+                        <div class="font-semibold text-gray-800">${c.name}</div>
+                        <div class="text-xs text-gray-500 mt-1">L${c.level} · 内容 ${c.item_count || 0} 条</div>
+                        <div class="text-xs text-gray-400 mt-1">${c.description || ''}</div>
+                    </div>
+                    <div class="space-x-2 text-sm" onclick="event.stopPropagation()">
+                        <button class="text-blue-600" onclick="openCourseModalById(${c.id})">编辑</button>
+                        <button class="text-red-600" onclick="deleteCourse(${c.id})">删除</button>
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+
+        if (!selectedCourseId && courses[0]) {
+            selectCourse(courses[0].id);
+        }
+    }
+
+    async function selectCourse(courseId) {
+        selectedCourseId = courseId;
+        const course = courses.find(c => String(c.id) === String(courseId));
+        document.getElementById('course-items-title').textContent = course ? `${course.name}（L${course.level}）` : '课程内容';
+        document.getElementById('add-item-btn').disabled = !course;
+        await loadCourses();
+        await loadCourseItems();
+    }
+
+    function openCourseModalById(id) {
+        const course = courses.find(c => String(c.id) === String(id));
+        if (!course) return;
+        openCourseModal(course);
+    }
+
+    async function loadCourseItems() {
+        if (!selectedCourseId) return;
+        const res = await fetch(`${API_BASE}/checkin-curriculum/courses/${selectedCourseId}/items`);
+        const data = await res.json();
+        if (!data.success) return showToast(data.message || '加载课程内容失败', 'error');
+
+        courseItems = data.data || [];
+        const tbody = document.getElementById('item-table-body');
+        if (!courseItems.length) {
+            tbody.innerHTML = '<tr><td colspan="5" class="py-8 text-center text-gray-400">暂无内容</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = courseItems.map(item => `
+            <tr class="border-b">
+                <td class="py-2">${item.sort_order || 0}</td>
+                <td class="py-2">${item.task_type}</td>
+                <td class="py-2">
+                    <div class="font-medium text-gray-800">${item.target_title || `#${item.target_id}`}</div>
+                    <div class="text-xs text-gray-500">${item.target_subtitle || ''}</div>
+                </td>
+                <td class="py-2">-</td>
+                <td class="py-2 text-right space-x-2">
+                    <button class="text-blue-600" onclick="openItemModalById(${item.id})">编辑</button>
+                    <button class="text-red-600" onclick="deleteItem(${item.id})">删除</button>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    function openItemModalById(id) {
+        const item = courseItems.find(i => String(i.id) === String(id));
+        if (!item) return;
+        openItemModal(item);
+    }
+
+    async function searchSources(preselectId) {
+        const type = document.getElementById('item-type').value;
+        const keyword = document.getElementById('source-keyword').value || '';
+        const res = await fetch(`${API_BASE}/checkin-curriculum/sources/${type}?keyword=${encodeURIComponent(keyword)}`);
+        const data = await res.json();
+        if (!data.success) return showToast(data.message || '查询素材失败', 'error');
+
+        const select = document.getElementById('item-target');
+        const options = ['<option value="">请选择</option>'];
+        (data.data || []).forEach(row => {
+            options.push(`<option value="${row.id}">#${row.id} ${row.title} ${row.subtitle ? '｜' + row.subtitle : ''}</option>`);
+        });
+        select.innerHTML = options.join('');
+        if (preselectId) select.value = String(preselectId);
+    }
+
+    async function deleteCourse(id) {
+        if (!confirm('删除课程会同时删除其课程内容，确定继续？')) return;
+        const res = await fetch(`${API_BASE}/checkin-curriculum/courses/${id}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!data.success) return showToast(data.message || '删除失败', 'error');
+        if (String(selectedCourseId) === String(id)) selectedCourseId = null;
+        showToast('删除成功');
+        loadCourses();
+        document.getElementById('item-table-body').innerHTML = '';
+    }
+
+    async function deleteItem(id) {
+        if (!confirm('确定删除该课程内容？')) return;
+        const res = await fetch(`${API_BASE}/checkin-curriculum/items/${id}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!data.success) return showToast(data.message || '删除失败', 'error');
+        showToast('删除成功');
+        loadCourseItems();
+    }
+
+    document.getElementById('course-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const id = document.getElementById('course-id').value;
+        const body = {
+            name: document.getElementById('course-name').value,
+            description: document.getElementById('course-description').value,
+            level: Number(document.getElementById('course-level').value || 1),
+            sort_order: Number(document.getElementById('course-sort').value || 0),
+            is_active: document.getElementById('course-active').checked
+        };
+        const res = await fetch(id ? `${API_BASE}/checkin-curriculum/courses/${id}` : `${API_BASE}/checkin-curriculum/courses`, {
+            method: id ? 'PUT' : 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (!data.success) return showToast(data.message || '保存失败', 'error');
+        closeCourseModal();
+        showToast('保存成功');
+        loadCourses();
+    });
+
+    document.getElementById('item-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (!selectedCourseId) return;
+        const id = document.getElementById('item-id').value;
+        const body = {
+            task_type: document.getElementById('item-type').value,
+            target_id: Number(document.getElementById('item-target').value),
+            sort_order: Number(document.getElementById('item-sort').value || 0),
+            note: document.getElementById('item-note').value,
+            is_active: document.getElementById('item-active').checked
+        };
+        if (!body.target_id) return showToast('请选择素材', 'error');
+
+        const res = await fetch(id ? `${API_BASE}/checkin-curriculum/items/${id}` : `${API_BASE}/checkin-curriculum/courses/${selectedCourseId}/items`, {
+            method: id ? 'PUT' : 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (!data.success) return showToast(data.message || '保存失败', 'error');
+        closeItemModal();
+        showToast('保存成功');
+        loadCourseItems();
+        loadCourses();
+    });
+
+    document.addEventListener('DOMContentLoaded', async () => {
+        await loadCourses();
+    });
+</script>

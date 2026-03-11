@@ -1,0 +1,127 @@
+<!--pages/vocabulary/vocabulary.wxml-->
+<view class="container">
+  <!-- 顶部标题区 -->
+  <view class="page-header">
+    <view class="header-left">
+      <text class="page-title">看图识字</text>
+      <text class="page-subtitle">选择分类开始学习吧</text>
+    </view>
+    <!-- 筛选按钮 -->
+    <view class="filter-btn" bindtap="openDrawer">
+      <image class="filter-icon" src="/assets/icons/icon-filter.svg"></image>
+      <text class="filter-label">{{currentCategoryName || '全部'}}</text>
+      <image class="filter-arrow" src="/assets/icons/icon-chevron-down.svg"></image>
+    </view>
+  </view>
+
+  <!-- 分类抽屉 -->
+  <view class="drawer-mask {{showDrawer ? 'show' : ''}}" bindtap="closeDrawer"></view>
+  <view class="drawer-panel {{showDrawer ? 'show' : ''}}">
+    <view class="drawer-header">
+      <text class="drawer-title">选择分类</text>
+      <view class="drawer-close" bindtap="closeDrawer">
+        <image class="close-icon" src="/assets/icons/icon-close.svg"></image>
+      </view>
+    </view>
+    <view class="drawer-body">
+      <!-- 左侧一级分类 -->
+      <scroll-view class="parent-list" scroll-y>
+        <view 
+          class="parent-item {{selectedParent === 0 ? 'active' : ''}}"
+          bindtap="selectParent"
+          data-id="0">
+          全部
+        </view>
+        <view 
+          class="parent-item {{selectedParent === item.id ? 'active' : ''}}"
+          wx:for="{{parentCategories}}"
+          wx:key="id"
+          bindtap="selectParent"
+          data-id="{{item.id}}"
+          data-name="{{item.name}}">
+          {{item.name}}
+        </view>
+      </scroll-view>
+      <!-- 右侧二级分类 -->
+      <scroll-view class="child-list" scroll-y>
+        <view 
+          class="child-item {{currentCategory === selectedParent && !currentSubCategory ? 'active' : ''}}"
+          bindtap="selectChild"
+          data-id="0"
+          wx:if="{{selectedParent > 0}}">
+          全部{{selectedParentName}}
+        </view>
+        <view 
+          class="child-item {{currentSubCategory === item.id ? 'active' : ''}}"
+          wx:for="{{childCategories}}"
+          wx:key="id"
+          bindtap="selectChild"
+          data-id="{{item.id}}"
+          data-name="{{item.name}}">
+          {{item.name}}
+        </view>
+        <view class="child-empty" wx:if="{{selectedParent === 0}}">
+          <text>请先选择左侧分类</text>
+        </view>
+        <view class="child-empty" wx:if="{{selectedParent > 0 && childCategories.length === 0}}">
+          <text>该分类暂无子分类</text>
+        </view>
+      </scroll-view>
+    </view>
+  </view>
+
+  <!-- 单词列表 -->
+  <view class="word-grid">
+    <view 
+      class="word-card" 
+      wx:for="{{words}}" 
+      wx:key="id"
+      bindtap="goToDetail"
+      data-id="{{item.id}}">
+      <view class="card-img-box">
+        <image 
+          class="word-image" 
+          src="{{item.image_url || '/assets/images/placeholder.png'}}" 
+          mode="aspectFill">
+        </image>
+        <view class="play-btn {{generatingAudioId === item.id ? 'generating' : ''}}" catchtap="playAudio" data-id="{{item.id}}" data-word="{{item.word}}" data-url="{{item.audio_url}}">
+          <image wx:if="{{generatingAudioId !== item.id}}" class="play-icon-img" src="/assets/icons/icon-sound.svg"></image>
+          <view wx:else class="generating-dot"></view>
+        </view>
+      </view>
+      <view class="word-info">
+        <view class="word-main">
+          <text class="word-text">{{item.word}}</text>
+          <text class="word-phonetic" wx:if="{{item.phonetic}}">{{item.phonetic}}</text>
+        </view>
+        <view class="word-translation">{{item.translation}}</view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 如果没有数据 -->
+  <view class="empty-state" wx:if="{{!loading && words.length === 0}}">
+    <image class="empty-img" src="/assets/images/empty.png" mode="widthFix"></image>
+    <text>暂时没有单词哦</text>
+  </view>
+
+  <!-- 首次加载状态 -->
+  <view class="loading-state" wx:if="{{loading && !loadingMore}}">
+    <text>加载中...</text>
+  </view>
+
+  <!-- 上滑加载更多状态 -->
+  <view class="loading-more-state" wx:if="{{loadingMore}}">
+    <view class="loading-dots">
+      <view class="dot dot1"></view>
+      <view class="dot dot2"></view>
+      <view class="dot dot3"></view>
+    </view>
+    <text>加载更多...</text>
+  </view>
+
+  <!-- 没有更多数据 -->
+  <view class="no-more" wx:if="{{!hasMore && words.length > 0 && !loading}}">
+    <text>— 已经到底啦 —</text>
+  </view>
+</view>

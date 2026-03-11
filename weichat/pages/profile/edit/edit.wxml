@@ -1,0 +1,32 @@
+<!--pages/profile/edit/edit.wxml-->
+<view class="container">
+  <view class="form-group">
+    <view class="form-item avatar-item" bindtap="handleChooseAvatar">
+      <view class="label">头像</view>
+      <view class="content">
+        <image class="avatar" src="{{userInfo.avatar_url || '/assets/images/default-avatar.png'}}" mode="aspectFill"></image>
+        <image class="arrow" src="/assets/icons/icon-arrow-left.svg"></image>
+      </view>
+      <!-- 微信开放能力：头像选择 -->
+      <button class="avatar-wrapper" open-type="chooseAvatar" bindchooseavatar="onChooseAvatar">
+      </button>
+    </view>
+    
+    <view class="form-item">
+      <view class="label">昵称</view>
+      <input class="input" type="nickname" placeholder="请输入昵称" value="{{userInfo.nickname}}" bindblur="onNicknameBlur" bindinput="onNicknameInput" />
+    </view>
+    
+    <view class="form-item">
+      <view class="label">手机号</view>
+      <input class="input" type="number" placeholder="请输入手机号" value="{{userInfo.phone}}" bindinput="onPhoneInput" maxlength="11" />
+    </view>
+    
+    <view class="form-item">
+      <view class="label">ID</view>
+      <view class="text-val">{{userInfo.id}}</view>
+    </view>
+  </view>
+
+  <button class="save-btn" bindtap="handleSave" disabled="{{loading}}">保存修改</button>
+</view>

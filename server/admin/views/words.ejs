@@ -1,0 +1,941 @@
+<style>
+    .ai-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 12px;
+        background: #f0f4ff;
+        border-radius: 10px;
+        border: 1px dashed #a5b4fc;
+        margin-bottom: 16px;
+    }
+    .ai-actions .ai-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 6px 12px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 500;
+        cursor: pointer;
+        border: 1px solid transparent;
+        transition: all 0.2s;
+        white-space: nowrap;
+    }
+    .ai-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .ai-btn-blue { background: #dbeafe; color: #1d4ed8; border-color: #93c5fd; }
+    .ai-btn-blue:hover:not(:disabled) { background: #bfdbfe; }
+    .ai-btn-green { background: #dcfce7; color: #15803d; border-color: #86efac; }
+    .ai-btn-green:hover:not(:disabled) { background: #bbf7d0; }
+    .ai-btn-pink { background: #fce7f3; color: #be185d; border-color: #f9a8d4; }
+    .ai-btn-pink:hover:not(:disabled) { background: #fbcfe8; }
+    .ai-btn-orange { background: #ffedd5; color: #c2410c; border-color: #fdba74; }
+    .ai-btn-orange:hover:not(:disabled) { background: #fed7aa; }
+    .ai-btn-purple { background: #f3e8ff; color: #7e22ce; border-color: #c4b5fd; }
+    .ai-btn-purple:hover:not(:disabled) { background: #e9d5ff; }
+</style>
+
+<div class="bg-white rounded-xl shadow-sm border border-gray-100">
+    <!-- Header & Filters -->
+    <div class="p-6 border-b border-gray-100 bg-gray-50 rounded-t-xl space-y-4">
+        <div class="flex justify-between items-center">
+            <h2 class="text-lg font-bold text-gray-800">单词列表</h2>
+            <div class="flex gap-2">
+                <!-- 批量操作栏（选中时才显示） -->
+                <div id="batch-actions" class="hidden flex items-center gap-2">
+                    <span class="text-sm text-gray-600">已选 <strong id="selected-count">0</strong> 个</span>
+                    <button onclick="batchDeleteWords()"
+                        class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors shadow-sm flex items-center text-sm">
+                        <i class="fas fa-trash mr-2"></i> 批量删除
+                    </button>
+                    <button onclick="clearSelection()"
+                        class="px-3 py-2 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-100 transition-colors text-sm">
+                        取消选择
+                    </button>
+                </div>
+                <button onclick="openWordModal()"
+                    class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm flex items-center">
+                    <i class="fas fa-plus mr-2"></i> 新增单词
+                </button>
+            </div>
+        </div>
+
+        <div class="flex flex-wrap gap-4">
+            <select id="filter-category" onchange="loadWords(1)"
+                class="px-4 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none min-w-[150px]">
+                <option value="">全部分类</option>
+            </select>
+            <select id="filter-image" onchange="loadWords(1)"
+                class="px-4 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                <option value="">全部状态</option>
+                <option value="with">✅ 有图片</option>
+                <option value="without">❌ 无图片</option>
+            </select>
+            <div class="flex-1 flex gap-2">
+                <input type="text" id="filter-search" onkeyup="debounceSearch()" placeholder="搜索单词..."
+                    class="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                <button onclick="loadWords(1)"
+                    class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors">
+                    <i class="fas fa-search"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Table -->
+    <div class="overflow-x-auto">
+        <table class="w-full text-left" id="words-table">
+            <thead>
+                <tr class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wider border-b border-gray-100">
+                    <th class="px-2 py-3 w-10 text-center">
+                        <input type="checkbox" id="select-all" onchange="toggleSelectAll(this)" class="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer">
+                    </th>
+                    <th class="px-4 py-3 font-semibold w-16">图片</th>
+                    <th class="px-4 py-3 font-semibold">单词</th>
+                    <th class="px-4 py-3 font-semibold w-28">音标</th>
+                    <th class="px-4 py-3 font-semibold">翻译</th>
+                    <th class="px-4 py-3 font-semibold w-24">分类</th>
+                    <th class="px-4 py-3 font-semibold w-16 text-center">女声</th>
+                    <th class="px-4 py-3 font-semibold w-16 text-center">男声</th>
+                    <th class="px-4 py-3 font-semibold" style="max-width: 150px;">例句</th>
+                    <th class="px-4 py-3 font-semibold w-14 text-center">例♀</th>
+                    <th class="px-4 py-3 font-semibold w-14 text-center">例♂</th>
+                    <th class="px-3 py-3 font-semibold w-16 text-center cursor-pointer select-none hover:text-blue-600" onclick="toggleSort('view_count')" title="按浏览量排序">
+                        浏览 <i class="fas fa-sort text-gray-300" id="sort-icon-view_count"></i>
+                    </th>
+                    <th class="px-3 py-3 font-semibold w-16 text-center cursor-pointer select-none hover:text-blue-600" onclick="toggleSort('assess_count')" title="按评测次数排序">
+                        评测 <i class="fas fa-sort text-gray-300" id="sort-icon-assess_count"></i>
+                    </th>
+                    <th class="px-4 py-3 font-semibold w-24 text-right">操作</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                <!-- Data loaded via JS -->
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    <div class="p-4 border-t border-gray-100 flex justify-center" id="words-pagination"></div>
+</div>
+
+<!-- Word Modal -->
+<div id="word-modal"
+    class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden z-50 flex items-center justify-center transition-opacity duration-300">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto transform transition-all duration-300 scale-95 opacity-0"
+        id="modal-content">
+        <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50 rounded-t-xl sticky top-0 z-10">
+            <h3 class="text-lg font-bold text-gray-800" id="word-modal-title">新增单词</h3>
+            <button onclick="closeWordModal()"
+                class="text-gray-400 hover:text-gray-600 transition-colors text-xl">&times;</button>
+        </div>
+
+        <form id="word-form" class="p-6 space-y-4" onsubmit="saveWord(event)">
+            <input type="hidden" id="word-id">
+
+            <!-- AI Quick Actions (both add & edit mode) -->
+            <div class="ai-actions" id="word-ai-actions">
+                <span class="text-xs text-indigo-700 font-semibold w-full mb-1">AI 快捷操作</span>
+                <button type="button" class="ai-btn ai-btn-blue" onclick="aiRegenerateFields()" id="btn-ai-regen">
+                    🤖 AI补全音标/例句
+                </button>
+                <button type="button" class="ai-btn ai-btn-orange" onclick="regenerateWordImage()" id="btn-ai-img">
+                    🎨 生成图片
+                </button>
+                <button type="button" class="ai-btn ai-btn-pink" onclick="generateWordVoice('female')" id="btn-ai-voice-f">
+                    🔊 生成女声
+                </button>
+                <button type="button" class="ai-btn ai-btn-purple" onclick="generateWordVoice('male')" id="btn-ai-voice-m">
+                    🔊 生成男声
+                </button>
+                <button type="button" class="ai-btn ai-btn-green" onclick="generateExVoice('female')" id="btn-ai-ex-f">
+                    📝 例句女声
+                </button>
+                <button type="button" class="ai-btn ai-btn-green" onclick="generateExVoice('male')" id="btn-ai-ex-m">
+                    📝 例句男声
+                </button>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">单词 *</label>
+                    <input type="text" id="word-word" required
+                        class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">翻译 *</label>
+                    <input type="text" id="word-translation" required
+                        class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">音标</label>
+                    <input type="text" id="word-phonetic"
+                        class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">分类</label>
+                    <select id="word-category"
+                        class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                        <option value="">未分类</option>
+                    </select>
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">例句</label>
+                <input type="text" id="word-example"
+                    class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">例句翻译</label>
+                <input type="text" id="word-example-trans"
+                    class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">语法详解</label>
+                <textarea id="word-grammar" rows="2"
+                    class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-y"></textarea>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">图片建议 <span class="text-gray-400 font-normal">(AI生图参考描述)</span></label>
+                <input type="text" id="word-image-hint" placeholder="例如：背书包、戴红领巾的小男孩"
+                    class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">图片URL</label>
+                <input type="text" id="word-image-url"
+                    class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                    onchange="previewImage()">
+                <img id="word-image-preview" src=""
+                    class="mt-2 max-w-[200px] rounded-lg border border-gray-200" style="display: none;">
+            </div>
+
+            <!-- Audio Status (edit mode only) -->
+            <div id="word-audio-status" style="display: none;">
+                <label class="block text-sm font-medium text-gray-700 mb-1">发音状态</label>
+                <div class="flex gap-4 flex-wrap text-xs text-gray-500 bg-gray-50 rounded-lg p-3">
+                    <span>♀ 女声: <span id="audio-female-label">-</span></span>
+                    <span>♂ 男声: <span id="audio-male-label">-</span></span>
+                    <span class="text-gray-300">|</span>
+                    <span>例句♀: <span id="audio-ex-female-label">-</span></span>
+                    <span>例句♂: <span id="audio-ex-male-label">-</span></span>
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-3 pt-4 border-t border-gray-100">
+                <button type="button" onclick="closeWordModal()"
+                    class="px-5 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm">取消</button>
+                <button type="submit"
+                    class="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm shadow-sm">保存</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    let currentPage = 1;
+    let searchTimeout;
+    let allCategories = [];
+    let currentEditWord = null;
+    let currentSort = 'id';     // 当前排序字段
+    let currentOrder = 'desc';  // 排序方向
+
+    // ==================== Helper ====================
+
+    function escHtml(str) {
+        if (!str) return '';
+        return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    // 对用于 onclick JS 字符串内的值做安全转义（替换 ' \ 和换行）
+    function escJs(str) {
+        if (!str) return '';
+        return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '');
+    }
+
+    function playAudio(url) {
+        let fullUrl = url;
+        if (url && url.startsWith('/')) fullUrl = window.location.origin + url;
+        new Audio(fullUrl).play().catch(e => showToast('播放失败: ' + e.message, 'error'));
+    }
+
+    // ==================== Categories ====================
+
+    async function loadCategories() {
+        try {
+            const res = await fetch(`${API_BASE}/categories`);
+            const data = await res.json();
+            if (data.success) {
+                allCategories = data.data;
+                populateCategorySelects();
+            }
+        } catch (e) { }
+    }
+
+    function populateCategorySelects() {
+        const parents = allCategories.filter(c => !c.parent_id || c.parent_id === 0);
+        const children = allCategories.filter(c => c.parent_id && c.parent_id !== 0);
+        let options = '';
+        parents.forEach(p => {
+            options += `<option value="${p.id}">${p.icon || ''} ${p.name}</option>`;
+            children.filter(c => c.parent_id === p.id).forEach(c => {
+                options += `<option value="${c.id}">　↳ ${c.icon || ''} ${c.name}</option>`;
+            });
+        });
+
+        const filterEl = document.getElementById('filter-category');
+        filterEl.innerHTML = '<option value="">全部分类</option>' + options;
+
+        const wordCatEl = document.getElementById('word-category');
+        wordCatEl.innerHTML = '<option value="">未分类</option>' + options;
+    }
+
+    // ==================== Words List ====================
+
+    async function loadWords(page = 1) {
+        currentPage = page;
+        const category = document.getElementById('filter-category').value;
+        const search = document.getElementById('filter-search').value;
+        const imageFilter = document.getElementById('filter-image').value;
+
+        let url = `${API_BASE}/words?page=${page}&limit=20&sort=${currentSort}&order=${currentOrder}`;
+        if (category) url += `&category_id=${category}`;
+        if (search) url += `&search=${encodeURIComponent(search)}`;
+
+        try {
+            const res = await fetch(url);
+            const data = await res.json();
+            if (data.success) {
+                let words = data.data.list;
+                if (imageFilter === 'with') words = words.filter(w => w.image_url);
+                if (imageFilter === 'without') words = words.filter(w => !w.image_url);
+                renderWords(words, data.data.pagination);
+            }
+        } catch (e) { showToast('加载单词失败', 'error'); }
+    }
+
+    function renderWords(words, pagination) {
+        const tbody = document.querySelector('#words-table tbody');
+        // 重置全选
+        document.getElementById('select-all').checked = false;
+        updateBatchActions();
+
+        if (words.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="14" class="px-6 py-8 text-center text-gray-500">暂无单词数据</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = words.map(w => {
+            const sw = escHtml(w.word);
+            const st = escHtml(w.translation);
+            const se = escHtml(w.example_sentence || '');
+            // onclick 内 JS 字符串需要独立转义
+            const jsw = escJs(w.word);
+            const jse = escJs(w.example_sentence || '');
+            return `
+            <tr class="hover:bg-gray-50 transition-colors" data-word-id="${w.id}">
+                <td class="px-2 py-3 text-center">
+                    <input type="checkbox" class="word-checkbox w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer" value="${w.id}" onchange="updateBatchActions()">
+                </td>
+                <td class="px-4 py-3">
+                    ${w.image_url
+                ? `<img src="${escHtml(w.image_url)}" style="width:48px;height:48px;min-width:48px;object-fit:cover;" class="rounded-lg border border-gray-200" onerror="this.style.display='none'">`
+                : `<div style="width:48px;height:48px;min-width:48px;" class="bg-gray-100 rounded-lg flex items-center justify-center text-lg border border-gray-200 text-gray-300">📷</div>`}
+                </td>
+                <td class="px-4 py-3 font-bold text-gray-900">${sw}</td>
+                <td class="px-4 py-3 text-gray-500 font-mono text-xs">${escHtml(w.phonetic) || '-'}</td>
+                <td class="px-4 py-3 text-gray-700 text-sm">${st}</td>
+                <td class="px-4 py-3"><span class="px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-xs">${escHtml(w.category_name) || '-'}</span></td>
+                <td class="px-4 py-3 text-center">
+                    ${w.audio_url_female
+                ? `<button class="text-pink-500 hover:text-pink-700" onclick="playAudio('${escJs(w.audio_url_female)}')"><i class="fas fa-volume-up"></i></button>`
+                : `<button class="text-gray-300 hover:text-pink-600 text-xs" onclick="quickGenAudio(${w.id}, '${jsw}', 'female', this)">♀+</button>`}
+                </td>
+                <td class="px-4 py-3 text-center">
+                    ${w.audio_url_male
+                ? `<button class="text-blue-500 hover:text-blue-700" onclick="playAudio('${escJs(w.audio_url_male)}')"><i class="fas fa-volume-up"></i></button>`
+                : `<button class="text-gray-300 hover:text-blue-600 text-xs" onclick="quickGenAudio(${w.id}, '${jsw}', 'male', this)">♂+</button>`}
+                </td>
+                <td class="px-4 py-3 text-xs text-gray-600" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${se}">${se || '-'}</td>
+                <td class="px-4 py-3 text-center">
+                    ${w.example_audio_female
+                ? `<button class="text-pink-500 hover:text-pink-700" onclick="playAudio('${escJs(w.example_audio_female)}')"><i class="fas fa-volume-up text-xs"></i></button>`
+                : w.example_sentence
+                    ? `<button class="text-gray-300 hover:text-pink-600 text-xs" onclick="quickGenExAudio(${w.id}, '${jse}', 'female', this)">♀+</button>`
+                    : '<span class="text-gray-300">-</span>'}
+                </td>
+                <td class="px-4 py-3 text-center">
+                    ${w.example_audio_male
+                ? `<button class="text-blue-500 hover:text-blue-700" onclick="playAudio('${escJs(w.example_audio_male)}')"><i class="fas fa-volume-up text-xs"></i></button>`
+                : w.example_sentence
+                    ? `<button class="text-gray-300 hover:text-blue-600 text-xs" onclick="quickGenExAudio(${w.id}, '${jse}', 'male', this)">♂+</button>`
+                    : '<span class="text-gray-300">-</span>'}
+                </td>
+                <td class="px-3 py-3 text-center">
+                    <span class="text-xs font-medium ${w.view_count > 0 ? 'text-blue-600' : 'text-gray-300'}">${w.view_count || 0}</span>
+                </td>
+                <td class="px-3 py-3 text-center">
+                    <span class="text-xs font-medium ${w.assess_count > 0 ? 'text-green-600' : 'text-gray-300'}">${w.assess_count || 0}</span>
+                </td>
+                <td class="px-4 py-3 text-right" style="white-space:nowrap;">
+                    <button class="text-blue-600 hover:text-blue-800 mr-2" onclick="openWordModal(${w.id})" title="编辑"><i class="fas fa-edit"></i></button>
+                    <button class="text-red-500 hover:text-red-700" onclick="deleteWord(${w.id})" title="删除"><i class="fas fa-trash"></i></button>
+                </td>
+            </tr>
+        `}).join('');
+
+        // Pagination
+        const totalPages = Math.ceil(pagination.total / pagination.limit);
+        let pgHtml = '';
+        if (totalPages > 1) {
+            pgHtml = '<div class="flex items-center space-x-1">';
+
+            // 上一页
+            pgHtml += `<button onclick="loadWords(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}
+                class="px-2.5 py-1 rounded-md text-sm transition-colors ${currentPage === 1 ? 'text-gray-300 cursor-not-allowed' : 'text-gray-600 hover:bg-gray-100'}">
+                <i class="fas fa-chevron-left"></i></button>`;
+
+            // 页码逻辑：显示首页 ... 当前附近 ... 尾页
+            const pages = [];
+            pages.push(1);
+            let start = Math.max(2, currentPage - 2);
+            let end = Math.min(totalPages - 1, currentPage + 2);
+            if (start > 2) pages.push('...');
+            for (let i = start; i <= end; i++) pages.push(i);
+            if (end < totalPages - 1) pages.push('...');
+            if (totalPages > 1) pages.push(totalPages);
+
+            pages.forEach(p => {
+                if (p === '...') {
+                    pgHtml += `<span class="px-2 py-1 text-gray-400 text-sm">…</span>`;
+                } else {
+                    pgHtml += `<button onclick="loadWords(${p})"
+                        class="px-3 py-1 rounded-md text-sm font-medium transition-colors ${p === currentPage ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'}">${p}</button>`;
+                }
+            });
+
+            // 下一页
+            pgHtml += `<button onclick="loadWords(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}
+                class="px-2.5 py-1 rounded-md text-sm transition-colors ${currentPage === totalPages ? 'text-gray-300 cursor-not-allowed' : 'text-gray-600 hover:bg-gray-100'}">
+                <i class="fas fa-chevron-right"></i></button>`;
+
+            // 总数信息
+            pgHtml += `<span class="text-xs text-gray-400 ml-3">共 ${pagination.total} 条 / ${totalPages} 页</span>`;
+            pgHtml += '</div>';
+        }
+        document.getElementById('words-pagination').innerHTML = pgHtml;
+
+        // 更新排序图标
+        updateSortIcons();
+    }
+
+    function toggleSort(field) {
+        if (currentSort === field) {
+            // 同一字段切换方向
+            currentOrder = currentOrder === 'desc' ? 'asc' : 'desc';
+        } else {
+            currentSort = field;
+            currentOrder = 'desc'; // 新字段默认降序
+        }
+        loadWords(1);
+    }
+
+    function updateSortIcons() {
+        // 重置所有排序图标
+        ['view_count', 'assess_count'].forEach(field => {
+            const icon = document.getElementById(`sort-icon-${field}`);
+            if (icon) {
+                if (currentSort === field) {
+                    icon.className = currentOrder === 'desc'
+                        ? 'fas fa-sort-down text-blue-600'
+                        : 'fas fa-sort-up text-blue-600';
+                } else {
+                    icon.className = 'fas fa-sort text-gray-300';
+                }
+            }
+        });
+    }
+
+    function debounceSearch() {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => loadWords(1), 300);
+    }
+
+    // ==================== Quick Audio (from list) ====================
+
+    async function quickGenAudio(id, word, voice, btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin text-xs"></i>';
+        try {
+            const res = await fetch(`${API_BASE}/batch/generate-audio-single`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ word_id: id, word, voice })
+            });
+            const result = await res.json();
+            if (result.success) {
+                showToast(`${voice === 'male' ? '男声' : '女声'}生成成功`);
+                loadWords(currentPage);
+            } else {
+                showToast(result.message || '生成失败', 'error');
+                btn.disabled = false;
+                btn.textContent = voice === 'male' ? '♂+' : '♀+';
+            }
+        } catch (e) {
+            showToast('生成失败: ' + e.message, 'error');
+            btn.disabled = false;
+            btn.textContent = voice === 'male' ? '♂+' : '♀+';
+        }
+    }
+
+    async function quickGenExAudio(id, sentence, voice, btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin text-xs"></i>';
+        try {
+            const res = await fetch(`${API_BASE}/batch/generate-example-audio`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ word_id: id, example_sentence: sentence, voice })
+            });
+            const result = await res.json();
+            if (result.success) {
+                showToast(`例句${voice === 'male' ? '男声' : '女声'}生成成功`);
+                loadWords(currentPage);
+            } else {
+                showToast(result.message || '生成失败', 'error');
+                btn.disabled = false;
+                btn.textContent = voice === 'male' ? '♂+' : '♀+';
+            }
+        } catch (e) {
+            showToast('生成失败: ' + e.message, 'error');
+            btn.disabled = false;
+            btn.textContent = voice === 'male' ? '♂+' : '♀+';
+        }
+    }
+
+    // ==================== Delete ====================
+
+    async function deleteWord(id) {
+        if (!confirm('确定要删除这个单词吗？此操作不可撤销。')) return;
+        try {
+            const res = await fetch(`${API_BASE}/words/${id}`, { method: 'DELETE' });
+            const result = await res.json();
+            if (result.success) {
+                showToast('删除成功');
+                loadWords(currentPage);
+            } else {
+                showToast(result.message || '删除失败', 'error');
+            }
+        } catch (e) {
+            showToast('删除失败: ' + e.message, 'error');
+        }
+    }
+
+    // ==================== Batch Selection ====================
+
+    function toggleSelectAll(el) {
+        const checkboxes = document.querySelectorAll('.word-checkbox');
+        checkboxes.forEach(cb => cb.checked = el.checked);
+        updateBatchActions();
+    }
+
+    function updateBatchActions() {
+        const checked = document.querySelectorAll('.word-checkbox:checked');
+        const batchActions = document.getElementById('batch-actions');
+        const countEl = document.getElementById('selected-count');
+
+        if (checked.length > 0) {
+            batchActions.classList.remove('hidden');
+            batchActions.classList.add('flex');
+            countEl.textContent = checked.length;
+        } else {
+            batchActions.classList.add('hidden');
+            batchActions.classList.remove('flex');
+        }
+    }
+
+    function getSelectedIds() {
+        return Array.from(document.querySelectorAll('.word-checkbox:checked')).map(cb => parseInt(cb.value));
+    }
+
+    function clearSelection() {
+        document.querySelectorAll('.word-checkbox').forEach(cb => cb.checked = false);
+        document.getElementById('select-all').checked = false;
+        updateBatchActions();
+    }
+
+    async function batchDeleteWords() {
+        const ids = getSelectedIds();
+        if (ids.length === 0) {
+            showToast('请先选择要删除的单词', 'error');
+            return;
+        }
+
+        if (!confirm(`确定要删除选中的 ${ids.length} 个单词吗？\n\n关联的图片和音频文件也会一并删除，此操作不可撤销。`)) {
+            return;
+        }
+
+        try {
+            const res = await fetch(`${API_BASE}/words/batch-delete`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids })
+            });
+            const result = await res.json();
+
+            if (result.success) {
+                showToast(result.message);
+                loadWords(currentPage);
+            } else {
+                showToast(result.message || '批量删除失败', 'error');
+            }
+        } catch (e) {
+            showToast('批量删除失败: ' + e.message, 'error');
+        }
+    }
+
+    // ==================== Modal ====================
+
+    function openWordModal(id = null) {
+        // Reset form
+        document.getElementById('word-form').reset();
+        document.getElementById('word-id').value = '';
+        document.getElementById('word-grammar').value = '';
+        document.getElementById('word-image-preview').style.display = 'none';
+        document.getElementById('word-audio-status').style.display = 'none';
+        currentEditWord = null;
+
+        if (id) {
+            // Edit mode: fetch word and populate
+            document.getElementById('word-modal-title').textContent = '编辑单词';
+            fetchAndPopulateWord(id);
+        } else {
+            // Add mode: also show AI actions for convenience
+            document.getElementById('word-modal-title').textContent = '新增单词';
+        }
+
+        // AI actions always visible
+        document.getElementById('word-ai-actions').style.display = 'flex';
+
+        // Show modal
+        document.getElementById('word-modal').classList.remove('hidden');
+        requestAnimationFrame(() => {
+            document.getElementById('modal-content').classList.remove('scale-95', 'opacity-0');
+            document.getElementById('modal-content').classList.add('scale-100', 'opacity-100');
+        });
+    }
+
+    async function fetchAndPopulateWord(id) {
+        try {
+            const res = await fetch(`${API_BASE}/words/${id}`);
+            const data = await res.json();
+            if (!data.success) return;
+
+            const w = data.data;
+            currentEditWord = w;
+
+            document.getElementById('word-modal-title').textContent = '编辑单词 - ' + w.word;
+            document.getElementById('word-id').value = w.id;
+            document.getElementById('word-word').value = w.word;
+            document.getElementById('word-translation').value = w.translation;
+            document.getElementById('word-phonetic').value = w.phonetic || '';
+            document.getElementById('word-category').value = w.category_id || '';
+            document.getElementById('word-example').value = w.example_sentence || '';
+            document.getElementById('word-example-trans').value = w.example_translation || '';
+            document.getElementById('word-grammar').value = w.grammar_explanation || '';
+            document.getElementById('word-image-hint').value = w.image_hint || '';
+            document.getElementById('word-image-url').value = w.image_url || '';
+
+            if (w.image_url) {
+                document.getElementById('word-image-preview').src = w.image_url;
+                document.getElementById('word-image-preview').style.display = 'block';
+            }
+
+            // Show AI actions
+            document.getElementById('word-ai-actions').style.display = 'flex';
+
+            // Show audio status
+            document.getElementById('word-audio-status').style.display = 'block';
+            setAudioLabel('audio-female-label', w.audio_url_female);
+            setAudioLabel('audio-male-label', w.audio_url_male);
+            setAudioLabel('audio-ex-female-label', w.example_audio_female, !w.example_sentence);
+            setAudioLabel('audio-ex-male-label', w.example_audio_male, !w.example_sentence);
+        } catch (e) {
+            showToast('加载单词数据失败', 'error');
+        }
+    }
+
+    function setAudioLabel(elId, url, noSentence = false) {
+        const el = document.getElementById(elId);
+        if (noSentence) {
+            el.innerHTML = '<span class="text-gray-400">-</span>';
+        } else if (url) {
+            el.innerHTML = `<span class="text-green-600 cursor-pointer" onclick="playAudio('${escHtml(url)}')">✅ 已有 <i class="fas fa-play-circle text-xs"></i></span>`;
+        } else {
+            el.innerHTML = '<span class="text-red-500">❌ 无</span>';
+        }
+    }
+
+    function closeWordModal() {
+        document.getElementById('modal-content').classList.remove('scale-100', 'opacity-100');
+        document.getElementById('modal-content').classList.add('scale-95', 'opacity-0');
+        setTimeout(() => document.getElementById('word-modal').classList.add('hidden'), 300);
+    }
+
+    function previewImage() {
+        const url = document.getElementById('word-image-url').value;
+        const preview = document.getElementById('word-image-preview');
+        if (url) { preview.src = url; preview.style.display = 'block'; }
+        else { preview.style.display = 'none'; }
+    }
+
+    // ==================== Save Word ====================
+
+    async function saveWord(e) {
+        e.preventDefault();
+        const id = document.getElementById('word-id').value;
+        const data = {
+            word: document.getElementById('word-word').value,
+            translation: document.getElementById('word-translation').value,
+            phonetic: document.getElementById('word-phonetic').value,
+            category_id: document.getElementById('word-category').value || null,
+            example_sentence: document.getElementById('word-example').value,
+            example_translation: document.getElementById('word-example-trans').value,
+            grammar_explanation: document.getElementById('word-grammar').value,
+            image_hint: document.getElementById('word-image-hint').value,
+            image_url: document.getElementById('word-image-url').value,
+            difficulty_level: 1,
+            word_type: 'noun',
+            display_mode: 'image'
+        };
+
+        try {
+            const url = id ? `${API_BASE}/words/${id}` : `${API_BASE}/words`;
+            const method = id ? 'PUT' : 'POST';
+            const res = await fetch(url, {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            const result = await res.json();
+            if (result.success) {
+                closeWordModal();
+                loadWords(currentPage);
+                showToast('保存成功');
+            } else {
+                showToast(result.message || '保存失败', 'error');
+            }
+        } catch (e) {
+            showToast('保存失败: ' + e.message, 'error');
+        }
+    }
+
+    // ==================== AI Actions (in modal) ====================
+
+    async function aiRegenerateFields() {
+        const word = document.getElementById('word-word').value;
+        const translation = document.getElementById('word-translation').value;
+        if (!word) { showToast('请先输入单词', 'error'); return; }
+
+        const btn = document.getElementById('btn-ai-regen');
+        btn.disabled = true;
+        btn.textContent = '🤖 AI处理中...';
+
+        try {
+            const res = await fetch(`${API_BASE}/batch/ai-enhance`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ words: [{ word, translation }] })
+            });
+            const result = await res.json();
+
+            if (result.success && result.data && result.data.length > 0) {
+                const d = result.data[0];
+                if (d.phonetic) document.getElementById('word-phonetic').value = d.phonetic;
+                if (d.translation) document.getElementById('word-translation').value = d.translation;
+                if (d.example_sentence) document.getElementById('word-example').value = d.example_sentence;
+                if (d.example_translation) document.getElementById('word-example-trans').value = d.example_translation;
+                if (d.grammar_explanation) document.getElementById('word-grammar').value = d.grammar_explanation;
+                showToast('AI补全完成，请检查后保存');
+            } else {
+                showToast(result.message || 'AI处理失败', 'error');
+            }
+        } catch (e) {
+            showToast('AI请求失败: ' + e.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '🤖 AI补全音标/例句';
+        }
+    }
+
+    async function regenerateWordImage() {
+        const word = document.getElementById('word-word').value;
+        const translation = document.getElementById('word-translation').value;
+        const image_hint = document.getElementById('word-image-hint').value;
+        const word_id = document.getElementById('word-id').value;
+        if (!word) { showToast('请先输入单词', 'error'); return; }
+
+        const btn = document.getElementById('btn-ai-img');
+        btn.disabled = true;
+        btn.textContent = '🎨 生成中...';
+
+        try {
+            const res = await fetch(`${API_BASE}/batch/generate-single`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ word, translation, image_hint, word_id: word_id || undefined })
+            });
+            const result = await res.json();
+
+            if (result.success && result.data.image_url) {
+                document.getElementById('word-image-url').value = result.data.image_url;
+                document.getElementById('word-image-preview').src = result.data.image_url;
+                document.getElementById('word-image-preview').style.display = 'block';
+                showToast('图片生成成功');
+            } else {
+                showToast(result.message || '生成失败', 'error');
+            }
+        } catch (e) {
+            showToast('生成失败: ' + e.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '🎨 生成图片';
+        }
+    }
+
+    /**
+     * 新增模式下，如果没有 word_id，先自动保存单词获取 ID，再生成语音
+     * 编辑模式下直接生成
+     */
+    async function ensureWordIdBeforeAudio() {
+        let wordId = document.getElementById('word-id').value;
+        if (wordId) return wordId;
+
+        // 新增模式：先保存单词
+        const word = document.getElementById('word-word').value;
+        const translation = document.getElementById('word-translation').value;
+        if (!word || !translation) {
+            showToast('请先填写单词和翻译', 'error');
+            return null;
+        }
+
+        const data = {
+            word,
+            translation,
+            phonetic: document.getElementById('word-phonetic').value,
+            category_id: document.getElementById('word-category').value || null,
+            example_sentence: document.getElementById('word-example').value,
+            example_translation: document.getElementById('word-example-trans').value,
+            grammar_explanation: document.getElementById('word-grammar').value,
+            image_hint: document.getElementById('word-image-hint').value,
+            image_url: document.getElementById('word-image-url').value,
+            difficulty_level: 1,
+            word_type: 'noun',
+            display_mode: 'image'
+        };
+
+        try {
+            const res = await fetch(`${API_BASE}/words`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            const result = await res.json();
+            if (result.success && result.data && result.data.id) {
+                wordId = result.data.id;
+                document.getElementById('word-id').value = wordId;
+                document.getElementById('word-modal-title').textContent = '编辑单词 - ' + word;
+                // 显示音频状态面板
+                document.getElementById('word-audio-status').style.display = 'block';
+                showToast('单词已自动保存，正在生成语音...', 'success');
+                return wordId;
+            } else {
+                showToast(result.message || '自动保存失败', 'error');
+                return null;
+            }
+        } catch (e) {
+            showToast('自动保存失败: ' + e.message, 'error');
+            return null;
+        }
+    }
+
+    async function generateWordVoice(voice) {
+        const word = document.getElementById('word-word').value;
+        if (!word) { showToast('请先输入单词', 'error'); return; }
+
+        const btnId = voice === 'male' ? 'btn-ai-voice-m' : 'btn-ai-voice-f';
+        const btn = document.getElementById(btnId);
+        btn.disabled = true;
+        btn.textContent = '🔊 生成中...';
+
+        try {
+            const wordId = await ensureWordIdBeforeAudio();
+            if (!wordId) { btn.disabled = false; btn.textContent = voice === 'male' ? '🔊 生成男声' : '🔊 生成女声'; return; }
+
+            const res = await fetch(`${API_BASE}/batch/generate-audio-single`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ word_id: wordId, word, voice })
+            });
+            const result = await res.json();
+
+            if (result.success) {
+                const labelId = voice === 'male' ? 'audio-male-label' : 'audio-female-label';
+                document.getElementById('word-audio-status').style.display = 'block';
+                setAudioLabel(labelId, result.data.audio_url);
+                showToast(`${voice === 'male' ? '男声' : '女声'}生成成功`);
+            } else {
+                showToast(result.message || '生成失败', 'error');
+            }
+        } catch (e) {
+            showToast('生成失败: ' + e.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = voice === 'male' ? '🔊 生成男声' : '🔊 生成女声';
+        }
+    }
+
+    async function generateExVoice(voice) {
+        const example = document.getElementById('word-example').value;
+        if (!example) { showToast('请先填写例句', 'error'); return; }
+
+        const btnId = voice === 'male' ? 'btn-ai-ex-m' : 'btn-ai-ex-f';
+        const btn = document.getElementById(btnId);
+        btn.disabled = true;
+        btn.textContent = '📝 生成中...';
+
+        try {
+            const wordId = await ensureWordIdBeforeAudio();
+            if (!wordId) { btn.disabled = false; btn.textContent = voice === 'male' ? '📝 例句男声' : '📝 例句女声'; return; }
+
+            const res = await fetch(`${API_BASE}/batch/generate-example-audio`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ word_id: wordId, example_sentence: example, voice })
+            });
+            const result = await res.json();
+
+            if (result.success) {
+                const labelId = voice === 'male' ? 'audio-ex-male-label' : 'audio-ex-female-label';
+                document.getElementById('word-audio-status').style.display = 'block';
+                setAudioLabel(labelId, result.data.audio_url);
+                showToast(`例句${voice === 'male' ? '男声' : '女声'}生成成功`);
+            } else {
+                showToast(result.message || '生成失败', 'error');
+            }
+        } catch (e) {
+            showToast('生成失败: ' + e.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = voice === 'male' ? '📝 例句男声' : '📝 例句女声';
+        }
+    }
+
+    // ==================== Init ====================
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadCategories();
+        loadWords();
+    });
+</script>

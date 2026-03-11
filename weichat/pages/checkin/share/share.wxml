@@ -1,0 +1,95 @@
+<!--pages/checkin/share/share.wxml-->
+<view class="container">
+
+  <!-- 加载中 -->
+  <view class="loading-box" wx:if="{{loading}}">
+    <text class="loading-text">加载中...</text>
+  </view>
+
+  <!-- 错误 -->
+  <view class="error-box" wx:if="{{!loading && error}}">
+    <text class="error-icon">😢</text>
+    <text class="error-text">{{error}}</text>
+    <view class="error-btn" bindtap="goHome">去首页看看</view>
+  </view>
+
+  <!-- 分享内容 -->
+  <block wx:if="{{!loading && !error && shareData}}">
+
+    <!-- 用户卡片 -->
+    <view class="user-card">
+      <image class="user-avatar" src="{{shareData.avatar_url || '/assets/images/default-avatar.png'}}" mode="aspectFill"></image>
+      <view class="user-info">
+        <text class="user-name">{{shareData.nickname || '学习达人'}}</text>
+        <text class="user-date">{{formatDate}} 的学习打卡</text>
+      </view>
+      <view class="streak-badge" wx:if="{{shareData.streak_days > 0}}">
+        <text class="streak-fire">🔥</text>
+        <text class="streak-num">{{shareData.streak_days}}天</text>
+      </view>
+    </view>
+
+    <!-- 统计卡片 -->
+    <view class="stats-card">
+      <view class="stat-item">
+        <text class="stat-num">{{shareData.avg_score || 0}}</text>
+        <text class="stat-label">平均分</text>
+      </view>
+      <view class="stat-divider"></view>
+      <view class="stat-item">
+        <text class="stat-num">{{completedCount}}</text>
+        <text class="stat-label">完成任务</text>
+      </view>
+      <view class="stat-divider"></view>
+      <view class="stat-item">
+        <text class="stat-num">{{shareData.total_points || 0}}</text>
+        <text class="stat-label">获得积分</text>
+      </view>
+    </view>
+
+    <!-- 任务列表 -->
+    <view class="task-section">
+      <text class="section-title">打卡记录</text>
+
+      <view class="task-item {{item.status === 'completed' ? 'done' : 'pending'}}"
+            wx:for="{{shareData.items}}" wx:key="index">
+        <!-- 左侧图标/图片 -->
+        <view class="task-left">
+          <image class="task-thumb" wx:if="{{item.task_type === 'word' && item.extra_info.image_url}}"
+                 src="{{item.extra_info.image_url}}" mode="aspectFill"></image>
+          <view class="task-type-icon" wx:else>
+            <text>{{item.task_type === 'word' ? '📖' : (item.task_type === 'scene' ? '🎬' : '🎧')}}</text>
+          </view>
+        </view>
+
+        <!-- 中间内容 -->
+        <view class="task-middle">
+          <text class="task-word">{{item.extra_info.word || item.extra_info.label || item.extra_info.title || item.reference_text}}</text>
+          <text class="task-detail" wx:if="{{item.extra_info.phonetic}}">{{item.extra_info.phonetic}} · {{item.extra_info.translation}}</text>
+          <text class="task-detail" wx:elif="{{item.extra_info.translation}}">{{item.extra_info.translation}}</text>
+        </view>
+
+        <!-- 右侧分数+播放 -->
+        <view class="task-right">
+          <view class="score-ring {{item.score >= 90 ? 'excellent' : (item.score >= 80 ? 'good' : (item.score >= 60 ? 'medium' : 'low'))}}" wx:if="{{item.score}}">
+            <text class="ring-score">{{item.score}}</text>
+          </view>
+          <text class="task-pending-tag" wx:elif="{{item.status !== 'completed'}}">未完成</text>
+
+          <!-- 播放用户录音 -->
+          <view class="play-btn {{playingId === index ? 'playing' : ''}}" wx:if="{{item.audio_url && item.status === 'completed'}}"
+                bindtap="playAudio" data-index="{{index}}" data-url="{{item.audio_url}}">
+            <text class="play-icon">{{playingId === index ? '⏸' : '▶'}}</text>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 底部引导 -->
+    <view class="footer-guide">
+      <text class="guide-text">也来试试每日打卡吧！</text>
+      <view class="guide-btn" bindtap="goHome">开始学习</view>
+    </view>
+
+  </block>
+</view>

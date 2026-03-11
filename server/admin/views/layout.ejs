@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>
+        <%= title %> - 英语学习后台
+    </title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .sidebar-active {
+            background-color: rgb(31 41 55);
+            border-right: 4px solid rgb(59 130 246);
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+    </style>
+</head>
+
+<body class="bg-gray-50 flex h-screen text-gray-800 font-sans">
+
+    <!-- Sidebar -->
+    <%- include('partials/sidebar') %>
+
+        <!-- Main Content -->
+        <div class="flex-1 flex flex-col overflow-hidden">
+
+            <!-- Header -->
+            <%- include('partials/header') %>
+
+                <!-- Page Content -->
+                <main class="flex-1 overflow-x-hidden overflow-y-auto bg-gray-50 p-6">
+                    <%- body %>
+                </main>
+        </div>
+
+        <!-- Common Scripts -->
+        <script>
+            const API_BASE = '/api/admin';
+
+            // Setup Toast
+            function showToast(message, type = 'success') {
+                const toast = document.createElement('div');
+                const bgClass = type === 'success' ? 'bg-green-500' : 'bg-red-500';
+                toast.className = `fixed top-4 right-4 ${bgClass} text-white px-6 py-3 rounded-lg shadow-lg transform transition-all duration-300 z-50 flex items-center`;
+                toast.innerHTML = `
+                <i class="fas ${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'} mr-2"></i>
+                ${message}
+            `;
+                document.body.appendChild(toast);
+                setTimeout(() => {
+                    toast.classList.add('opacity-0', 'translate-y-[-20px]');
+                    setTimeout(() => toast.remove(), 300);
+                }, 3000);
+            }
+        </script>
+        <%- script %>
+</body>
+
+</html>

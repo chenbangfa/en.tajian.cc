@@ -1,0 +1,120 @@
+# 趣学英语 - 项目规则与上下文
+
+## 项目概述
+这是一个**儿童/幼儿英语学习平台**，产品名称"趣学英语"，包含微信小程序前端 + Node.js 后端 API + 管理后台三部分。
+项目已部署到服务器运行，线上域名为 `https://en.tajian.cc`。
+
+## 技术栈
+
+### 后端 (server/)
+- **运行时**: Node.js
+- **框架**: Express.js
+- **数据库**: MySQL 5.7 (mysql2 驱动，连接池)
+- **认证**: JWT (jsonwebtoken) + bcrypt
+- **AI集成**: Google Gemini AI (@google/generative-ai)
+- **外部API**:
+  - 有道翻译 API (翻译/词典)
+  - 腾讯云 (语音评测 SOE、OCR 文字识别)
+- **模板引擎**: EJS (管理后台)
+- **文件上传**: Multer
+- **会话管理**: express-session (管理后台)
+- **其他**: axios, cors, express-validator, uuid, ws (WebSocket)
+
+### 前端 - 微信小程序 (weichat/)
+- **平台**: 微信小程序 (原生开发)
+- **框架**: glass-easel 组件框架
+- **语言**: JavaScript + WXML + WXSS
+- **AppID**: wxc4b54b356eb80fa8
+
+### 管理后台 (server/admin/)
+- **框架**: Express.js + EJS 模板
+- **认证**: Session-based
+- **UI**: 服务端渲染 (SSR)
+
+## API 路由表
+
+| 路由前缀 | 文件 | 说明 |
+|---------|------|------|
+| `/api/auth` | routes/auth.js | 微信登录认证 |
+| `/api/words` | routes/words.js | 单词 CRUD |
+| `/api/categories` | routes/categories.js | 单词分类 |
+| `/api/scenes` | routes/scenes.js | 场景学习 |
+| `/api/scene-categories` | routes/scene_categories.js | 场景分类 |
+| `/api/podcast` | routes/podcast.js | 播客内容 |
+| `/api/podcast-categories` | routes/podcast_categories.js | 播客分类 |
+| `/api/voice` | routes/voice.js | 语音评测 |
+| `/api/ai` | routes/ai.js | AI 功能 (Gemini) |
+| `/api/checkin` | routes/checkin.js | 打卡签到 |
+| `/api/users` | routes/users.js | 用户信息 |
+| `/api/health` | app.js 内联 | 健康检查 |
+
+## 数据库结构 (english_learning)
+
+### 数据库: MySQL 5.7, 字符集: utf8mb4_unicode_ci
+
+# 端口配置 (在 .env 中)
+# API 服务: PORT (默认 3003)
+# 管理后台: ADMIN_PORT (默认 3004)
+```
+
+## 环境变量 (.env)
+
+服务器 `.env` 已配置完成，包含以下关键配置：
+- `PORT` / `ADMIN_PORT` - 服务端口
+- `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASSWORD` / `DB_NAME` - MySQL 数据库
+- `JWT_SECRET` / `JWT_EXPIRES_IN` - JWT 认证
+- `GOOGLE_AI_KEY` - Google Gemini AI
+- `YOUDAO_APP_KEY` / `YOUDAO_APP_SECRET` - 有道翻译
+- `TENCENT_APPID` / `TENCENT_SECRET_ID` / `TENCENT_SECRET_KEY` - 腾讯云服务
+- `WECHAT_APPID` / `WECHAT_SECRET` - 微信小程序
+
+**注意**: `.env` 文件不提交到 git，参考 `.env.example` 模板。
+
+## 部署信息
+
+- **线上域名**: `https://en.tajian.cc`
+- **API 基地址**: `https://en.tajian.cc/api`
+- **数据库**: MySQL 5.7
+- **服务器 .env 已配置完成**
+- **Git 已配置**
+
+## Git 管理
+
+- `server/` 目录通过 git 管理
+- `weichat/` 目录 **不同步 git**（微信小程序通过微信开发者工具管理）
+- `.env` 文件不提交 git（在 `.gitignore` 中）
+- `uploads/` 目录不提交 git
+- `node_modules/` 不提交 git
+
+## 编码规范
+
+### 后端
+- 使用 CommonJS 模块 (`require` / `module.exports`)
+- Express 路由使用 RESTful 风格
+- 数据库查询使用参数化查询 (防 SQL 注入)
+- API 响应格式统一: `{ success: boolean, data?: any, message?: string }`
+- 认证使用 JWT Bearer Token
+
+### 前端 (微信小程序)
+- 原生小程序开发 (WXML + WXSS + JS)
+- API 调用通过 `services/api.js` 封装
+- Token 存储在 `wx.StorageSync`
+- 组件框架: glass-easel
+
+### 管理后台
+- Session-based 认证 (非 JWT)
+- EJS 模板渲染
+- 使用 express-ejs-layouts 布局系统
+
+## 开发注意事项
+
+1. **不要修改 `.env` 文件** - 服务器已配置好，敏感信息不提交代码
+2. **数据库变更** - 修改表结构时同步更新 `server/database/english_learning.sql`
+3. **新增路由** - 在 `server/src/app.js` 中注册，路由文件放在 `server/src/routes/`
+4. **新增页面** - 小程序新页面需要在 `weichat/app.json` 的 pages 数组中注册
+5. **weichat 目录不走 git** - 小程序代码通过微信开发者工具上传
+6. **API 返回统一格式** - 所有接口返回 `{ success, data, message }` 格式
+7. **分类表支持层级** - word_categories, scene_categories, podcast_categories 都有 parent_id 支持树形结构
+8. **音频支持男女声** - words 和 scene_objects 表都支持 audio_url_male 和 audio_url_female
+9. **Always respond in 中文** - AI 对话使用中文回复
+10.回复我时，请非常简要说明问题，不要废话。

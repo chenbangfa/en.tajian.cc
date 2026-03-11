@@ -1,0 +1,67 @@
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+    <div class="bg-white rounded-xl shadow-sm p-6 flex flex-col items-center justify-center border-b-4 border-blue-500">
+        <div class="text-4xl font-bold text-blue-600 mb-2" id="stat-words">0</div>
+        <div class="text-gray-500 font-medium">总单词数</div>
+    </div>
+    <div
+        class="bg-white rounded-xl shadow-sm p-6 flex flex-col items-center justify-center border-b-4 border-green-500">
+        <div class="text-4xl font-bold text-green-600 mb-2" id="stat-with-image">0</div>
+        <div class="text-gray-500 font-medium">有图片</div>
+    </div>
+    <div
+        class="bg-white rounded-xl shadow-sm p-6 flex flex-col items-center justify-center border-b-4 border-yellow-500">
+        <div class="text-4xl font-bold text-yellow-600 mb-2" id="stat-without-image">0</div>
+        <div class="text-gray-500 font-medium">无图片</div>
+    </div>
+    <div
+        class="bg-white rounded-xl shadow-sm p-6 flex flex-col items-center justify-center border-b-4 border-purple-500">
+        <div class="text-4xl font-bold text-purple-600 mb-2" id="stat-categories">0</div>
+        <div class="text-gray-500 font-medium">分类数</div>
+    </div>
+</div>
+
+<div class="bg-white rounded-xl shadow-sm p-6">
+    <h3 class="text-lg font-bold text-gray-800 mb-4">最近添加单词</h3>
+    <p class="text-gray-500 text-sm">功能开发中...</p>
+</div>
+
+<script>
+    async function loadStats() {
+        try {
+            // 1. Get basic stats
+            const res = await fetch(`${API_BASE}/stats/overview`);
+            const data = await res.json();
+
+            if (data.success) {
+                document.getElementById('stat-words').textContent = data.data.words || 0;
+                // Note: categories count is not in overview, maybe we fetch it or use words data
+            }
+
+            // 2. Get words for image stats (Client-side calculation to match original logic)
+            // Ideally this should be a backend API but for now we port existing logic
+            const wordsRes = await fetch(`${API_BASE}/words?limit=10000`);
+            const wordsData = await wordsRes.json();
+
+            if (wordsData.success) {
+                const words = wordsData.data.list;
+                const withImage = words.filter(w => w.image_url).length;
+                const total = words.length;
+
+                document.getElementById('stat-with-image').textContent = withImage;
+                document.getElementById('stat-without-image').textContent = total - withImage;
+
+                // Get unique categories count from words if needed, or fetch categories
+                const catRes = await fetch(`${API_BASE}/categories`);
+                const catData = await catRes.json();
+                if (catData.success) {
+                    document.getElementById('stat-categories').textContent = catData.data.length;
+                }
+            }
+        } catch (e) {
+            console.error('加载统计失败:', e);
+            // showToast('加载统计失败', 'error'); // Suppress error to avoid annoyance
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', loadStats);
+</script>

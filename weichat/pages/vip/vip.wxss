@@ -1,0 +1,297 @@
+/* pages/vip/vip.wxss */
+page {
+  background-color: #F8F9FA;
+  padding-bottom: 200rpx;
+}
+
+.container {
+  padding: 32rpx;
+}
+
+/* 头部黑金卡片 */
+.header-card {
+  background: linear-gradient(135deg, #2D3436 0%, #000000 100%);
+  border-radius: 32rpx;
+  padding: 40rpx 32rpx;
+  margin-bottom: 48rpx;
+  color: #FFEAA7;
+  box-shadow: 0 16rpx 40rpx rgba(0,0,0,0.2);
+  position: relative;
+  overflow: hidden;
+}
+
+.header-card::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  right: -20%;
+  width: 300rpx;
+  height: 300rpx;
+  background: radial-gradient(circle, rgba(255, 234, 167, 0.1) 0%, rgba(0,0,0,0) 70%);
+  border-radius: 50%;
+}
+
+.user-row {
+  display: flex;
+  align-items: center;
+  position: relative;
+  z-index: 1;
+}
+
+.avatar {
+  width: 100rpx;
+  height: 100rpx;
+  border-radius: 50%;
+  border: 4rpx solid rgba(255, 234, 167, 0.3);
+  margin-right: 24rpx;
+}
+
+.nickname {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #FFFFFF;
+  margin-bottom: 8rpx;
+  display: block;
+}
+
+.vip-status {
+  display: flex;
+  align-items: center;
+  font-size: 24rpx;
+  color: #FFEAA7;
+  background: rgba(255, 234, 167, 0.15);
+  padding: 6rpx 16rpx;
+  border-radius: 20rpx;
+  margin-bottom: 8rpx;
+  width: fit-content;
+}
+
+.points-balance {
+  font-size: 24rpx;
+  color: #FAB1A0;
+}
+
+.points-val {
+  font-weight: 700;
+  font-size: 28rpx;
+  margin-left: 8rpx;
+}
+
+.crown-icon {
+  width: 24rpx;
+  height: 24rpx;
+  margin-right: 8rpx;
+}
+
+.vip-status.inactive {
+  color: #B2BEC3;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* 标题通用 */
+.section-title {
+  font-size: 32rpx;
+  font-weight: 800;
+  color: #2D3436;
+  margin-bottom: 24rpx;
+  padding-left: 8rpx;
+}
+
+/* 套餐选择 */
+.plans-container {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 48rpx;
+}
+
+.points-container {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16rpx;
+}
+
+.plan-item {
+  width: 46%;
+  background: #FFFFFF;
+  border: 4rpx solid transparent;
+  border-radius: 24rpx;
+  padding: 32rpx 24rpx;
+  text-align: center;
+  position: relative;
+  box-shadow: 0 8rpx 24rpx rgba(0,0,0,0.03);
+  transition: all 0.2s;
+  box-sizing: border-box;
+}
+
+.points-item {
+  width: 100%;
+  padding: 24rpx 16rpx;
+}
+
+.plan-item.selected {
+  border-color: #CEA868;
+  background: #FFFBF0;
+  transform: translateY(-4rpx);
+  box-shadow: 0 16rpx 32rpx rgba(206, 168, 104, 0.15);
+}
+
+.plan-tag {
+  position: absolute;
+  top: -16rpx;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #FF6B6B;
+  color: #FFFFFF;
+  font-size: 20rpx;
+  padding: 4rpx 12rpx;
+  border-radius: 12rpx;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.plan-name {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: #2D3436;
+  margin-bottom: 8rpx;
+}
+
+.plan-points-grant {
+  font-size: 22rpx;
+  color: #0984E3;
+  background: rgba(9, 132, 227, 0.1);
+  padding: 2rpx 8rpx;
+  border-radius: 8rpx;
+  display: inline-block;
+  margin-bottom: 12rpx;
+}
+
+.plan-price {
+  color: #CEA868;
+  margin-bottom: 4rpx;
+}
+
+.currency {
+  font-size: 28rpx;
+  font-weight: 700;
+}
+
+.amount {
+  font-size: 48rpx;
+  font-weight: 800;
+}
+
+.plan-original {
+  font-size: 22rpx;
+  color: #B2BEC3;
+  text-decoration: line-through;
+  margin-bottom: 8rpx;
+}
+
+.plan-desc {
+  font-size: 22rpx;
+  color: #E17055;
+  background: rgba(225, 112, 85, 0.1);
+  padding: 4rpx 12rpx;
+  border-radius: 8rpx;
+  display: inline-block;
+}
+
+/* 权益列表 */
+.benefits-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 24rpx;
+}
+
+.benefit-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: #FFFFFF;
+  padding: 24rpx;
+  border-radius: 24rpx;
+  text-align: center;
+}
+
+.benefit-icon-bg {
+  width: 80rpx;
+  height: 80rpx;
+  background: #FFFBF0;
+  border-radius: 40rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16rpx;
+}
+
+.benefit-icon {
+  width: 40rpx;
+  height: 40rpx;
+}
+
+.benefit-name {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #2D3436;
+  margin-bottom: 4rpx;
+}
+
+.benefit-desc {
+  font-size: 22rpx;
+  color: #B2BEC3;
+}
+
+/* 底部支付栏 */
+.footer-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #FFFFFF;
+  padding: 24rpx 32rpx 60rpx 32rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 -8rpx 32rpx rgba(0,0,0,0.05);
+  z-index: 100;
+}
+
+.total-label {
+  font-size: 28rpx;
+  color: #636E72;
+  margin-right: 8rpx;
+}
+
+.total-currency {
+  font-size: 32rpx;
+  color: #D35400;
+  font-weight: 700;
+}
+
+.total-amount {
+  font-size: 48rpx;
+  color: #D35400;
+  font-weight: 800;
+}
+
+.pay-btn {
+  background: linear-gradient(135deg, #CEA868 0%, #B38F52 100%);
+  color: #FFFFFF;
+  border-radius: 48rpx;
+  font-size: 32rpx;
+  font-weight: 700;
+  padding: 0 64rpx;
+  margin: 0 !important;
+  line-height: 88rpx;
+  height: 88rpx;
+  width: auto !important;
+  min-width: 240rpx;
+  box-shadow: 0 8rpx 24rpx rgba(206, 168, 104, 0.3);
+}
+
+.pay-btn[disabled] {
+  background: #B2BEC3;
+  color: #FFFFFF;
+  box-shadow: none;
+}

@@ -1,0 +1,816 @@
+<!-- SheetJS 用于解析 Excel 文件 -->
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+
+<div class="space-y-6">
+    <!-- Step 1: Upload & Config -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100">
+        <div class="p-6 border-b border-gray-100 bg-gray-50 rounded-t-xl">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h2 class="text-lg font-bold text-gray-800 flex items-center">
+                        <span class="bg-blue-100 text-blue-600 p-2 rounded-lg mr-3"><i
+                                class="fas fa-file-import"></i></span>
+                        批量导入单词
+                    </h2>
+                    <p class="text-sm text-gray-500 mt-1">上传 CSV / Excel 文件，AI 自动补全音标、例句和语法详解</p>
+                </div>
+                <div class="text-sm text-gray-500">Step 1</div>
+            </div>
+        </div>
+
+        <div class="p-6 space-y-5">
+            <!-- Category Selection -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">一级分类 *</label>
+                    <select id="import-parent-category" onchange="loadSubCategories()"
+                        class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                        <option value="">请选择一级分类...</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">二级分类</label>
+                    <select id="import-sub-category"
+                        class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                        <option value="">请先选择一级分类</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- File Upload Area -->
+            <div>
+                <div class="flex items-center justify-between mb-2">
+                    <label class="block text-sm font-medium text-gray-700">上传文件 (CSV / Excel)</label>
+                    <a href="javascript:void(0)" onclick="downloadTemplate()"
+                        class="text-sm text-blue-600 hover:underline flex items-center">
+                        <i class="fas fa-download mr-1"></i> 下载 CSV 模板
+                    </a>
+                </div>
+                <div id="csv-drop-zone"
+                    class="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50/50 transition-all"
+                    onclick="document.getElementById('csv-file-input').click()">
+                    <input type="file" id="csv-file-input" accept=".csv,.txt,.xls,.xlsx" class="hidden"
+                        onchange="handleFileUpload(event)">
+                    <div id="csv-upload-icon">
+                        <i class="fas fa-cloud-upload-alt text-4xl text-gray-300 mb-3"></i>
+                        <p class="text-gray-500 font-medium">点击或拖拽文件到此处</p>
+                        <p class="text-xs text-gray-400 mt-2">支持 CSV、XLS、XLSX 格式 | 列：英文, 中文, 图片建议（图片建议可选）</p>
+                    </div>
+                    <div id="csv-file-info" class="hidden">
+                        <i class="fas fa-file-excel text-4xl text-green-500 mb-3" id="file-type-icon"></i>
+                        <p class="text-gray-700 font-medium" id="csv-file-name"></p>
+                        <p class="text-sm text-gray-500" id="csv-file-stats"></p>
+                        <button type="button" onclick="event.stopPropagation(); clearFile()"
+                            class="mt-2 text-xs text-red-500 hover:underline">清除文件</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex gap-3">
+                <button id="btn-ai-enhance" onclick="aiEnhanceWords()" disabled
+                    class="flex-1 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors shadow-sm font-medium flex justify-center items-center disabled:opacity-50 disabled:cursor-not-allowed">
+                    <i class="fas fa-magic mr-2"></i> AI 自动补全 & 预览
+                </button>
+                <button id="btn-direct-preview" onclick="showDirectPreview()" disabled
+                    class="py-3 px-6 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-colors font-medium flex items-center disabled:opacity-50 disabled:cursor-not-allowed">
+                    <i class="fas fa-eye mr-2"></i> 跳过AI，直接预览
+                </button>
+            </div>
+            <p class="text-center text-xs text-gray-400">AI将自动生成音标、例句、翻译和语法详解；也可跳过直接导入</p>
+        </div>
+    </div>
+
+    <!-- Status Box -->
+    <div id="import-result" class="hidden"></div>
+
+    <!-- ==================== 批量更新图片建议 & 重新生成图片 ==================== -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100">
+        <div class="p-6 border-b border-gray-100 bg-orange-50 rounded-t-xl">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h2 class="text-lg font-bold text-gray-800 flex items-center">
+                        <span class="bg-orange-100 text-orange-600 p-2 rounded-lg mr-3"><i class="fas fa-sync-alt"></i></span>
+                        批量更新图片建议 & 重新生成图片
+                    </h2>
+                    <p class="text-sm text-gray-500 mt-1">上传包含「英文」和「图片建议」的文件，匹配已有单词后更新提示词并重新生成图片</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="p-6 space-y-5">
+            <!-- File Upload for Hint Update -->
+            <div>
+                <div class="flex items-center justify-between mb-2">
+                    <label class="block text-sm font-medium text-gray-700">上传文件 (CSV / Excel)</label>
+                    <a href="javascript:void(0)" onclick="downloadHintTemplate()"
+                        class="text-sm text-orange-600 hover:underline flex items-center">
+                        <i class="fas fa-download mr-1"></i> 下载模板
+                    </a>
+                </div>
+                <div id="hint-drop-zone"
+                    class="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer hover:border-orange-400 hover:bg-orange-50/50 transition-all"
+                    onclick="document.getElementById('hint-file-input').click()">
+                    <input type="file" id="hint-file-input" accept=".csv,.txt,.xls,.xlsx" class="hidden"
+                        onchange="handleHintFileUpload(event)">
+                    <div id="hint-upload-icon">
+                        <i class="fas fa-images text-4xl text-gray-300 mb-3"></i>
+                        <p class="text-gray-500 font-medium">点击或拖拽文件上传</p>
+                        <p class="text-xs text-gray-400 mt-2">仅需两列：英文, 图片建议 | 系统自动匹配已有单词</p>
+                    </div>
+                    <div id="hint-file-info" class="hidden">
+                        <i class="fas fa-file-excel text-4xl text-orange-500 mb-3" id="hint-file-type-icon"></i>
+                        <p class="text-gray-700 font-medium" id="hint-file-name"></p>
+                        <p class="text-sm text-gray-500" id="hint-file-stats"></p>
+                        <button type="button" onclick="event.stopPropagation(); clearHintFile()"
+                            class="mt-2 text-xs text-red-500 hover:underline">清除文件</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action -->
+            <button id="btn-hint-update" onclick="batchUpdateHints()" disabled
+                class="w-full py-3 bg-orange-600 text-white rounded-xl hover:bg-orange-700 transition-colors shadow-sm font-medium flex justify-center items-center disabled:opacity-50 disabled:cursor-not-allowed">
+                <i class="fas fa-magic mr-2"></i> 更新图片建议 & 重新生成图片
+            </button>
+            <p class="text-center text-xs text-gray-400">系统将匹配已有单词 → 更新图片建议 → 逐个重新生成图片</p>
+        </div>
+    </div>
+
+    <!-- Hint Update Result -->
+    <div id="hint-update-result" class="hidden"></div>
+
+    <!-- Hint Update Preview -->
+    <div id="hint-preview-card" class="bg-white rounded-xl shadow-sm border border-gray-100 hidden flex flex-col"
+        style="max-height: 500px;">
+        <div class="p-4 border-b border-gray-100 bg-orange-50 rounded-t-xl flex justify-between items-center shrink-0">
+            <h3 class="font-bold text-gray-800 text-sm flex items-center">
+                <i class="fas fa-list-check mr-2 text-orange-500"></i>
+                匹配预览
+                <span id="hint-preview-count" class="ml-2 text-xs font-normal text-gray-500"></span>
+            </h3>
+        </div>
+        <div class="flex-1 overflow-auto">
+            <table class="w-full text-left" id="hint-preview-table">
+                <thead class="sticky top-0 bg-gray-50 shadow-sm z-10">
+                    <tr class="text-xs text-gray-500 uppercase tracking-wider">
+                        <th class="px-4 py-2 font-semibold">单词</th>
+                        <th class="px-4 py-2 font-semibold">新图片建议</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 bg-white text-sm">
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Step 2: Preview & Import -->
+    <div id="import-preview-card" class="bg-white rounded-xl shadow-sm border border-gray-100 hidden flex flex-col"
+        style="max-height: 700px;">
+        <div class="p-6 border-b border-gray-100 bg-gray-50 rounded-t-xl flex justify-between items-center shrink-0">
+            <h3 class="font-bold text-gray-800 flex items-center">
+                <span class="bg-green-100 text-green-600 p-1.5 rounded-lg mr-2"><i
+                        class="fas fa-list-check"></i></span>
+                预览导入数据
+                <span id="preview-count" class="ml-2 text-sm font-normal text-gray-500"></span>
+            </h3>
+            <div class="flex items-center gap-4">
+                <label class="flex items-center cursor-pointer select-none">
+                    <input type="checkbox" id="import-auto-image"
+                        class="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500">
+                    <span class="ml-2 text-sm text-gray-700">导入后自动生成图片</span>
+                </label>
+                <button onclick="batchImportEnhanced()"
+                    class="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors shadow-sm font-medium">
+                    <i class="fas fa-check mr-2"></i> 确认导入
+                </button>
+            </div>
+        </div>
+
+        <!-- Table -->
+        <div class="flex-1 overflow-auto">
+            <table class="w-full text-left" id="import-preview-table">
+                <thead class="sticky top-0 bg-gray-50 shadow-sm z-10">
+                    <tr class="text-xs text-gray-500 uppercase tracking-wider">
+                        <th class="px-4 py-3 font-semibold w-24">单词</th>
+                        <th class="px-4 py-3 font-semibold w-20">音标</th>
+                        <th class="px-4 py-3 font-semibold w-20">翻译</th>
+                        <th class="px-4 py-3 font-semibold">例句</th>
+                        <th class="px-4 py-3 font-semibold w-36">图片建议</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 bg-white text-sm">
+                    <!-- Data -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    let parsedWords = [];       // CSV 解析后的原始数据
+    let enhancedWordsData = []; // AI 增强后的数据
+    let allCategories = [];     // 所有分类
+
+    // ==================== 分类加载 ====================
+
+    async function loadCategories() {
+        try {
+            const res = await fetch(`${API_BASE}/categories`);
+            const data = await res.json();
+            if (data.success) {
+                allCategories = data.data;
+                populateParentCategories();
+            }
+        } catch (e) {
+            console.error('加载分类失败:', e);
+        }
+    }
+
+    function populateParentCategories() {
+        const select = document.getElementById('import-parent-category');
+        const parents = allCategories.filter(c => !c.parent_id || c.parent_id === 0);
+        select.innerHTML = '<option value="">请选择一级分类...</option>';
+        parents.forEach(c => {
+            select.innerHTML += `<option value="${c.id}">${c.icon || ''} ${c.name}</option>`;
+        });
+    }
+
+    function loadSubCategories() {
+        const parentId = parseInt(document.getElementById('import-parent-category').value);
+        const subSelect = document.getElementById('import-sub-category');
+
+        if (!parentId) {
+            subSelect.innerHTML = '<option value="">请先选择一级分类</option>';
+            return;
+        }
+
+        const children = allCategories.filter(c => c.parent_id === parentId);
+        if (children.length === 0) {
+            subSelect.innerHTML = '<option value="">该分类无子分类（将直接归入一级分类）</option>';
+        } else {
+            subSelect.innerHTML = '<option value="">不选择二级分类</option>';
+            children.forEach(c => {
+                subSelect.innerHTML += `<option value="${c.id}">${c.icon || ''} ${c.name}</option>`;
+            });
+        }
+    }
+
+    function getSelectedCategoryId() {
+        const subId = document.getElementById('import-sub-category').value;
+        if (subId) return parseInt(subId);
+        const parentId = document.getElementById('import-parent-category').value;
+        return parentId ? parseInt(parentId) : null;
+    }
+
+    // ==================== 文件处理 (CSV + Excel) ====================
+
+    const SUPPORTED_EXTENSIONS = ['.csv', '.txt', '.xls', '.xlsx'];
+    const EXCEL_EXTENSIONS = ['.xls', '.xlsx'];
+
+    function getFileExtension(filename) {
+        return filename.substring(filename.lastIndexOf('.')).toLowerCase();
+    }
+
+    function isExcelFile(filename) {
+        return EXCEL_EXTENSIONS.includes(getFileExtension(filename));
+    }
+
+    function isSupportedFile(filename) {
+        return SUPPORTED_EXTENSIONS.includes(getFileExtension(filename));
+    }
+
+    function downloadTemplate() {
+        const csv = '\uFEFF英文,中文,图片建议\nApple,苹果,一个红色的大苹果\nStudent,学生,背书包戴红领巾的小男孩\nCat,猫,\n';
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'words_template.csv';
+        a.click();
+    }
+
+    // 拖拽支持
+    const dropZone = document.getElementById('csv-drop-zone');
+    if (dropZone) {
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('border-blue-400', 'bg-blue-50');
+        });
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('border-blue-400', 'bg-blue-50');
+        });
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('border-blue-400', 'bg-blue-50');
+            const file = e.dataTransfer.files[0];
+            if (file && isSupportedFile(file.name)) {
+                processFile(file);
+            } else {
+                showToast('请上传 CSV 或 Excel 文件', 'error');
+            }
+        });
+    }
+
+    function handleFileUpload(event) {
+        const file = event.target.files[0];
+        if (file) processFile(file);
+    }
+
+    function processFile(file) {
+        if (isExcelFile(file.name)) {
+            // Excel 文件用 SheetJS 解析
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                    // 转为二维数组，包含表头
+                    const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: '' });
+                    parseRows(rows, file.name);
+                } catch (err) {
+                    console.error('Excel 解析错误:', err);
+                    showToast('Excel 文件解析失败: ' + err.message, 'error');
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        } else {
+            // CSV / TXT 文件用文本解析
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                const text = e.target.result;
+                const lines = text.trim().split('\n').map(l => l.trim()).filter(l => l);
+                // 将 CSV 行转为二维数组
+                const rows = lines.map(line => parseCSVLine(line));
+                parseRows(rows, file.name);
+            };
+            reader.readAsText(file, 'UTF-8');
+        }
+    }
+
+    /**
+     * 统一处理解析后的行数据（二维数组，第一行为表头）
+     */
+    function parseRows(rows, filename) {
+        if (rows.length < 2) {
+            showToast('文件至少需要标题行和一行数据', 'error');
+            return;
+        }
+
+        // 智能匹配列：通过表头关键词自动识别列位置
+        const header = rows[0].map(h => String(h).trim().toLowerCase());
+        let wordCol = 0, transCol = 1, hintCol = 2;
+
+        // 尝试智能匹配列
+        const wordIdx = header.findIndex(h => h.includes('英文') || h.includes('english') || h.includes('word') || h.includes('单词'));
+        const transIdx = header.findIndex(h => h.includes('中文') || h.includes('chinese') || h.includes('翻译') || h.includes('translation'));
+        const hintIdx = header.findIndex(h => h.includes('图片') || h.includes('建议') || h.includes('hint') || h.includes('描述'));
+
+        if (wordIdx >= 0) wordCol = wordIdx;
+        if (transIdx >= 0) transCol = transIdx;
+        if (hintIdx >= 0) hintCol = hintIdx;
+
+        // 跳过标题行，解析数据
+        const dataRows = rows.slice(1);
+        parsedWords = [];
+
+        for (const row of dataRows) {
+            const word = String(row[wordCol] || '').trim();
+            const translation = String(row[transCol] || '').trim();
+            const image_hint = String(row[hintCol] || '').trim();
+
+            if (word) {
+                parsedWords.push({ word, translation, image_hint });
+            }
+        }
+
+        if (parsedWords.length === 0) {
+            showToast('未解析出有效单词数据', 'error');
+            return;
+        }
+
+        // 更新 UI
+        const iconEl = document.getElementById('file-type-icon');
+        if (isExcelFile(filename)) {
+            iconEl.className = 'fas fa-file-excel text-4xl text-green-500 mb-3';
+        } else {
+            iconEl.className = 'fas fa-file-csv text-4xl text-green-500 mb-3';
+        }
+
+        document.getElementById('csv-upload-icon').classList.add('hidden');
+        document.getElementById('csv-file-info').classList.remove('hidden');
+        document.getElementById('csv-file-name').textContent = filename;
+        document.getElementById('csv-file-stats').textContent = `共 ${parsedWords.length} 个单词，${parsedWords.filter(w => w.image_hint).length} 个有图片建议`;
+
+        document.getElementById('btn-ai-enhance').disabled = false;
+        document.getElementById('btn-direct-preview').disabled = false;
+    }
+
+    /**
+     * 解析 CSV 行（支持引号包裹含逗号的字段）
+     */
+    function parseCSVLine(line) {
+        const result = [];
+        let current = '';
+        let inQuotes = false;
+
+        for (let i = 0; i < line.length; i++) {
+            const ch = line[i];
+            if (ch === '"') {
+                if (inQuotes && line[i + 1] === '"') {
+                    current += '"';
+                    i++;
+                } else {
+                    inQuotes = !inQuotes;
+                }
+            } else if (ch === ',' && !inQuotes) {
+                result.push(current);
+                current = '';
+            } else {
+                current += ch;
+            }
+        }
+        result.push(current);
+        return result;
+    }
+
+    function clearFile() {
+        parsedWords = [];
+        enhancedWordsData = [];
+        document.getElementById('csv-file-input').value = '';
+        document.getElementById('csv-upload-icon').classList.remove('hidden');
+        document.getElementById('csv-file-info').classList.add('hidden');
+        document.getElementById('btn-ai-enhance').disabled = true;
+        document.getElementById('btn-direct-preview').disabled = true;
+        document.getElementById('import-preview-card').classList.add('hidden');
+        document.getElementById('import-result').classList.add('hidden');
+    }
+
+    // ==================== AI 增强 ====================
+
+    async function aiEnhanceWords() {
+        if (parsedWords.length === 0) {
+            showToast('请先上传 CSV 文件', 'error');
+            return;
+        }
+
+        const resultDiv = document.getElementById('import-result');
+        resultDiv.classList.remove('hidden');
+        resultDiv.innerHTML = `
+            <div class="bg-blue-50 border border-blue-100 rounded-xl p-4 flex items-center text-blue-700 animate-pulse">
+                <i class="fas fa-spinner fa-spin mr-3 text-xl"></i>
+                <div>
+                    <div class="font-bold">正在进行 AI 分析与增强...</div>
+                    <div class="text-xs opacity-80 mt-1">共 ${parsedWords.length} 个单词，这可能需要一些时间</div>
+                </div>
+            </div>`;
+
+        try {
+            const res = await fetch(`${API_BASE}/batch/ai-enhance`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ words: parsedWords })
+            });
+            const result = await res.json();
+
+            if (result.success && result.data) {
+                // 合并 image_hint 到增强结果
+                enhancedWordsData = result.data.map((item, idx) => ({
+                    ...item,
+                    image_hint: parsedWords[idx]?.image_hint || ''
+                }));
+
+                renderPreview(enhancedWordsData);
+
+                resultDiv.innerHTML = `
+                    <div class="bg-green-50 border border-green-100 rounded-xl p-4 flex items-start text-green-700">
+                        <i class="fas fa-check-circle mr-3 text-xl mt-0.5"></i>
+                        <div class="flex-1">
+                            <div class="font-bold">AI 分析完成</div>
+                            <div class="text-sm opacity-90 mt-1">${result.message}</div>
+                            ${result.promptUsed ? `
+                            <details class="mt-2 text-xs">
+                                <summary class="cursor-pointer opacity-70 hover:opacity-100 select-none">查看使用的 Prompt</summary>
+                                <div class="mt-2 p-3 bg-white rounded border border-green-200 font-mono overflow-x-auto whitespace-pre-wrap text-gray-600">${result.promptUsed}</div>
+                            </details>` : ''}
+                        </div>
+                    </div>`;
+            } else {
+                resultDiv.innerHTML = `<div class="bg-red-50 border border-red-100 rounded-xl p-4 text-red-700"><i class="fas fa-times-circle mr-2"></i> ${result.message || 'AI处理失败'}</div>`;
+            }
+        } catch (e) {
+            resultDiv.innerHTML = `<div class="bg-red-50 border border-red-100 rounded-xl p-4 text-red-700"><i class="fas fa-exclamation-triangle mr-2"></i> 请求失败: ${e.message}</div>`;
+        }
+    }
+
+    // ==================== 直接预览（跳过 AI） ====================
+
+    function showDirectPreview() {
+        if (parsedWords.length === 0) {
+            showToast('请先上传 CSV 文件', 'error');
+            return;
+        }
+
+        enhancedWordsData = parsedWords.map(w => ({
+            word: w.word,
+            translation: w.translation,
+            phonetic: '',
+            example_sentence: '',
+            example_translation: '',
+            grammar_explanation: '',
+            image_hint: w.image_hint || ''
+        }));
+
+        renderPreview(enhancedWordsData);
+
+        const resultDiv = document.getElementById('import-result');
+        resultDiv.classList.remove('hidden');
+        resultDiv.innerHTML = `
+            <div class="bg-yellow-50 border border-yellow-100 rounded-xl p-4 text-yellow-700">
+                <i class="fas fa-info-circle mr-2"></i> 已跳过 AI 增强，仅使用 CSV 原始数据。音标、例句等字段为空。
+            </div>`;
+    }
+
+    // ==================== 预览表格 ====================
+
+    function renderPreview(words) {
+        const tbody = document.querySelector('#import-preview-table tbody');
+        tbody.innerHTML = words.map(w => `
+            <tr class="hover:bg-gray-50 transition-colors ${w.error ? 'bg-yellow-50' : ''}">
+                <td class="px-4 py-3 font-medium text-gray-900">${w.word}</td>
+                <td class="px-4 py-3 font-mono text-gray-500 text-xs">${w.phonetic || '<span class="text-gray-300">-</span>'}</td>
+                <td class="px-4 py-3 text-gray-700">${w.translation || '<span class="text-gray-300">-</span>'}</td>
+                <td class="px-4 py-3 text-gray-600 text-xs">
+                    <div class="mb-1">${w.example_sentence || '<span class="text-gray-300">-</span>'}</div>
+                    <div class="text-gray-400">${w.example_translation || ''}</div>
+                </td>
+                <td class="px-4 py-3 text-gray-500 text-xs">${w.image_hint || '<span class="text-gray-300">-</span>'}</td>
+            </tr>
+        `).join('');
+
+        document.getElementById('preview-count').textContent = `(${words.length} 条)`;
+        document.getElementById('import-preview-card').classList.remove('hidden');
+    }
+
+    // ==================== 确认导入 ====================
+
+    async function batchImportEnhanced() {
+        if (enhancedWordsData.length === 0) {
+            showToast('没有可导入的数据', 'error');
+            return;
+        }
+
+        const categoryId = getSelectedCategoryId();
+        if (!categoryId) {
+            showToast('请选择导入分类', 'error');
+            return;
+        }
+
+        const autoImage = document.getElementById('import-auto-image').checked;
+        const words = enhancedWordsData.map(w => ({
+            ...w,
+            category_id: categoryId
+        }));
+
+        const resultDiv = document.getElementById('import-result');
+        resultDiv.classList.remove('hidden');
+        resultDiv.innerHTML = `
+            <div class="bg-blue-50 border border-blue-100 rounded-xl p-4 flex items-center text-blue-700 animate-pulse">
+                <i class="fas fa-spinner fa-spin mr-3 text-xl"></i>
+                <div class="font-bold">正在写入数据库...</div>
+            </div>`;
+
+        try {
+            const res = await fetch(`${API_BASE}/batch/words`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ words, auto_generate_image: autoImage })
+            });
+            const result = await res.json();
+
+            if (result.success) {
+                resultDiv.innerHTML = `
+                    <div class="bg-green-50 border border-green-100 rounded-xl p-4 text-green-700">
+                        <div class="font-bold flex items-center"><i class="fas fa-check-circle mr-2"></i> 导入完成</div>
+                        <div class="mt-1 text-sm">成功: ${result.data.success.length}, 失败: ${result.data.failed.length}</div>
+                        ${result.data.failed.length > 0 ? `<div class="mt-2 text-xs text-red-500">失败单词: ${result.data.failed.map(f => f.word).join(', ')}</div>` : ''}
+                    </div>`;
+                enhancedWordsData = [];
+                parsedWords = [];
+                document.getElementById('import-preview-card').classList.add('hidden');
+                clearFile();
+            } else {
+                resultDiv.innerHTML = `<div class="bg-red-50 border border-red-100 rounded-xl p-4 text-red-700"><i class="fas fa-times-circle mr-2"></i> ${result.message}</div>`;
+            }
+        } catch (e) {
+            resultDiv.innerHTML = `<div class="bg-red-50 border border-red-100 rounded-xl p-4 text-red-700"><i class="fas fa-exclamation-triangle mr-2"></i> 导入失败: ${e.message}</div>`;
+        }
+    }
+
+    // ==================== 批量更新图片建议 ====================
+
+    let parsedHintItems = []; // 解析后的图片建议数据
+
+    function downloadHintTemplate() {
+        const csv = '\uFEFF英文,图片建议\nApple,一个鲜红的大苹果放在木桌上\nStudent,穿校服背书包的小男孩在教室门口\n';
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'image_hints_template.csv';
+        a.click();
+    }
+
+    // 拖拽支持
+    const hintDropZone = document.getElementById('hint-drop-zone');
+    if (hintDropZone) {
+        hintDropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            hintDropZone.classList.add('border-orange-400', 'bg-orange-50');
+        });
+        hintDropZone.addEventListener('dragleave', () => {
+            hintDropZone.classList.remove('border-orange-400', 'bg-orange-50');
+        });
+        hintDropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            hintDropZone.classList.remove('border-orange-400', 'bg-orange-50');
+            const file = e.dataTransfer.files[0];
+            if (file && isSupportedFile(file.name)) {
+                processHintFile(file);
+            } else {
+                showToast('请上传 CSV 或 Excel 文件', 'error');
+            }
+        });
+    }
+
+    function handleHintFileUpload(event) {
+        const file = event.target.files[0];
+        if (file) processHintFile(file);
+    }
+
+    function processHintFile(file) {
+        if (isExcelFile(file.name)) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: '' });
+                    parseHintRows(rows, file.name);
+                } catch (err) {
+                    showToast('Excel 解析失败: ' + err.message, 'error');
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        } else {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const text = e.target.result;
+                const lines = text.trim().split('\n').map(l => l.trim()).filter(l => l);
+                const rows = lines.map(line => parseCSVLine(line));
+                parseHintRows(rows, file.name);
+            };
+            reader.readAsText(file, 'UTF-8');
+        }
+    }
+
+    function parseHintRows(rows, filename) {
+        if (rows.length < 2) {
+            showToast('文件至少需要标题行和一行数据', 'error');
+            return;
+        }
+
+        const header = rows[0].map(h => String(h).trim().toLowerCase());
+        let wordCol = 0, hintCol = 1;
+
+        const wordIdx = header.findIndex(h => h.includes('英文') || h.includes('english') || h.includes('word') || h.includes('单词'));
+        const hintIdx = header.findIndex(h => h.includes('图片') || h.includes('建议') || h.includes('hint') || h.includes('描述'));
+
+        if (wordIdx >= 0) wordCol = wordIdx;
+        if (hintIdx >= 0) hintCol = hintIdx;
+
+        parsedHintItems = [];
+        for (const row of rows.slice(1)) {
+            const word = String(row[wordCol] || '').trim();
+            const image_hint = String(row[hintCol] || '').trim();
+            if (word && image_hint) {
+                parsedHintItems.push({ word, image_hint });
+            }
+        }
+
+        if (parsedHintItems.length === 0) {
+            showToast('未解析出有效数据（需要英文和图片建议两列都有值）', 'error');
+            return;
+        }
+
+        // 更新UI
+        const iconEl = document.getElementById('hint-file-type-icon');
+        iconEl.className = isExcelFile(filename)
+            ? 'fas fa-file-excel text-4xl text-orange-500 mb-3'
+            : 'fas fa-file-csv text-4xl text-orange-500 mb-3';
+
+        document.getElementById('hint-upload-icon').classList.add('hidden');
+        document.getElementById('hint-file-info').classList.remove('hidden');
+        document.getElementById('hint-file-name').textContent = filename;
+        document.getElementById('hint-file-stats').textContent = `共 ${parsedHintItems.length} 条图片建议更新`;
+
+        document.getElementById('btn-hint-update').disabled = false;
+
+        // 渲染预览
+        renderHintPreview(parsedHintItems);
+    }
+
+    function renderHintPreview(items) {
+        const tbody = document.querySelector('#hint-preview-table tbody');
+        tbody.innerHTML = items.map(item => `
+            <tr class="hover:bg-gray-50">
+                <td class="px-4 py-2 font-medium text-gray-900">${item.word}</td>
+                <td class="px-4 py-2 text-gray-600 text-xs">${item.image_hint}</td>
+            </tr>
+        `).join('');
+
+        document.getElementById('hint-preview-count').textContent = `(${items.length} 条)`;
+        document.getElementById('hint-preview-card').classList.remove('hidden');
+    }
+
+    function clearHintFile() {
+        parsedHintItems = [];
+        document.getElementById('hint-file-input').value = '';
+        document.getElementById('hint-upload-icon').classList.remove('hidden');
+        document.getElementById('hint-file-info').classList.add('hidden');
+        document.getElementById('btn-hint-update').disabled = true;
+        document.getElementById('hint-preview-card').classList.add('hidden');
+        document.getElementById('hint-update-result').classList.add('hidden');
+    }
+
+    async function batchUpdateHints() {
+        if (parsedHintItems.length === 0) {
+            showToast('请先上传文件', 'error');
+            return;
+        }
+
+        const btn = document.getElementById('btn-hint-update');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> 处理中...（请耐心等待，每个单词需生成图片）';
+
+        const resultDiv = document.getElementById('hint-update-result');
+        resultDiv.classList.remove('hidden');
+        resultDiv.innerHTML = `
+            <div class="bg-orange-50 border border-orange-100 rounded-xl p-4 flex items-center text-orange-700 animate-pulse">
+                <i class="fas fa-spinner fa-spin mr-3 text-xl"></i>
+                <div>
+                    <div class="font-bold">正在批量更新图片建议并重新生成图片...</div>
+                    <div class="text-xs opacity-80 mt-1">共 ${parsedHintItems.length} 个单词，每个需要 AI 生成图片，预计需要 ${Math.ceil(parsedHintItems.length * 10 / 60)} 分钟</div>
+                </div>
+            </div>`;
+
+        try {
+            const res = await fetch(`${API_BASE}/batch/update-hints-and-regenerate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ items: parsedHintItems })
+            });
+            const result = await res.json();
+
+            if (result.success) {
+                const d = result.data;
+                let html = `
+                    <div class="bg-green-50 border border-green-100 rounded-xl p-4 text-green-700">
+                        <div class="font-bold flex items-center"><i class="fas fa-check-circle mr-2"></i> ${result.message}</div>`;
+
+                if (d.success.length > 0) {
+                    html += `<div class="mt-3 grid grid-cols-2 md:grid-cols-4 gap-3">`;
+                    d.success.forEach(s => {
+                        html += `
+                            <div class="bg-white rounded-lg border p-2 text-center">
+                                <img src="${s.image_url}" class="w-full aspect-square object-cover rounded mb-1" onerror="this.style.display='none'">
+                                <div class="text-xs font-medium text-gray-800">${s.word}</div>
+                                <div class="text-xs text-gray-400 truncate" title="${s.image_hint || ''}">${s.image_hint || '-'}</div>
+                            </div>`;
+                    });
+                    html += `</div>`;
+                }
+
+                if (d.notFound.length > 0) {
+                    html += `<div class="mt-3 text-sm text-yellow-600"><i class="fas fa-exclamation-triangle mr-1"></i> 未匹配到的单词: ${d.notFound.join(', ')}</div>`;
+                }
+                if (d.failed.length > 0) {
+                    html += `<div class="mt-2 text-sm text-red-500"><i class="fas fa-times-circle mr-1"></i> 图片生成失败: ${d.failed.map(f => f.word + '(' + f.error + ')').join(', ')}</div>`;
+                }
+
+                html += `</div>`;
+                resultDiv.innerHTML = html;
+            } else {
+                resultDiv.innerHTML = `<div class="bg-red-50 border border-red-100 rounded-xl p-4 text-red-700"><i class="fas fa-times-circle mr-2"></i> ${result.message}</div>`;
+            }
+        } catch (e) {
+            resultDiv.innerHTML = `<div class="bg-red-50 border border-red-100 rounded-xl p-4 text-red-700"><i class="fas fa-exclamation-triangle mr-2"></i> 请求失败: ${e.message}</div>`;
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-magic mr-2"></i> 更新图片建议 & 重新生成图片';
+        }
+    }
+
+    // ==================== 初始化 ====================
+    document.addEventListener('DOMContentLoaded', loadCategories);
+</script>

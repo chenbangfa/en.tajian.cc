@@ -1,0 +1,76 @@
+<!--pages/podcast/player/player.wxml-->
+<view class="container">
+  <!-- 顶部封面/标题区 -->
+  <view class="player-header">
+    <view class="cover-box {{isPlaying ? 'playing' : ''}}">
+      <view class="cover-icon">
+        <image class="cover-icon-img" src="{{content.category_name_en === 'songs' ? '/assets/icons/icon-music.svg' : content.category_name_en === 'stories' ? '/assets/icons/icon-book.svg' : '/assets/icons/icon-chat.svg'}}"></image>
+      </view>
+    </view>
+    <text class="player-title">{{content.title}}</text>
+    <text class="player-subtitle">{{isPlaying ? '正在播放' : '暂停中'}}</text>
+  </view>
+
+  <!-- 滚动文稿区 -->
+  <scroll-view class="transcript-scroll" scroll-y>
+    <view class="transcript-content">
+      <block wx:if="{{content.content_text}}">
+         <view class="text-en">{{content.content_text}}</view>
+         <view class="text-zh" wx:if="{{!!content.translation}}">{{content.translation}}</view>
+      </block>
+      <view class="empty-text" wx:else>暂无文稿</view>
+    </view>
+  </scroll-view>
+
+  <!-- 底部控制栏 -->
+  <view class="control-panel safe-bottom">
+    <!-- 进度条 -->
+    <view class="progress-bar">
+      <slider 
+        min="0" max="100" 
+        value="{{progress}}" 
+        activeColor="#0984E3" 
+        backgroundColor="#E1E1E1" 
+        block-size="12" 
+        bindchanging="onSliderChanging" 
+        bindchange="onSliderChange"
+      />
+      <view class="time-labels">
+        <text>{{currentTimeStr}}</text>
+        <text>{{durationStr}}</text>
+      </view>
+    </view>
+
+    <!-- 按钮组 -->
+    <view class="btn-row">
+      <!-- 语速 -->
+      <picker range="{{['0.5x', '0.75x', '1.0x', '1.25x', '1.5x']}}" value="2" bindchange="changeSpeed">
+        <view class="control-btn sm">
+          <text>{{speed}}x</text>
+        </view>
+      </picker>
+
+      <!-- 上一首 (暂无实际功能，保留布局) -->
+      <view class="control-btn md" style="opacity: 0.5;">
+        <image class="ctrl-icon-md" src="/assets/icons/icon-prev.svg"></image>
+      </view>
+
+      <!-- 播放/暂停 -->
+      <view class="play-btn-lg {{isPlaying ? 'playing' : ''}}" bindtap="togglePlay">
+        <view class="play-icon">
+          <image class="play-icon-lg" src="{{isPlaying ? '/assets/icons/icon-pause-white.svg' : '/assets/icons/icon-play-white.svg'}}"></image>
+        </view>
+      </view>
+
+      <!-- 下一首 (暂无实际功能，保留布局) -->
+      <view class="control-btn md" style="opacity: 0.5;">
+        <image class="ctrl-icon-md" src="/assets/icons/icon-next.svg"></image>
+      </view>
+
+      <!-- 译文开关 -->
+      <view class="control-btn sm {{readChinese ? 'active' : ''}}" bindtap="toggleChineseRaw">
+        <text>译</text>
+      </view>
+    </view>
+  </view>
+</view>

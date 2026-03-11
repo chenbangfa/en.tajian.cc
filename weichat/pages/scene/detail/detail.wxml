@@ -1,0 +1,78 @@
+<!--pages/scene/detail/detail.wxml-->
+<view class="page-container">
+  <!-- 可滚动的图片区域 -->
+  <scroll-view class="scene-scroll" scroll-y scroll-x enable-flex>
+    <view class="image-wrapper" style="width: {{imageWrapperWidth}}px; min-height: {{imageWrapperHeight}}px;">
+      <image 
+        class="scene-img" 
+        src="{{scene.image_url}}" 
+        mode="widthFix"
+        bindload="onImageLoad"
+        style="width: 100%;"></image>
+      
+      <!-- 热点层 -->
+      <view class="hotspot-layer">
+        <view 
+          class="hotspot-item {{currentWord.id === item.id ? 'active' : ''}}" 
+          wx:for="{{scene.objects}}" 
+          wx:key="id" 
+          style="left:{{item.position_x}}%; top:{{item.position_y}}%; width:{{item.label_width || 10}}%; height:{{item.label_height || 5}}%;"
+          bindtap="onHotspotTap" 
+          data-index="{{index}}"
+          data-item="{{item}}">
+        </view>
+      </view>
+    </view>
+  </scroll-view>
+
+  <!-- 固定在底部的控制卡片 -->
+  <view class="bottom-card">
+    <!-- 单词信息展示区 -->
+    <view class="word-info-box" wx:if="{{currentWord}}">
+      <view class="word-header">
+        <text class="word-en">{{currentWord.word || currentWord.custom_label}}</text>
+        <image class="sound-icon-lg" src="/assets/icons/icon-sound.svg" bindtap="playCurrentAudio"></image>
+      </view>
+      <view class="word-details">
+        <text class="phonetic" wx:if="{{currentWord.phonetic}}">/{{currentWord.phonetic}}/</text>
+        <text class="translation">{{currentWord.translation || ''}}</text>
+      </view>
+    </view>
+    
+    <!-- 默认提示 (未选择单词时显示) -->
+    <view class="empty-tip" wx:else>
+      <image class="tip-icon" src="/assets/icons/icon-hand.svg"></image>
+      <text>点击图片中的物品听发音</text>
+    </view>
+
+    <!-- 评测与导航控制栏 -->
+    <view class="control-bar">
+      <!-- 上一页 -->
+      <view class="nav-btn {{!scene.prev_id ? 'disabled' : ''}}" bindtap="onPrev">
+        <image class="nav-icon" src="/assets/icons/icon-prev.svg"></image>
+      </view>
+
+      <!-- 录音按钮 (长按) -->
+      <view class="record-btn-wrapper" 
+            bindtouchstart="startRecord" 
+            bindtouchend="stopRecord"
+            wx:if="{{currentWord && !evaluationResult}}">
+        <view class="record-btn {{isRecording ? 'recording' : ''}}">
+          <image class="mic-icon" src="/assets/icons/icon-mic.svg"></image>
+        </view>
+        <text class="record-tip">{{isRecording ? '松开结束' : '按住跟读'}}</text>
+      </view>
+
+      <!-- 评测结果展示 (替代录音按钮显示) -->
+      <view class="score-display" wx:if="{{evaluationResult && currentWord && !isRecording}}" bindtap="clearScore">
+        <text class="score-num">{{evaluationResult.score}}</text>
+        <text class="score-unit">分</text>
+      </view>
+
+      <!-- 下一页 -->
+      <view class="nav-btn {{!scene.next_id ? 'disabled' : ''}}" bindtap="onNext">
+        <image class="nav-icon" src="/assets/icons/icon-next.svg"></image>
+      </view>
+    </view>
+  </view>
+</view>

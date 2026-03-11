@@ -1,0 +1,188 @@
+<div class="bg-white rounded-xl shadow-sm border border-gray-100">
+    <div class="p-6 border-b border-gray-100 bg-gray-50 rounded-t-xl mb-4">
+        <h2 class="text-lg font-bold text-gray-800">提示词管理</h2>
+        <p class="text-sm text-gray-500 mt-1">
+            管理用于AI生成内容（单词增强、图片生成）的提示词模板。支持变量: <code>{{word}}</code>, <code>{{translation}}</code>
+        </p>
+    </div>
+
+    <div class="overflow-x-auto">
+        <table class="w-full text-left" id="prompts-table">
+            <thead>
+                <tr class="bg-gray-50 text-gray-600 text-sm uppercase tracking-wider">
+                    <th class="px-6 py-4 font-semibold w-40">标识 (Key)</th>
+                    <th class="px-6 py-4 font-semibold w-48">名称</th>
+                    <th class="px-6 py-4 font-semibold">说明</th>
+                    <th class="px-6 py-4 font-semibold w-24">状态</th>
+                    <th class="px-6 py-4 font-semibold w-32">更新时间</th>
+                    <th class="px-6 py-4 font-semibold w-24 text-right">操作</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                <!-- Data loaded via JS -->
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Edit Prompt Modal -->
+<div id="prompt-modal"
+    class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden z-50 flex items-center justify-center transition-opacity duration-300">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl transform transition-all duration-300 scale-95 opacity-0 flex flex-col max-h-[90vh]"
+        id="modal-content">
+        <div
+            class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50 rounded-t-xl shrink-0">
+            <h3 class="text-lg font-bold text-gray-800" id="prompt-modal-title">编辑提示词</h3>
+            <button onclick="closePromptModal()"
+                class="text-gray-400 hover:text-gray-600 transition-colors text-xl">&times;</button>
+        </div>
+
+        <form id="prompt-form" class="p-6 space-y-4 overflow-y-auto flex-1">
+            <input type="hidden" id="prompt-id">
+
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">标识 (只读)</label>
+                    <input type="text" id="prompt-key" readonly
+                        class="w-full px-4 py-2 border border-gray-200 rounded-lg bg-gray-100 text-gray-500 cursor-not-allowed">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">名称</label>
+                    <input type="text" id="prompt-name" required
+                        class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">说明</label>
+                <input type="text" id="prompt-description"
+                    class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+            </div>
+
+            <div class="flex-1 flex flex-col">
+                <label class="block text-sm font-medium text-gray-700 mb-1">提示词模板</label>
+                <textarea id="prompt-template" required rows="12"
+                    class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none font-mono text-sm leading-relaxed resize-none bg-gray-50"></textarea>
+                <p class="text-xs text-gray-400 mt-1">提示：使用 {{variable}} 作为占位符</p>
+            </div>
+
+            <div class="flex items-center">
+                <input type="checkbox" id="prompt-active"
+                    class="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500">
+                <label for="prompt-active" class="ml-2 text-sm text-gray-700">启用此提示词</label>
+            </div>
+        </form>
+
+        <div class="px-6 py-4 border-t border-gray-100 bg-gray-50 rounded-b-xl flex justify-end space-x-3 shrink-0">
+            <button type="button" onclick="closePromptModal()"
+                class="px-4 py-2 text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">取消</button>
+            <button type="submit" form="prompt-form"
+                class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm">保存更改</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let prompts = [];
+
+    async function loadPrompts() {
+        try {
+            const res = await fetch(`${API_BASE}/prompts`);
+            const data = await res.json();
+            if (data.success) {
+                prompts = data.data;
+                renderPrompts();
+            }
+        } catch (e) {
+            console.error(e);
+            showToast('加载提示词失败', 'error');
+        }
+    }
+
+    function renderPrompts() {
+        const tbody = document.querySelector('#prompts-table tbody');
+        if (prompts.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-8 text-center text-gray-500">暂无数据</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = prompts.map(p => `
+            <tr class="hover:bg-gray-50 transition-colors">
+                <td class="px-6 py-4 font-mono text-sm text-blue-600 bg-blue-50/50 rounded-lg mx-2">${p.prompt_key}</td>
+                <td class="px-6 py-4 font-medium text-gray-900">${p.prompt_name}</td>
+                <td class="px-6 py-4 text-gray-500 text-sm max-w-xs truncate" title="${p.description || ''}">${p.description || '-'}</td>
+                <td class="px-6 py-4">
+                    ${p.is_active
+                ? '<span class="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">启用</span>'
+                : '<span class="px-2 py-1 bg-gray-100 text-gray-500 rounded-full text-xs font-medium">禁用</span>'}
+                </td>
+                <td class="px-6 py-4 text-gray-400 text-sm">${p.updated_at ? new Date(p.updated_at).toLocaleDateString() : '-'}</td>
+                <td class="px-6 py-4 text-right">
+                    <button class="text-blue-600 hover:text-blue-800 transition-colors" onclick="editPrompt(${p.id})">
+                        <i class="fas fa-edit"></i> 编辑
+                    </button>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    function editPrompt(id) {
+        const p = prompts.find(pr => pr.id === id);
+        if (!p) return;
+
+        document.getElementById('prompt-id').value = p.id;
+        document.getElementById('prompt-key').value = p.prompt_key;
+        document.getElementById('prompt-name').value = p.prompt_name;
+        document.getElementById('prompt-description').value = p.description || '';
+        document.getElementById('prompt-template').value = p.prompt_template;
+        document.getElementById('prompt-active').checked = p.is_active;
+        document.getElementById('prompt-modal-title').textContent = '编辑提示词 - ' + p.prompt_name;
+
+        const modal = document.getElementById('prompt-modal');
+        const content = document.getElementById('modal-content');
+        modal.classList.remove('hidden');
+        requestAnimationFrame(() => {
+            content.classList.remove('scale-95', 'opacity-0');
+            content.classList.add('scale-100', 'opacity-100');
+        });
+    }
+
+    function closePromptModal() {
+        const modal = document.getElementById('prompt-modal');
+        const content = document.getElementById('modal-content');
+        content.classList.remove('scale-100', 'opacity-100');
+        content.classList.add('scale-95', 'opacity-0');
+        setTimeout(() => modal.classList.add('hidden'), 300);
+    }
+
+    document.getElementById('prompt-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const id = document.getElementById('prompt-id').value;
+        const data = {
+            prompt_name: document.getElementById('prompt-name').value,
+            prompt_template: document.getElementById('prompt-template').value,
+            description: document.getElementById('prompt-description').value,
+            is_active: document.getElementById('prompt-active').checked
+        };
+
+        try {
+            const res = await fetch(`${API_BASE}/prompts/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            const result = await res.json();
+            if (result.success) {
+                showToast('保存成功');
+                closePromptModal();
+                loadPrompts();
+            } else {
+                showToast(result.message || '保存失败', 'error');
+            }
+        } catch (e) {
+            showToast('请求失败: ' + e.message, 'error');
+        }
+    });
+
+    document.addEventListener('DOMContentLoaded', loadPrompts);
+</script>

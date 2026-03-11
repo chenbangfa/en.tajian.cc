@@ -1,0 +1,76 @@
+<!--pages/points/points.wxml-->
+<view class="container">
+  <!-- 顶部总积分 -->
+  <view class="header-card">
+    <view class="points-label">当前积分</view>
+    <view class="points-value">{{currentPoints}}</view>
+  </view>
+
+  <!-- 筛选区域 -->
+  <view class="filter-section">
+    <!-- 类型切换 -->
+    <view class="filter-tabs">
+      <view class="tab-item {{currentType === 'all' ? 'active' : ''}}" bindtap="onTabChange" data-type="all">全部</view>
+      <view class="tab-item {{currentType === 'income' ? 'active' : ''}}" bindtap="onTabChange" data-type="income">收入</view>
+      <view class="tab-item {{currentType === 'expense' ? 'active' : ''}}" bindtap="onTabChange" data-type="expense">支出</view>
+    </view>
+    
+    <!-- 筛选按钮 -->
+    <view class="filter-btn {{startDate || endDate ? 'active' : ''}}" bindtap="openFilterModal">
+      <image class="filter-icon" src="/assets/icons/icon-filter.svg"></image>
+      <text class="filter-text">{{(startDate || endDate) ? '已筛选' : '筛选'}}</text>
+    </view>
+  </view>
+
+  <!-- 筛选弹窗 -->
+  <view class="modal-mask" wx:if="{{showFilterModal}}" bindtap="closeFilterModal"></view>
+  <view class="filter-modal" wx:if="{{showFilterModal}}">
+    <view class="modal-title">选择日期范围</view>
+    
+    <view class="date-range-picker">
+      <picker mode="date" value="{{tempStartDate}}" bindchange="onTempStartDateChange">
+        <view class="modal-date-input {{tempStartDate ? '' : 'placeholder'}}">
+          {{tempStartDate || '开始日期'}}
+        </view>
+      </picker>
+      <text class="modal-date-divider">至</text>
+      <picker mode="date" value="{{tempEndDate}}" bindchange="onTempEndDateChange">
+        <view class="modal-date-input {{tempEndDate ? '' : 'placeholder'}}">
+          {{tempEndDate || '结束日期'}}
+        </view>
+      </picker>
+    </view>
+    
+    <view class="modal-actions">
+      <button class="modal-btn reset" bindtap="resetFilter">重置</button>
+      <button class="modal-btn confirm" bindtap="confirmFilter">确认</button>
+    </view>
+  </view>
+
+  <!-- 明细列表 -->
+  <view class="list-container">
+    <view class="list-title">积分记录</view>
+    
+    <block wx:if="{{list.length > 0}}">
+      <view class="points-item" wx:for="{{list}}" wx:key="id">
+        <view class="item-left">
+          <view class="item-desc">{{item.description}}</view>
+          <view class="item-date">{{item.formattedDate}}</view>
+        </view>
+        <view class="item-right {{item.isPositive ? 'positive' : 'negative'}}">
+          {{item.amountStr}}
+        </view>
+      </view>
+    </block>
+    
+    <!-- 空状态 -->
+    <view class="empty-state" wx:else>
+      <image class="empty-img" src="/assets/images/empty-points.png" mode="aspectFit"></image>
+      <view class="empty-text">暂无积分记录</view>
+    </view>
+    
+    <!-- 加载状态 -->
+    <view class="loading-more" wx:if="{{isLoading && list.length > 0}}">加载中...</view>
+    <view class="no-more" wx:if="{{!hasMore && list.length > 0}}">没有更多了</view>
+  </view>
+</view>

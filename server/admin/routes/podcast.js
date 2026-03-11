@@ -1,0 +1,329 @@
+/**
+ * 磨耳朵（Podcast）管理路由
+ */
+const express = require('express');
+const router = express.Router();
+const { query } = require('../../src/config/database');
+const voiceService = require('../../src/services/voice.service');
+
+// ==================== 分类管理 ====================
+
+// 获取所有分类
+router.get('/categories', async (req, res) => {
+    try {
+        const categories = await query(
+            'SELECT * FROM podcast_categories ORDER BY sort_order, id'
+        );
+        res.json({ success: true, data: categories });
+    } catch (error) {
+        console.error('获取播客分类失败:', error);
+        res.status(500).json({ success: false, message: '获取分类失败' });
+    }
+});
+
+// 创建分类
+router.post('/categories', async (req, res) => {
+    try {
+        const { name, name_en, icon, description, sort_order = 0 } = req.body;
+
+        if (!name) {
+            return res.status(400).json({ success: false, message: '分类名称不能为空' });
+        }
+
+        const result = await query(
+            `INSERT INTO podcast_categories (name, name_en, icon, description, sort_order) 
+             VALUES (?, ?, ?, ?, ?)`,
+            [name, name_en, icon, description, sort_order]
+        );
+
+        res.json({ success: true, data: { id: result.insertId }, message: '创建成功' });
+    } catch (error) {
+        console.error('创建播客分类失败:', error);
+        res.status(500).json({ success: false, message: '创建分类失败' });
+    }
+});
+
+// 更新分类
+router.put('/categories/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name, name_en, icon, description, sort_order, is_active } = req.body;
+
+        await query(
+            `UPDATE podcast_categories 
+             SET name = ?, name_en = ?, icon = ?, description = ?, sort_order = ?, is_active = ?
+             WHERE id = ?`,
+            [name, name_en, icon, description, sort_order, is_active !== false, id]
+        );
+
+        res.json({ success: true, message: '更新成功' });
+    } catch (error) {
+        console.error('更新播客分类失败:', error);
+        res.status(500).json({ success: false, message: '更新分类失败' });
+    }
+});
+
+// 删除分类
+router.delete('/categories/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        await query('DELETE FROM podcast_categories WHERE id = ?', [id]);
+        res.json({ success: true, message: '删除成功' });
+    } catch (error) {
+        console.error('删除播客分类失败:', error);
+        res.status(500).json({ success: false, message: '删除分类失败' });
+    }
+});
+
+// ==================== 内容管理 ====================
+
+// 获取内容列表
+router.get('/', async (req, res) => {
+    try {
+        const { category_id, page = 1, limit = 20 } = req.query;
+        const offset = (page - 1) * limit;
+
+        let sql = `SELECT c.*, cat.name as category_name 
+                   FROM podcast_contents c 
+                   LEFT JOIN podcast_categories cat ON c.category_id = cat.id`;
+        const params = [];
+
+        if (category_id) {
+            sql += ' WHERE c.category_id = ?';
+            params.push(category_id);
+        }
+
+        sql += ' ORDER BY c.sort_order, c.id DESC LIMIT ? OFFSET ?';
+        params.push(parseInt(limit), parseInt(offset));
+
+        const contents = await query(sql, params);
+
+        // 获取总数
+        let countSql = 'SELECT COUNT(*) as total FROM podcast_contents';
+        if (category_id) {
+            countSql += ' WHERE category_id = ?';
+        }
+        const [{ total }] = await query(countSql, category_id ? [category_id] : []);
+
+        res.json({
+            success: true,
+            data: {
+                list: contents,
+                total,
+                page: parseInt(page),
+                limit: parseInt(limit)
+            }
+        });
+    } catch (error) {
+        console.error('获取播客内容失败:', error);
+        res.status(500).json({ success: false, message: '获取内容失败' });
+    }
+});
+
+// 获取单个内容
+router.get('/:id', async (req, res) => {
+    try {
+        const [content] = await query(
+            `SELECT c.*, cat.name as category_name 
+             FROM podcast_contents c 
+             LEFT JOIN podcast_categories cat ON c.category_id = cat.id 
+             WHERE c.id = ?`,
+            [req.params.id]
+        );
+
+        if (!content) {
+            return res.status(404).json({ success: false, message: '内容不存在' });
+        }
+
+        res.json({ success: true, data: content });
+    } catch (error) {
+        console.error('获取播客内容失败:', error);
+        res.status(500).json({ success: false, message: '获取内容失败' });
+    }
+});
+
+// 创建内容
+router.post('/', async (req, res) => {
+    try {
+        const {
+            title, title_en, category_id, difficulty_level = 1,
+            content_text, translation, is_free = true, sort_order = 0
+        } = req.body;
+
+        if (!title || !content_text) {
+            return res.status(400).json({ success: false, message: '标题和内容不能为空' });
+        }
+
+        // 注意：如果数据库仍有 category ENUM 字段且非空，这里可能需要传入一个默认值
+        // 建议执行迁移将 category 字段设为 NULL 或删除
+        const result = await query(
+            `INSERT INTO podcast_contents 
+             (title, title_en, category_id, difficulty_level, content_text, translation, is_free, sort_order, category) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                title,
+                title_en || null,
+                category_id || null, // 允许为空
+                difficulty_level,
+                content_text,
+                translation || null,
+                is_free,
+                sort_order,
+                'stories' // Legacy category field fallback
+            ]
+        );
+
+        res.json({ success: true, data: { id: result.insertId }, message: '创建成功' });
+    } catch (error) {
+        console.error('创建播客内容失败:', error);
+        res.status(500).json({ success: false, message: '创建内容失败' });
+    }
+});
+
+// 更新内容
+router.put('/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const {
+            title, title_en, category_id, difficulty_level,
+            content_text, translation, is_free, sort_order
+        } = req.body;
+
+        // 构建更新字段，避免覆盖未传的音频字段
+        const updates = [
+            title,
+            title_en || null,
+            category_id || null,
+            difficulty_level,
+            content_text,
+            translation || null,
+            is_free,
+            sort_order,
+            id
+        ];
+
+        await query(
+            `UPDATE podcast_contents SET
+             title = ?, title_en = ?, category_id = ?, difficulty_level = ?,
+             content_text = ?, translation = ?, is_free = ?, sort_order = ?
+             WHERE id = ?`,
+            updates
+        );
+
+        res.json({ success: true, message: '更新成功' });
+    } catch (error) {
+        console.error('更新播客内容失败:', error);
+        res.status(500).json({ success: false, message: '更新内容失败' });
+    }
+});
+
+// 删除内容
+router.delete('/:id', async (req, res) => {
+    try {
+        await query('DELETE FROM podcast_contents WHERE id = ?', [req.params.id]);
+        res.json({ success: true, message: '删除成功' });
+    } catch (error) {
+        console.error('删除播客内容失败:', error);
+        res.status(500).json({ success: false, message: '删除内容失败' });
+    }
+});
+
+// ==================== 音频生成 ====================
+
+// 生成单个音频
+router.post('/generate-audio', async (req, res) => {
+    try {
+        const { content_id, voice_type } = req.body;
+
+        if (!content_id || !voice_type) {
+            return res.status(400).json({ success: false, message: '缺少参数' });
+        }
+
+        const [content] = await query(
+            'SELECT content_text, translation FROM podcast_contents WHERE id = ?',
+            [content_id]
+        );
+
+        if (!content) {
+            return res.status(404).json({ success: false, message: '内容不存在' });
+        }
+
+        let text, voice;
+        if (voice_type === 'chinese') {
+            text = content.translation;
+            voice = 'female';
+        } else {
+            text = content.content_text;
+            voice = voice_type;
+        }
+
+        if (!text) {
+            return res.status(400).json({ success: false, message: '文本内容为空' });
+        }
+
+        console.log(`[Podcast] 生成${voice_type}音频: ${text.substring(0, 50)}...`);
+
+        const result = await voiceService.textToSpeech(text, voice, voice_type === 'chinese' ? 'zh-CN' : 'en-US');
+
+        if (!result.success) {
+            return res.status(500).json({ success: false, message: result.error || '音频生成失败' });
+        }
+
+        const updateField = voice_type === 'male' ? 'male_audio_url' :
+            voice_type === 'female' ? 'female_audio_url' : 'chinese_audio_url';
+
+        await query(`UPDATE podcast_contents SET ${updateField} = ? WHERE id = ?`, [result.audioUrl, content_id]);
+
+        res.json({ success: true, data: { audio_url: result.audioUrl }, message: '音频生成成功' });
+    } catch (error) {
+        console.error('生成播客音频失败:', error);
+        res.status(500).json({ success: false, message: '音频生成失败' });
+    }
+});
+
+// 批量生成所有音频
+router.post('/generate-all-audio', async (req, res) => {
+    try {
+        const { content_id } = req.body;
+
+        const [content] = await query(
+            'SELECT content_text, translation FROM podcast_contents WHERE id = ?',
+            [content_id]
+        );
+
+        if (!content) {
+            return res.status(404).json({ success: false, message: '内容不存在' });
+        }
+
+        const results = { male: null, female: null, chinese: null };
+
+        if (content.content_text) {
+            const maleResult = await voiceService.textToSpeech(content.content_text, 'male', 'en-US');
+            if (maleResult.success) {
+                results.male = maleResult.audioUrl;
+                await query('UPDATE podcast_contents SET male_audio_url = ? WHERE id = ?', [maleResult.audioUrl, content_id]);
+            }
+
+            const femaleResult = await voiceService.textToSpeech(content.content_text, 'female', 'en-US');
+            if (femaleResult.success) {
+                results.female = femaleResult.audioUrl;
+                await query('UPDATE podcast_contents SET female_audio_url = ? WHERE id = ?', [femaleResult.audioUrl, content_id]);
+            }
+        }
+
+        if (content.translation) {
+            const chineseResult = await voiceService.textToSpeech(content.translation, 'female', 'zh-CN');
+            if (chineseResult.success) {
+                results.chinese = chineseResult.audioUrl;
+                await query('UPDATE podcast_contents SET chinese_audio_url = ? WHERE id = ?', [chineseResult.audioUrl, content_id]);
+            }
+        }
+
+        res.json({ success: true, data: results, message: '音频生成完成' });
+    } catch (error) {
+        console.error('批量生成播客音频失败:', error);
+        res.status(500).json({ success: false, message: '音频生成失败' });
+    }
+});
+
+module.exports = router;

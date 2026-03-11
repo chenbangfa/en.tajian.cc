@@ -1,0 +1,259 @@
+<div class="space-y-6">
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6 flex flex-col items-center">
+            <div class="text-3xl font-bold text-gray-800" id="gen-stat-total">0</div>
+            <div class="text-sm text-gray-500 mt-1">总单词数</div>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6 flex flex-col items-center">
+            <div class="text-3xl font-bold text-green-600" id="gen-stat-with">0</div>
+            <div class="text-sm text-gray-500 mt-1">✅ 有图片</div>
+        </div>
+        <div
+            class="bg-white rounded-xl shadow-sm border border-gray-100 p-6 flex flex-col items-center bg-yellow-50 border-yellow-100">
+            <div class="text-3xl font-bold text-yellow-600" id="gen-stat-without">0</div>
+            <div class="text-sm text-yellow-600 mt-1">⏳ 待生成</div>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6 flex flex-col items-center">
+            <div class="text-3xl font-bold text-blue-600" id="gen-stat-percent">0%</div>
+            <div class="text-sm text-gray-500 mt-1">覆盖率</div>
+        </div>
+    </div>
+
+    <!-- Main Control Card -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100">
+        <div
+            class="p-6 border-b border-gray-100 bg-gray-50 rounded-t-xl flex flex-col md:flex-row justify-between md:items-center gap-4">
+            <div>
+                <h2 class="text-lg font-bold text-gray-800">批量生成图片</h2>
+                <p class="text-sm text-gray-500 mt-1">自动筛选没有图片的单词，使用AI生成配图</p>
+            </div>
+
+            <div class="flex items-center gap-3">
+                <select id="generate-category" onchange="loadWordsForGenerate()"
+                    class="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                    <option value="">全部分类</option>
+                </select>
+
+                <button id="btn-start-generate" onclick="startBatchGenerate()"
+                    class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm font-medium flex items-center">
+                    <i class="fas fa-rocket mr-2"></i> 开始生成
+                </button>
+                <button id="btn-stop-generate" onclick="stopBatchGenerate()"
+                    class="hidden px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors shadow-sm font-medium flex items-center animate-pulse">
+                    <i class="fas fa-stop mr-2"></i> 停止
+                </button>
+            </div>
+        </div>
+
+        <div class="p-6 space-y-6">
+            <!-- Settings -->
+            <div class="flex items-center gap-4 p-4 bg-gray-50 rounded-lg border border-gray-100">
+                <span class="text-sm font-medium text-gray-700">生成模板:</span>
+                <select id="generate-prompt-key"
+                    class="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none min-w-[200px]">
+                    <option value="image_generate">通用图片生成</option>
+                    <option value="image_abstract">抽象词图片生成</option>
+                    <option value="image_color">颜色词图片生成</option>
+                    <option value="image_number">数字词图片生成</option>
+                </select>
+                <a href="/prompts" class="text-sm text-blue-600 hover:underline">编辑模板 &rarr;</a>
+            </div>
+
+            <!-- Progress Bar -->
+            <div id="generate-progress" class="hidden">
+                <div class="flex justify-between text-sm mb-2 font-medium">
+                    <span id="progress-text" class="text-blue-600">正在初始化...</span>
+                    <span id="progress-count" class="text-gray-500">0/0</span>
+                </div>
+                <div class="h-2 bg-gray-100 rounded-full overflow-hidden">
+                    <div id="progress-bar" class="h-full bg-blue-600 transition-all duration-300" style="width: 0%">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Grid -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-4"
+                id="generate-words-grid">
+                <!-- Word Cards -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let generateQueue = [];
+    let isGenerating = false;
+
+    async function loadCategories() {
+        try {
+            const res = await fetch(`${API_BASE}/categories`);
+            const data = await res.json();
+            if (data.success) {
+                const select = document.getElementById('generate-category');
+                data.data.forEach(c => {
+                    const option = document.createElement('option');
+                    option.value = c.id;
+                    option.textContent = c.name;
+                    select.appendChild(option);
+                });
+            }
+        } catch (e) { }
+    }
+
+    async function loadWordsForGenerate() {
+        const category = document.getElementById('generate-category').value;
+        let url = `${API_BASE}/words?limit=1000`;
+        if (category) url += `&category_id=${category}`;
+
+        // Gray out grid while loading
+        const grid = document.getElementById('generate-words-grid');
+        grid.style.opacity = '0.5';
+
+        try {
+            const res = await fetch(url);
+            const data = await res.json();
+            if (data.success) {
+                const allWords = data.data.list;
+                const wordsWithImage = allWords.filter(w => w.image_url);
+                const wordsWithoutImage = allWords.filter(w => !w.image_url);
+
+                // Stats
+                const total = allWords.length;
+                const withImg = wordsWithImage.length;
+                document.getElementById('gen-stat-total').textContent = total;
+                document.getElementById('gen-stat-with').textContent = withImg;
+                document.getElementById('gen-stat-without').textContent = wordsWithoutImage.length;
+                document.getElementById('gen-stat-percent').textContent = (total > 0 ? Math.round(withImg / total * 100) : 0) + '%';
+
+                renderWords(wordsWithoutImage);
+            }
+        } catch (e) { console.error(e); }
+
+        grid.style.opacity = '1';
+    }
+
+    function renderWords(words) {
+        generateQueue = words;
+        const grid = document.getElementById('generate-words-grid');
+
+        if (words.length === 0) {
+            grid.innerHTML = '<div class="col-span-full py-12 text-center text-gray-400 bg-gray-50 rounded-xl border border-dashed border-gray-200">🎉 所有单词都已有图片，无需生成</div>';
+            return;
+        }
+
+        grid.innerHTML = words.map(w => `
+            <div class="aspect-square bg-gray-50 rounded-lg border border-gray-100 flex flex-col items-center justify-center p-2 relative overflow-hidden group hover:shadow-md transition-shadow" id="word-card-${w.id}">
+                <div class="absolute inset-0 z-0" id="word-img-${w.id}"></div>
+                <div class="z-10 text-center">
+                    <div class="font-bold text-gray-700 text-sm mb-1">${w.word}</div>
+                    <div class="text-xs text-gray-400">${w.translation}</div>
+                </div>
+                <div class="absolute bottom-0 left-0 right-0 py-1 text-[10px] text-center font-medium bg-gray-100 text-gray-500 transition-colors" id="word-status-${w.id}">
+                    待生成
+                </div>
+            </div>
+        `).join('');
+    }
+
+    async function startBatchGenerate() {
+        if (generateQueue.length === 0) {
+            showToast('没有待生成的单词', 'error');
+            return;
+        }
+
+        isGenerating = true;
+        document.getElementById('btn-start-generate').classList.add('hidden');
+        document.getElementById('btn-stop-generate').classList.remove('hidden');
+        document.getElementById('generate-progress').classList.remove('hidden');
+
+        const promptKey = document.getElementById('generate-prompt-key').value;
+        const total = generateQueue.length;
+        let completed = 0;
+
+        for (const word of generateQueue) {
+            if (!isGenerating) break;
+
+            updateProgress(completed, total, `正在生成: ${word.word}`);
+            updateCardStatus(word.id, 'generating');
+
+            try {
+                const res = await fetch(`${API_BASE}/batch/generate-single`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        word_id: word.id,
+                        word: word.word,
+                        translation: word.translation,
+                        promptKey
+                    })
+                });
+                const result = await res.json();
+
+                if (result.success && result.data.image_url) {
+                    updateCardImage(word.id, result.data.image_url);
+                    updateCardStatus(word.id, 'success');
+                } else {
+                    updateCardStatus(word.id, 'error');
+                }
+            } catch (e) {
+                updateCardStatus(word.id, 'error');
+            }
+
+            completed++;
+            updateProgress(completed, total);
+        }
+
+        isGenerating = false;
+        document.getElementById('btn-start-generate').classList.remove('hidden');
+        document.getElementById('btn-stop-generate').classList.add('hidden');
+        updateProgress(completed, total, '生成结束');
+        loadWordsForGenerate(); // Refresh stats
+    }
+
+    function stopBatchGenerate() {
+        isGenerating = false;
+        showToast('已停止生成');
+        document.getElementById('btn-start-generate').classList.remove('hidden');
+        document.getElementById('btn-stop-generate').classList.add('hidden');
+    }
+
+    function updateProgress(completed, total, text) {
+        const percent = (completed / total * 100) + '%';
+        document.getElementById('progress-bar').style.width = percent;
+        document.getElementById('progress-count').textContent = `${completed}/${total}`;
+        if (text) document.getElementById('progress-text').textContent = text;
+    }
+
+    function updateCardStatus(id, status) {
+        const el = document.getElementById(`word-status-${id}`);
+        if (!el) return;
+
+        switch (status) {
+            case 'generating':
+                el.className = 'absolute bottom-0 left-0 right-0 py-1 text-[10px] text-center font-medium bg-blue-100 text-blue-600 animate-pulse';
+                el.textContent = '生成中...';
+                break;
+            case 'success':
+                el.className = 'absolute bottom-0 left-0 right-0 py-1 text-[10px] text-center font-medium bg-green-100 text-green-600';
+                el.textContent = '完成';
+                break;
+            case 'error':
+                el.className = 'absolute bottom-0 left-0 right-0 py-1 text-[10px] text-center font-medium bg-red-100 text-red-600';
+                el.textContent = '失败';
+                break;
+        }
+    }
+
+    function updateCardImage(id, url) {
+        const el = document.getElementById(`word-img-${id}`);
+        if (el) {
+            el.innerHTML = `<img src="${url}" class="w-full h-full object-cover opacity-80" />`;
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadCategories();
+        loadWordsForGenerate();
+    });
+</script>

@@ -1,0 +1,244 @@
+/* pages/camera/camera.wxss */
+page {
+  background-color: #000000;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.container {
+  padding: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 全屏相机 */
+.camera-mode {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.fullscreen-camera {
+  width: 100%;
+  height: 100%;
+}
+
+.camera-header {
+  position: absolute;
+  top: 100rpx;
+  left: 0;
+  right: 0;
+  text-align: center;
+  z-index: 10;
+}
+
+.camera-tips {
+  display: inline-block;
+  background: rgba(0,0,0,0.4);
+  backdrop-filter: blur(4px);
+  color: #FFFFFF;
+  font-size: 28rpx;
+  padding: 12rpx 32rpx;
+  border-radius: 32rpx;
+}
+
+.camera-controls {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 60rpx;
+  padding-bottom: calc(60rpx + env(safe-area-inset-bottom));
+  display: flex;
+  justify-content: center;
+  background: linear-gradient(to top, rgba(0,0,0,0.5), transparent);
+}
+
+.capture-btn-outer {
+  width: 144rpx;
+  height: 144rpx;
+  border-radius: 72rpx;
+  background: rgba(255,255,255,0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.capture-btn-inner {
+  width: 112rpx;
+  height: 112rpx;
+  border-radius: 56rpx;
+  background: #FFFFFF;
+  transition: transform 0.1s;
+}
+
+.capture-btn-outer:active .capture-btn-inner {
+  transform: scale(0.9);
+}
+
+/* 结果模式 */
+.result-mode {
+  height: 100%;
+  background: #F8F9FA;
+  display: flex;
+  flex-direction: column;
+}
+
+.result-header {
+  padding: 24rpx 32rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #FFFFFF;
+  z-index: 10;
+}
+
+.back-btn {
+ font-size: 30rpx;
+ color: #636E72;
+ display: flex;
+ align-items: center;
+}
+
+.nav-icon-img {
+ width: 36rpx;
+ height: 36rpx;
+ margin-right: 8rpx;
+}
+
+.save-btn {
+ background: #2D3436;
+ color: #FFFFFF;
+ padding: 12rpx 32rpx;
+ border-radius: 32rpx;
+ font-size: 28rpx;
+ font-weight: 600;
+ display: flex;
+ align-items: center;
+}
+
+/* 结果列表 */
+.result-scroll {
+ flex: 1;
+ overflow: hidden;
+}
+
+.preview-card {
+ margin: 32rpx;
+ height: 400rpx;
+ border-radius: 32rpx;
+ overflow: hidden;
+ box-shadow: 0 8rpx 32rpx rgba(0,0,0,0.05);
+ background: #E0E0E0;
+}
+
+.preview-img {
+ width: 100%;
+ height: 100%;
+}
+
+.result-list {
+ padding: 0 32rpx 40rpx;
+}
+
+.list-title {
+ display: flex;
+ align-items: baseline;
+ margin-bottom: 24rpx;
+}
+
+.title-main {
+ font-size: 36rpx;
+ font-weight: 800;
+ color: #2D3436;
+ margin-right: 12rpx;
+}
+
+.title-sub {
+ font-size: 26rpx;
+ color: #B2BEC3;
+}
+
+.object-card {
+ background: #FFFFFF;
+ border-radius: 24rpx;
+ padding: 24rpx;
+ display: flex;
+ align-items: center;
+ margin-bottom: 24rpx;
+ box-shadow: 0 4rpx 16rpx rgba(0,0,0,0.03);
+}
+
+.obj-icon {
+ width: 80rpx;
+ height: 80rpx;
+ background: #FFF7E6;
+ border-radius: 40rpx;
+ display: flex;
+ align-items: center;
+ justify-content: center;
+ margin-right: 24rpx;
+}
+
+.obj-icon-img {
+ width: 40rpx;
+ height: 40rpx;
+}
+
+.obj-info {
+ flex: 1;
+}
+
+.obj-word {
+ font-size: 32rpx;
+ font-weight: 700;
+ color: #2D3436;
+ margin-bottom: 4rpx;
+}
+
+.obj-trans {
+ font-size: 26rpx;
+ color: #B2BEC3;
+}
+
+.obj-play {
+ width: 64rpx;
+ height: 64rpx;
+ background: #F1F2F6;
+ border-radius: 32rpx;
+ display: flex;
+ align-items: center;
+ justify-content: center;
+}
+
+.play-icon-img {
+ width: 32rpx;
+ height: 32rpx;
+}
+
+/* 加载状态 */
+.loading-box {
+  padding: 100rpx 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: #B2BEC3;
+  font-size: 28rpx;
+}
+
+.loading-spinner {
+  width: 48rpx;
+  height: 48rpx;
+  border: 4rpx solid #F1F2F6;
+  border-top-color: #2D3436;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 24rpx;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

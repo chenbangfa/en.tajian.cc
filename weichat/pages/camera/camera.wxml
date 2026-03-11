@@ -1,0 +1,65 @@
+<!--pages/camera/camera.wxml-->
+<view class="container">
+  <!-- 拍摄模式 -->
+  <view class="camera-mode" wx:if="{{!imageUrl}}">
+    <camera class="fullscreen-camera" device-position="back" flash="off" binderror="error"></camera>
+    
+    <!-- 顶部提示 -->
+    <view class="camera-header">
+      <text class="camera-tips">对准物体，拍摄学习英语</text>
+    </view>
+
+    <!-- 底部控制 -->
+    <view class="camera-controls safe-bottom">
+      <view class="capture-btn-outer" bindtap="takePhoto">
+        <view class="capture-btn-inner"></view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 结果模式 -->
+  <view class="result-mode" wx:else>
+    <view class="result-header safe-top">
+      <view class="back-btn" bindtap="retake">
+        <image class="nav-icon-img" src="/assets/icons/icon-dacha.svg"></image> 重拍
+      </view>
+      <view class="save-btn" bindtap="saveResult">
+        完成 <image class="nav-icon-img" src="/assets/icons/icon-check.svg"></image>
+      </view>
+    </view>
+
+    <scroll-view class="result-scroll" scroll-y>
+       <!-- 拍摄图片 -->
+      <view class="preview-card">
+        <image class="preview-img" src="{{imageUrl}}" mode="aspectFill"></image>
+      </view>
+
+      <!-- 识别结果 -->
+      <view class="result-list" wx:if="{{objects.length > 0}}">
+        <view class="list-title">
+          <text class="title-main">为您识别到</text>
+          <text class="title-sub">{{objects.length}} 个物体</text>
+        </view>
+        
+        <view class="object-card" wx:for="{{objects}}" wx:key="index" bindtap="playWord" data-word="{{item.word}}">
+          <view class="obj-icon">
+            <image class="obj-icon-img" src="/assets/icons/icon-sparkle.svg"></image>
+          </view>
+          <view class="obj-info">
+            <view class="obj-word">{{item.word}}</view>
+            <view class="obj-trans">{{item.translation}}</view>
+          </view>
+          <view class="obj-play">
+            <image class="play-icon-img" src="/assets/icons/icon-sound.svg"></image>
+          </view>
+        </view>
+      </view>
+      
+      <!-- 加载中或者无结果 -->
+      <view class="loading-box" wx:if="{{loading}}">
+        <view class="loading-spinner"></view>
+        <text>AI 正在努力识别中...</text>
+      </view>
+    </scroll-view>
+  </view>
+</view>

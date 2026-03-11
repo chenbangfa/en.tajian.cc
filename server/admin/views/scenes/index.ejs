@@ -1,0 +1,149 @@
+<div class="space-y-6">
+    <!-- Header -->
+    <div class="flex justify-between items-center bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+        <div>
+            <h2 class="text-2xl font-bold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent">
+                场景内容管理</h2>
+            <p class="text-gray-500 mt-1">创建和编辑互动场景，支持点读和AI语音</p>
+        </div>
+        <a href="/scenes/edit"
+            class="flex items-center space-x-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-6 py-3 rounded-xl shadow-lg shadow-blue-200 transition-all duration-300 hover:-translate-y-0.5">
+            <i class="fas fa-plus"></i>
+            <span>新建场景</span>
+        </a>
+    </div>
+
+    <!-- Filters -->
+    <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center space-x-4">
+        <div class="flex items-center space-x-2 text-gray-600">
+            <i class="fas fa-filter"></i>
+            <span>筛选:</span>
+        </div>
+        <select id="categoryFilter" onchange="loadScenes()"
+            class="px-4 py-2 border border-gray-200 rounded-lg outline-none focus:border-blue-500 bg-gray-50">
+            <option value="">全部分类</option>
+        </select>
+        <div class="relative flex-1 max-w-md">
+            <input type="text" id="searchInput" onkeyup="if(event.key==='Enter') loadScenes()" placeholder="搜索场景名称..."
+                class="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg outline-none focus:border-blue-500 bg-gray-50">
+            <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+        </div>
+    </div>
+
+    <!-- Scene Grid -->
+    <div id="sceneGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <!-- Loading -->
+        <div class="col-span-full text-center py-12 text-gray-500">
+            <i class="fas fa-spinner fa-spin text-3xl mb-4 text-blue-500"></i>
+            <p>加载场景中...</p>
+        </div>
+    </div>
+</div>
+
+<script>
+    async function loadCategories() {
+        try {
+            const res = await fetch(`${API_BASE}/scene_categories`);
+            const result = await res.json();
+            if (result.success) {
+                const select = document.getElementById('categoryFilter');
+                result.data.forEach(cat => {
+                    // Parent
+                    select.innerHTML += `<option value="${cat.id}" class="font-bold">${cat.name}</option>`;
+                    // Children
+                    if (cat.children) {
+                        cat.children.forEach(sub => {
+                            select.innerHTML += `<option value="${sub.id}">&nbsp;&nbsp;&nbsp;&nbsp;${sub.name}</option>`;
+                        });
+                    }
+                });
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    async function loadScenes() {
+        const categoryId = document.getElementById('categoryFilter').value;
+        const keyword = document.getElementById('searchInput').value;
+
+        let url = `${API_BASE}/scenes?page=1&limit=100`;
+        if (categoryId) url += `&category_id=${categoryId}`;
+        if (keyword) url += `&keyword=${keyword}`;
+
+        try {
+            const res = await fetch(url);
+            const result = await res.json();
+            renderScenes(result.data.items || []);
+        } catch (err) {
+            showToast('加载失败', 'error');
+        }
+    }
+
+    function renderScenes(scenes) {
+        const container = document.getElementById('sceneGrid');
+        if (scenes.length === 0) {
+            container.innerHTML = `<div class="col-span-full text-center py-12 text-gray-400 bg-white rounded-2xl border border-gray-100 border-dashed">
+            <i class="fas fa-image text-3xl mb-3 opacity-50"></i>
+            <p>暂无场景数据</p>
+        </div>`;
+            return;
+        }
+
+        container.innerHTML = scenes.map(scene => `
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden group hover:shadow-lg transition-all duration-300">
+            <!-- Image -->
+            <div class="relative h-48 bg-gray-100 overflow-hidden">
+                <img src="${scene.image_url || '/static/img/placeholder.png'}" class="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500" alt="${scene.name}">
+                <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-between p-4">
+                    <span class="text-white text-xs font-medium bg-black/30 px-2 py-1 rounded backdrop-blur-sm">
+                        ${scene.difficulty_level}级难度
+                    </span>
+                    <span class="text-white text-xs font-medium bg-black/30 px-2 py-1 rounded backdrop-blur-sm">
+                        ${scene.object_count || 0} 个标记
+                    </span>
+                </div>
+            </div>
+            
+            <!-- Content -->
+            <div class="p-4">
+                <h3 class="font-bold text-gray-800 text-lg mb-1 truncate">${scene.name}</h3>
+                <p class="text-sm text-gray-500 mb-2 truncate">${scene.name_en || ''}</p>
+                <div class="flex items-center justify-between mt-4">
+                    <span class="text-xs text-gray-400 bg-gray-50 px-2 py-1 rounded">
+                        <i class="fas fa-folder mr-1"></i> ${scene.category_name || '未分类'}
+                    </span>
+                    <div class="flex space-x-2">
+                        <a href="/scenes/edit/${scene.id}" class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="编辑">
+                            <i class="fas fa-edit"></i>
+                        </a>
+                        <button onclick="deleteScene(${scene.id})" class="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="删除">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `).join('');
+    }
+
+    async function deleteScene(id) {
+        if (!confirm('确定要删除该场景吗？')) return;
+        try {
+            const res = await fetch(`${API_BASE}/scenes/${id}`, { method: 'DELETE' });
+            const result = await res.json();
+            if (result.success) {
+                showToast('删除成功');
+                loadScenes();
+            } else {
+                showToast('删除失败', 'error');
+            }
+        } catch (e) {
+            showToast('请求错误', 'error');
+        }
+    }
+
+    // Init
+    loadCategories();
+    loadScenes();
+</script>

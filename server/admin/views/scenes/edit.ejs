@@ -1,0 +1,566 @@
+<div class="grid grid-cols-12 gap-6 h-[calc(100vh-140px)]">
+    <!-- Left Column: Settings -->
+    <div class="col-span-3 bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-full">
+        <div class="p-5 border-b border-gray-100">
+            <h2 class="font-bold text-lg text-gray-800">
+                <a href="/scenes" class="text-gray-400 hover:text-gray-600 mr-2"><i class="fas fa-arrow-left"></i></a>
+                场景设置
+            </h2>
+        </div>
+
+        <form id="sceneForm" class="p-5 flex-1 overflow-y-auto space-y-5">
+            <input type="hidden" name="id" id="sceneId" value="<%= typeof scene !== 'undefined' ? scene.id : '' %>">
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">场景名称</label>
+                <input type="text" name="name" required value="<%= typeof scene !== 'undefined' ? scene.name : '' %>"
+                    class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">英文名称</label>
+                <input type="text" name="name_en" value="<%= typeof scene !== 'undefined' ? scene.name_en : '' %>"
+                    class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">所属分类</label>
+                <select name="category_id" id="categorySelect"
+                    class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all bg-white">
+                    <option value="">选择分类</option>
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">难度等级 (1-5)</label>
+                <div class="flex items-center space-x-4">
+                    <input type="range" name="difficulty_level" min="1" max="5"
+                        value="<%= typeof scene !== 'undefined' ? scene.difficulty_level : 1 %>"
+                        oninput="this.nextElementSibling.innerText = this.value + '级'" class="flex-1">
+                    <span class="text-blue-600 font-bold bg-blue-50 px-2 py-1 rounded text-sm w-10 text-center">
+                        <%= typeof scene !=='undefined' ? scene.difficulty_level : 1 %>级
+                    </span>
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">场景图片</label>
+
+                <!-- Toggle Tabs -->
+                <div class="flex bg-gray-100 p-1 rounded-xl mb-3 text-sm font-medium">
+                    <button type="button" onclick="switchImageTab('upload')" id="tab-upload"
+                        class="flex-1 py-1.5 rounded-lg bg-white shadow-sm text-gray-800 transition-all">本地上传</button>
+                    <button type="button" onclick="switchImageTab('ai')" id="tab-ai"
+                        class="flex-1 py-1.5 rounded-lg text-gray-500 hover:text-gray-800 transition-all">AI生成</button>
+                </div>
+
+                <!-- Upload Panel -->
+                <div id="panel-upload" class="block">
+                    <div class="border-2 border-dashed border-gray-200 rounded-xl p-4 text-center hover:border-blue-300 transition-colors cursor-pointer relative"
+                        onclick="document.getElementById('fileInput').click()">
+                        <input type="file" id="fileInput" accept="image/*" class="hidden"
+                            onchange="handleFileUpload(this)">
+                        <i class="fas fa-cloud-upload-alt text-2xl text-gray-300 mb-2"></i>
+                        <p class="text-xs text-gray-500">点击上传图片 (JPG/PNG)</p>
+                    </div>
+                </div>
+
+                <!-- AI Panel -->
+                <div id="panel-ai" class="hidden space-y-2">
+                    <textarea id="aiPrompt" rows="3"
+                        class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm outline-none focus:border-blue-500"
+                        placeholder="描述场景，例如：A messy bedroom with toys on the floor..."></textarea>
+                    <button type="button" onclick="generateSceneImage()"
+                        class="w-full py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors">
+                        <i class="fas fa-magic mr-1"></i> 生成场景图
+                    </button>
+                </div>
+
+                <input type="hidden" name="image_url" id="image_url"
+                    value="<%= typeof scene !== 'undefined' ? scene.image_url : '' %>">
+            </div>
+
+            <div class="pt-4 border-t border-gray-100">
+                <button type="submit"
+                    class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-lg shadow-blue-200 font-bold transition-all">保存全部</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Center Column: Image Editor -->
+    <div class="col-span-6 bg-gray-100 rounded-2xl border border-gray-200 overflow-hidden flex flex-col relative">
+        <div class="flex items-center justify-between p-3 bg-white border-b border-gray-200 shadow-sm z-10">
+            <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">Editor Canvas</span>
+
+            <div class="flex space-x-2">
+                <button onclick="smartOCR()"
+                    class="flex items-center space-x-1.5 bg-yellow-500 hover:bg-yellow-600 text-white text-xs px-3 py-1.5 rounded-lg transition-colors shadow-sm">
+                    <i class="fas fa-bolt"></i>
+                    <span>智能识别(OCR)</span>
+                </button>
+
+                <select id="ocrEngine"
+                    class="text-xs border border-yellow-200 rounded-lg px-2 bg-yellow-50 text-yellow-800 outline-none">
+                    <option value="gemini">Gemini</option>
+                    <option value="tencent">腾讯云OCR</option>
+                    <option value="youdao">有道OCR</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="flex-1 relative overflow-auto flex items-center justify-center p-8 bg-dots">
+            <div id="canvasContainer"
+                class="relative shadow-2xl bg-white select-none transition-all duration-300 opacity-0 transform scale-95 w-fit h-fit">
+                <img id="mainImage" src="<%= typeof scene !== 'undefined' ? scene.image_url : '' %>"
+                    class="max-w-full max-h-[600px] object-contain draggable=" false">
+                <!-- Hotspots Overlay -->
+                <div id="hotspotLayer" class="absolute inset-0"></div>
+            </div>
+
+            <!-- Empty State -->
+            <div id="emptyState" class="absolute inset-0 flex flex-col items-center justify-center text-gray-400">
+                <i class="fas fa-image text-5xl mb-4 opacity-30"></i>
+                <p>请先上传或生成图片</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Column: Hotspot List -->
+    <div class="col-span-3 bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-full">
+        <div class="p-5 border-b border-gray-100">
+            <div class="flex justify-between items-center mb-3">
+                <h3 class="font-bold text-gray-800">标注列表 <span id="hotspotCount"
+                        class="text-xs bg-gray-100 px-2 py-0.5 rounded-full ml-1 text-gray-500">0</span></h3>
+                <button onclick="clearAllHotspots()" class="text-xs text-red-500 hover:text-red-700">清空</button>
+            </div>
+            <button onclick="batchGenerateAll()"
+                class="w-full py-2 bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white rounded-lg text-sm font-medium transition-all shadow-sm">
+                <i class="fas fa-magic mr-1"></i> 批量生成全部
+            </button>
+        </div>
+
+        <div id="hotspotList" class="flex-1 overflow-y-auto p-4 space-y-3">
+            <!-- Items injected here -->
+        </div>
+    </div>
+</div>
+
+
+
+<style>
+    .bg-dots {
+        background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
+        background-size: 20px 20px;
+    }
+
+    .hotspot-box {
+        position: absolute;
+        border: 2px solid #3b82f6;
+        background-color: rgba(59, 130, 246, 0.2);
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .hotspot-box:hover {
+        background-color: rgba(59, 130, 246, 0.4);
+        z-index: 10;
+    }
+
+    .hotspot-box.active {
+        border-color: #ef4444;
+        background-color: rgba(239, 68, 68, 0.3);
+        z-index: 20;
+    }
+</style>
+
+<script>
+    // Init Data
+    const sceneId = document.getElementById('sceneId').value;
+    const initialCategoryId = "<%= typeof scene !== 'undefined' ? scene.category_id : '' %>";
+    let hotspots = []; // { id, word_id, custom_label, rect: {x,y,w,h} (percent), audio_url }
+
+    // --- Image Handling ---
+
+    function switchImageTab(tab) {
+        document.getElementById('tab-upload').className = tab === 'upload' ? 'flex-1 py-1.5 rounded-lg bg-white shadow-sm text-gray-800 transition-all' : 'flex-1 py-1.5 rounded-lg text-gray-500 hover:text-gray-800 transition-all';
+        document.getElementById('tab-ai').className = tab === 'ai' ? 'flex-1 py-1.5 rounded-lg bg-white shadow-sm text-gray-800 transition-all' : 'flex-1 py-1.5 rounded-lg text-gray-500 hover:text-gray-800 transition-all';
+        document.getElementById('panel-upload').className = tab === 'upload' ? 'block' : 'hidden';
+        document.getElementById('panel-ai').className = tab === 'ai' ? 'block space-y-2' : 'hidden';
+    }
+
+    function updateMainImage(url) {
+        const img = document.getElementById('mainImage');
+        const container = document.getElementById('canvasContainer');
+        const empty = document.getElementById('emptyState');
+        const input = document.getElementById('image_url');
+
+        if (url) {
+            img.src = url;
+            input.value = url;
+            img.onload = () => {
+                empty.classList.add('hidden');
+                container.classList.remove('opacity-0', 'scale-95', 'hidden');
+            };
+        }
+    }
+
+    async function handleFileUpload(input) {
+        if (!input.files || !input.files[0]) return;
+        const formData = new FormData();
+        formData.append('image', input.files[0]);
+
+        try {
+            showToast('上传中...', 'info');
+            const res = await fetch(`${API_BASE}/scenes/upload`, { method: 'POST', body: formData });
+            const data = await res.json();
+            if (data.success) {
+                updateMainImage(data.url);
+                showToast('上传成功');
+            } else {
+                showToast(data.message, 'error');
+            }
+        } catch (e) {
+            showToast('上传出错', 'error');
+        }
+    }
+
+    async function generateSceneImage() {
+        const prompt = document.getElementById('aiPrompt').value;
+        if (!prompt) return showToast('请输入描述', 'error');
+
+        try {
+            showToast('AI生成中，请耐心等待...', 'info');
+            const res = await fetch(`${API_BASE}/scenes/generate-image`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt, name: document.querySelector('input[name="name"]').value })
+            });
+            const data = await res.json();
+            if (data.success) {
+                updateMainImage(data.imageUrl);
+                showToast('生成成功');
+            } else {
+                showToast(data.message, 'error');
+            }
+        } catch (e) {
+            showToast('生成出错', 'error');
+        }
+    }
+
+    // --- Hotspot Editor Logic ---
+
+    // Draw Logic (Simplified: Click to add box center, or drag support later)
+    // Here we implement: Click on image -> Add default box at raw position -> user can modify text
+
+    // OCR Logic
+    async function smartOCR() {
+        const imageUrl = document.getElementById('image_url').value;
+        const engine = document.getElementById('ocrEngine').value;
+        const debugLog = document.getElementById('debugLog');
+
+        if (!imageUrl) return showToast('无图片', 'error');
+
+        try {
+            showToast('正在识别...', 'info');
+            debugLog.innerHTML = `[${new Date().toLocaleTimeString()}] Sending request to ${engine}...\n` + debugLog.innerHTML;
+
+            const res = await fetch(`${API_BASE}/scenes/ocr`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ imageUrl, engine })
+            });
+            const data = await res.json();
+
+            // Log full response
+            debugLog.innerHTML = `[${new Date().toLocaleTimeString()}] Response:\n${JSON.stringify(data, null, 2)}\n\n` + debugLog.innerHTML;
+
+            if (data.success) {
+                // Merge new hotspots
+                data.words.forEach(w => {
+                    const hotspot = {
+                        id: Date.now() + Math.random(),
+                        custom_label: w.text,
+                        rect: w.rect // {x, y, w, h} in %
+                    };
+                    hotspots.push(hotspot);
+                });
+                renderHotspots();
+                renderHotspotList();
+                showToast(`识别成功，找到 ${data.words.length} 个文本`);
+            } else {
+                showToast(data.message || data.error || '识别失败', 'error');
+                alert('识别失败 Details:\n' + JSON.stringify(data.error || data.message));
+            }
+        } catch (e) {
+            console.error(e);
+            debugLog.innerHTML = `[Error] ${e.message}\n` + debugLog.innerHTML;
+            showToast('请求出错: ' + e.message, 'error');
+        }
+    }
+
+    function renderHotspots() {
+        const layer = document.getElementById('hotspotLayer');
+        layer.innerHTML = '';
+
+        hotspots.forEach(h => {
+            const div = document.createElement('div');
+            div.className = 'hotspot-box';
+            div.style.left = h.rect.x + '%';
+            div.style.top = h.rect.y + '%';
+            div.style.width = h.rect.w + '%';
+            div.style.height = h.rect.h + '%';
+            div.title = h.custom_label;
+            div.onclick = (e) => {
+                e.stopPropagation();
+                // Select Item logic if needed
+            };
+
+            // Edit interaction could be added here (Interact.js)
+
+            layer.appendChild(div);
+        });
+        document.getElementById('hotspotCount').innerText = hotspots.length;
+    }
+
+    function renderHotspotList() {
+        const list = document.getElementById('hotspotList');
+        list.innerHTML = hotspots.map((h, i) => `
+            <div class="bg-gray-50 p-3 rounded-xl border border-gray-200 group">
+                <div class="flex items-center justify-between mb-2">
+                    <input type="text" value="${h.custom_label || ''}" onchange="updateLabel(${i}, this.value)" 
+                        class="bg-transparent border-none outline-none font-medium text-gray-700 flex-1 text-sm"
+                        placeholder="输入标签文本">
+                    <button onclick="removeHotspot(${i})" class="text-gray-400 hover:text-red-500 ml-2">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="flex items-center justify-between text-xs">
+                    <div class="flex items-center space-x-2">
+                        ${h.translation ? '<span class="bg-green-100 text-green-700 px-2 py-0.5 rounded">已翻译</span>' : '<span class="bg-gray-100 text-gray-500 px-2 py-0.5 rounded">未翻译</span>'}
+                        ${h.audio_url_female ? `
+                            <button onclick="playAudio('${h.audio_url_female}')" class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded hover:bg-blue-200 transition-colors">
+                                <i class="fas fa-volume-up mr-1"></i>播放
+                            </button>
+                        ` : '<span class="bg-gray-100 text-gray-500 px-2 py-0.5 rounded">无音频</span>'}
+                    </div>
+                    ${h.id ? `
+                        <button onclick="generateHotspotAudio(${h.id}, ${i})" class="bg-purple-500 hover:bg-purple-600 text-white px-2 py-1 rounded text-xs transition-colors">
+                            <i class="fas fa-magic mr-1"></i>生成
+                        </button>
+                    ` : '<span class="text-gray-400">保存后可生成</span>'}
+                </div>
+                ${h.phonetic ? `<div class="text-xs text-gray-500 mt-1">/${h.phonetic}/</div>` : ''}
+                ${h.translation ? `<div class="text-xs text-gray-600 mt-1">${h.translation}</div>` : ''}
+            </div>
+        `).join('');
+    }
+
+    // 播放音频预览
+    let currentAudio = null;
+    function playAudio(url) {
+        if (currentAudio) {
+            currentAudio.pause();
+        }
+        currentAudio = new Audio(url);
+        currentAudio.play();
+    }
+
+    // 生成热点音频和翻译
+    // 保存单个热点标签（自动保存文本变更）
+    async function saveHotspotLabel(objId, newLabel) {
+        try {
+            await fetch(`${API_BASE}/scenes/objects/${objId}/update-label`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ custom_label: newLabel })
+            });
+            return true;
+        } catch (e) {
+            console.error('保存标签失败:', e);
+            return false;
+        }
+    }
+
+    // 生成热点音频和翻译（先保存标签再生成）
+    async function generateHotspotAudio(objId, index) {
+        try {
+            const currentLabel = hotspots[index].custom_label;
+            showToast('正在保存并生成...', 'info');
+
+            // 先保存标签变更
+            await saveHotspotLabel(objId, currentLabel);
+
+            // 再调用生成API
+            const res = await fetch(`${API_BASE}/scenes/objects/${objId}/generate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                // 更新本地数据
+                hotspots[index].phonetic = data.data.phonetic;
+                hotspots[index].translation = data.data.translation;
+                hotspots[index].audio_url_male = data.data.audio_url_male;
+                hotspots[index].audio_url_female = data.data.audio_url_female;
+                renderHotspotList();
+                showToast('生成成功！');
+            } else {
+                showToast(data.message || '生成失败', 'error');
+            }
+        } catch (e) {
+            console.error(e);
+            showToast('生成失败: ' + e.message, 'error');
+        }
+    }
+
+    // 批量生成全部热点
+    async function batchGenerateAll() {
+        const hotspotsWithId = hotspots.filter(h => h.id);
+        if (hotspotsWithId.length === 0) {
+            showToast('请先保存场景后再批量生成', 'error');
+            return;
+        }
+
+        if (!confirm(`将批量生成 ${hotspotsWithId.length} 个热点的音标、翻译和音频，是否继续？`)) {
+            return;
+        }
+
+        showToast(`开始批量生成 ${hotspotsWithId.length} 个热点...`, 'info');
+
+        let successCount = 0;
+        let failCount = 0;
+
+        for (let i = 0; i < hotspots.length; i++) {
+            const h = hotspots[i];
+            if (!h.id) continue;
+
+            try {
+                // 保存并生成
+                await saveHotspotLabel(h.id, h.custom_label);
+
+                const res = await fetch(`${API_BASE}/scenes/objects/${h.id}/generate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    hotspots[i].phonetic = data.data.phonetic;
+                    hotspots[i].translation = data.data.translation;
+                    hotspots[i].audio_url_male = data.data.audio_url_male;
+                    hotspots[i].audio_url_female = data.data.audio_url_female;
+                    successCount++;
+                } else {
+                    failCount++;
+                }
+            } catch (e) {
+                failCount++;
+            }
+
+            // 更新进度
+            renderHotspotList();
+        }
+
+        showToast(`批量生成完成: 成功 ${successCount} 个, 失败 ${failCount} 个`);
+    }
+
+    function updateLabel(index, val) {
+        hotspots[index].custom_label = val;
+    }
+
+    function removeHotspot(index) {
+        hotspots.splice(index, 1);
+        renderHotspots();
+        renderHotspotList();
+    }
+
+    function clearAllHotspots() {
+        if (confirm('清空所有标注？')) {
+            hotspots = [];
+            renderHotspots();
+            renderHotspotList();
+        }
+    }
+
+    // --- Init & Load ---
+
+    (async function init() {
+        // Load Categories
+        const res = await fetch(`${API_BASE}/scene_categories`);
+        const catData = await res.json();
+        const select = document.getElementById('categorySelect');
+        catData.data.forEach(c => {
+            select.innerHTML += `<option value="${c.id}" ${c.id == initialCategoryId ? 'selected' : ''}>${c.name}</option>`;
+            if (c.children) {
+                c.children.forEach(sub => {
+                    select.innerHTML += `<option value="${sub.id}" ${sub.id == initialCategoryId ? 'selected' : ''}>&nbsp;&nbsp;${sub.name}</option>`;
+                });
+            }
+        });
+
+        // Load Scene Objects if Edit Mode
+        if (sceneId) {
+            const objRes = await fetch(`${API_BASE}/scenes/${sceneId}/objects`);
+            const objData = await objRes.json();
+            if (objData.success) {
+                hotspots = objData.data.map(o => ({
+                    id: o.id,
+                    custom_label: o.custom_label,
+                    phonetic: o.phonetic || '',
+                    translation: o.translation || '',
+                    audio_url_male: o.audio_url_male || '',
+                    audio_url_female: o.audio_url_female || '',
+                    rect: {
+                        x: o.position_x,
+                        y: o.position_y,
+                        w: o.label_width,
+                        h: o.label_height
+                    }
+                }));
+                renderHotspots();
+                renderHotspotList();
+                updateMainImage(document.getElementById('image_url').value);
+            }
+        }
+    })();
+
+    // Save Form
+    document.getElementById('sceneForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        const data = Object.fromEntries(formData.entries());
+
+        // Append hotspots
+        const objects = hotspots.map(h => ({
+            custom_label: h.custom_label,
+            position_x: h.rect.x,
+            position_y: h.rect.y,
+            label_width: h.rect.w,
+            label_height: h.rect.h
+        }));
+
+        data.objects = objects;
+
+        const method = sceneId ? 'PUT' : 'POST';
+        const url = sceneId ? `${API_BASE}/scenes/${sceneId}` : `${API_BASE}/scenes`;
+
+        try {
+            const res = await fetch(url, {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            const result = await res.json();
+            if (result.success) {
+                showToast('保存成功');
+                setTimeout(() => location.href = '/scenes', 1000);
+            } else {
+                showToast(result.message, 'error');
+            }
+        } catch (err) {
+            showToast('保存失败', 'error');
+        }
+    });
+
+</script>

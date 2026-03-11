@@ -1,0 +1,492 @@
+const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+const { v4: uuidv4 } = require('uuid');
+const config = require('../config');
+const cosService = require('./cos.service');
+
+/**
+ * 语音服务 - 支持多引擎TTS + 语音评测
+ * 
+ * TTS 引擎切换:
+ *   在 .env 中设置 TTS_ENGINE=google / tencent / youdao
+ *   如果首选引擎失败，会自动尝试下一个引擎（fallback）
+ */
+class VoiceService {
+    constructor() {
+        this.youdaoConfig = config.youdao;
+        this.tencentConfig = config.tencent;
+        // TTS 引擎优先级（可通过环境变量 TTS_ENGINE 设置首选）
+        this.preferredEngine = (process.env.TTS_ENGINE || 'google').toLowerCase();
+        console.log(`[VoiceService] TTS 引擎: ${this.preferredEngine} (可在.env中修改 TTS_ENGINE)`);
+    }
+
+    /**
+     * 统一 TTS 入口 - 自动选择引擎 + fallback
+     * @param {string} text - 要合成的文本
+     * @param {string} voice - 声音类型 (male/female)
+     * @param {number} speed - 语速
+     */
+    async textToSpeech(text, voice = 'female', speed = 1.0) {
+        // 构建引擎尝试顺序：首选引擎排第一，其余按顺序fallback
+        const allEngines = ['google', 'tencent', 'youdao'];
+        const engines = [this.preferredEngine, ...allEngines.filter(e => e !== this.preferredEngine)];
+
+        for (let i = 0; i < engines.length; i++) {
+            const engine = engines[i];
+            const isFirstTry = (i === 0);
+
+            try {
+                let result;
+                switch (engine) {
+                    case 'google':
+                        result = await this._googleTTS(text, voice, speed);
+                        break;
+                    case 'tencent':
+                        result = await this._tencentTTS(text, voice, speed);
+                        break;
+                    case 'youdao':
+                        result = await this._youdaoTTS(text, voice, speed);
+                        break;
+                    default:
+                        continue;
+                }
+
+                if (result.success) {
+                    if (!isFirstTry) {
+                        console.log(`[VoiceService] ${this.preferredEngine} 失败, ${engine} 成功 (fallback)`);
+                    }
+                    return result;
+                }
+
+                // 不成功但没抛异常：429限速或配置缺失等
+                console.warn(`[VoiceService] ${engine} TTS 失败: ${result.error}`);
+
+                // 如果是最后一个引擎，直接返回失败结果
+                if (i === engines.length - 1) return result;
+
+            } catch (error) {
+                console.warn(`[VoiceService] ${engine} TTS 异常: ${error.message}`);
+                if (i === engines.length - 1) {
+                    return { success: false, error: `所有TTS引擎均失败: ${error.message}`, statusCode: error.response?.status };
+                }
+            }
+        }
+
+        return { success: false, error: '所有TTS引擎均不可用' };
+    }
+
+    // ==================== Google Gemini TTS ====================
+
+    async _googleTTS(text, voice = 'female', speed = 1.0) {
+        const apiKey = process.env.GOOGLE_AI_KEY;
+        if (!apiKey) {
+            return { success: false, error: 'Google: 未配置 GOOGLE_AI_KEY' };
+        }
+
+        const voiceMap = { male: 'Puck', female: 'Aoede' };
+        const voiceName = voiceMap[voice] || 'Aoede';
+
+        console.log(`[TTS:Google] Gemini TTS, Voice: ${voiceName}, Text: ${text.substring(0, 30)}...`);
+
+        const response = await axios.post(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`,
+            {
+                contents: [{ parts: [{ text: `Say in a clear voice: ${text}` }] }],
+                generationConfig: {
+                    responseModalities: ["AUDIO"],
+                    speechConfig: {
+                        voiceConfig: { prebuiltVoiceConfig: { voiceName } }
+                    }
+                }
+            },
+            { headers: { 'Content-Type': 'application/json' }, timeout: 30000 }
+        );
+
+        const candidates = response.data.candidates;
+        if (candidates && candidates.length > 0) {
+            const parts = candidates[0].content?.parts || [];
+            for (const part of parts) {
+                if (part.inlineData && part.inlineData.mimeType === 'audio/L16;codec=pcm;rate=24000') {
+                    const pcmBuffer = Buffer.from(part.inlineData.data, 'base64');
+                    const wavBuffer = this.addWavHeader(pcmBuffer, 24000, 1, 16);
+                    const audioPath = await this.saveAudio(wavBuffer, 'tts', 'wav');
+                    return { success: true, audioUrl: audioPath, engine: 'google' };
+                }
+            }
+        }
+
+        return { success: false, error: 'Google: Gemini API 未返回有效音频' };
+    }
+
+    // ==================== 腾讯云 TTS ====================
+
+    async _tencentTTS(text, voice = 'female', speed = 1.0) {
+        const { secretId, secretKey } = this.tencentConfig;
+        if (!secretId || !secretKey) {
+            return { success: false, error: 'Tencent: 未配置 TENCENT_SECRET_ID/KEY' };
+        }
+
+        // 腾讯云TTS VoiceType: 
+        // 英文女声: 101051 (英文), 101003 (中英文), 101004 (中英文女声)
+        // 英文男声: 101050 (英文), 101001 (中英文)
+        const voiceTypeMap = { female: 101051, male: 101050 };
+        const voiceType = voiceTypeMap[voice] || 101051;
+
+        console.log(`[TTS:Tencent] VoiceType: ${voiceType}, Text: ${text.substring(0, 30)}...`);
+
+        const timestamp = Math.floor(Date.now() / 1000);
+        const host = 'tts.tencentcloudapi.com';
+        const action = 'TextToVoice';
+        const payload = {
+            Text: text,
+            SessionId: uuidv4(),
+            VoiceType: voiceType,
+            Volume: 5,       // 音量 0-10
+            Speed: 0,        // 语速 -2~6
+            Codec: 'wav',
+            SampleRate: 16000,
+            PrimaryLanguage: 2 // 2=英文
+        };
+
+        const result = await this.callTencentAPI(host, 'tts', action, payload, secretId, secretKey, timestamp);
+
+        if (result.Response && result.Response.Audio) {
+            const audioBuffer = Buffer.from(result.Response.Audio, 'base64');
+            const audioPath = await this.saveAudio(audioBuffer, 'tts_tc', 'wav');
+            return { success: true, audioUrl: audioPath, engine: 'tencent' };
+        }
+
+        const errMsg = result.Response?.Error?.Message || '腾讯云TTS未返回音频';
+        return { success: false, error: `Tencent: ${errMsg}` };
+    }
+
+    // ==================== 有道 TTS ====================
+    // 文档: https://ai.youdao.com/DOCSIRMA/html/tts/api/yyhc/index.html
+    // voiceName 发音人参数（必填）
+    // speed: "1" 正常语速, 最小 "0.5", 最大 "2.0"
+
+    async _youdaoTTS(text, voice = 'female', speed = 1.0) {
+        const { appKey, appSecret } = this.youdaoConfig;
+        if (!appKey || !appSecret) {
+            return { success: false, error: 'Youdao: 未配置 YOUDAO_APP_KEY/SECRET' };
+        }
+
+        // 有道发音人: 英文美式女声 youxiaomei, 英文英式男声 youxiaoguan
+        // 可选: youxiaoying(英式女), youyating(美式女), Saila(英式女), youxiaowei(英中男)
+        const voiceNameMap = {
+            female: process.env.YOUDAO_VOICE_FEMALE || 'youxiaomei',
+            male: process.env.YOUDAO_VOICE_MALE || 'youxiaoguan'
+        };
+        const voiceName = voiceNameMap[voice] || 'youxiaomei';
+
+        // 语速: 女声正常(1.0), 男声慢速(0.8) - 方便听清
+        const speedMap = {
+            female: process.env.YOUDAO_SPEED_FEMALE || '1',
+            male: process.env.YOUDAO_SPEED_MALE || '0.8'
+        };
+        const ttsSpeed = speedMap[voice] || '1';
+
+        const salt = uuidv4();
+        const curtime = Math.floor(Date.now() / 1000).toString();
+
+        // 签名: sha256(appKey + input + salt + curtime + appSecret)
+        const input = text.length > 20
+            ? text.substring(0, 10) + text.length + text.substring(text.length - 10)
+            : text;
+        const sign = crypto.createHash('sha256')
+            .update(appKey + input + salt + curtime + appSecret)
+            .digest('hex');
+
+        console.log(`[TTS:Youdao] voiceName=${voiceName}, speed=${ttsSpeed}, text="${text.substring(0, 40)}..."`);
+
+        const response = await axios.post(
+            'https://openapi.youdao.com/ttsapi',
+            new URLSearchParams({
+                q: text,
+                appKey: appKey,
+                salt: salt,
+                sign: sign,
+                signType: 'v3',
+                curtime: curtime,
+                voiceName: voiceName,
+                format: 'mp3',
+                speed: ttsSpeed,
+                volume: '1.00'
+            }).toString(),
+            {
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                responseType: 'arraybuffer',
+                timeout: 15000
+            }
+        );
+
+        // 成功返回: Content-Type: audio/mp3, 二进制数据
+        // 失败返回: Content-Type: application/json, JSON错误
+        const contentType = response.headers['content-type'] || '';
+
+        if (contentType.includes('audio') || contentType.includes('mp3') || contentType.includes('octet-stream')) {
+            const audioBuffer = Buffer.from(response.data);
+            if (audioBuffer.length > 500) {
+                const audioPath = await this.saveAudio(audioBuffer, 'tts_yd', 'mp3');
+                console.log(`[TTS:Youdao] ✅ 成功, ${audioBuffer.length} bytes`);
+                return { success: true, audioUrl: audioPath, engine: 'youdao' };
+            }
+        }
+
+        // 解析错误JSON
+        try {
+            const errText = Buffer.from(response.data).toString('utf-8');
+            const errJson = JSON.parse(errText);
+            const code = errJson.errorCode;
+            console.error(`[TTS:Youdao] ❌ errorCode=${code}`);
+            return { success: false, error: `Youdao: errorCode=${code}` };
+        } catch {
+            return { success: false, error: 'Youdao: 返回数据异常' };
+        }
+    }
+
+    // ==================== 公共方法 ====================
+
+    /**
+     * 为 PCM 数据添加 WAV 头
+     */
+    addWavHeader(samples, sampleRate, numChannels, bitDepth) {
+        const byteRate = sampleRate * numChannels * bitDepth / 8;
+        const blockAlign = numChannels * bitDepth / 8;
+        const dataSize = samples.length;
+        const chunkSize = 36 + dataSize;
+
+        const buffer = Buffer.alloc(44);
+        buffer.write('RIFF', 0);
+        buffer.writeUInt32LE(chunkSize, 4);
+        buffer.write('WAVE', 8);
+        buffer.write('fmt ', 12);
+        buffer.writeUInt32LE(16, 16);
+        buffer.writeUInt16LE(1, 20);
+        buffer.writeUInt16LE(numChannels, 22);
+        buffer.writeUInt32LE(sampleRate, 24);
+        buffer.writeUInt32LE(byteRate, 28);
+        buffer.writeUInt16LE(blockAlign, 32);
+        buffer.writeUInt16LE(bitDepth, 34);
+        buffer.write('data', 36);
+        buffer.writeUInt32LE(dataSize, 40);
+
+        return Buffer.concat([buffer, samples]);
+    }
+
+    /**
+     * 腾讯云智聆口语评测（WebSocket API）
+     */
+    async assessPronunciation(audioPath, referenceText, contentType = 'sentence') {
+        const { secretId, secretKey, appId } = this.tencentConfig;
+
+        if (!secretId || !secretKey || !appId) {
+            console.log('腾讯云配置不完整，使用模拟评测');
+            return this.mockAssessment(referenceText);
+        }
+
+        return new Promise((resolve, reject) => {
+            try {
+                const audioBuffer = fs.readFileSync(audioPath);
+
+                const evalModeMap = { word: 0, sentence: 1, paragraph: 2 };
+                const timestamp = Math.floor(Date.now() / 1000);
+                const expired = timestamp + 86400;
+                const nonce = Math.floor(Math.random() * 100000000);
+                const voiceId = `voice_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+                const params = {
+                    eval_mode: evalModeMap[contentType] || 0,
+                    expired, nonce,
+                    ref_text: referenceText,
+                    score_coeff: 1.5,
+                    secretid: secretId,
+                    sentence_info_enabled: 1,
+                    server_engine_type: '16k_en',
+                    text_mode: 0,
+                    timestamp,
+                    voice_format: 2,
+                    voice_id: voiceId,
+                    rec_mode: 0
+                };
+
+                const sortedKeys = Object.keys(params).sort();
+                const queryString = sortedKeys.map(key => `${key}=${params[key]}`).join('&');
+                const signStr = `soe.cloud.tencent.com/soe/api/${appId}?${queryString}`;
+                const signature = crypto.createHmac('sha1', secretKey).update(signStr).digest('base64');
+
+                const encodedParams = sortedKeys.map(key =>
+                    `${encodeURIComponent(key)}=${encodeURIComponent(params[key])}`
+                ).join('&');
+
+                const wsUrl = `wss://soe.cloud.tencent.com/soe/api/${appId}?${encodedParams}&signature=${encodeURIComponent(signature)}`;
+
+                const WebSocket = require('ws');
+                const ws = new WebSocket(wsUrl);
+
+                let result = null;
+                let handshakeComplete = false;
+
+                ws.on('open', () => { console.log('SOE WebSocket connected'); });
+
+                ws.on('message', (data) => {
+                    try {
+                        const response = JSON.parse(data.toString());
+
+                        if (response.code === 0 && response.voice_id && !handshakeComplete) {
+                            handshakeComplete = true;
+                            const CHUNK_SIZE = 4096;
+                            const totalChunks = Math.ceil(audioBuffer.length / CHUNK_SIZE);
+
+                            const sendChunk = (index) => {
+                                if (index >= totalChunks) {
+                                    ws.send(JSON.stringify({ type: 'end' }));
+                                    return;
+                                }
+                                const start = index * CHUNK_SIZE;
+                                const end = Math.min(start + CHUNK_SIZE, audioBuffer.length);
+                                const chunk = audioBuffer.slice(start, end);
+                                ws.send(chunk, { binary: true }, (err) => {
+                                    if (!err) setTimeout(() => sendChunk(index + 1), 10);
+                                });
+                            };
+                            sendChunk(0);
+
+                        } else if (response.result) {
+                            let evalResult;
+                            try {
+                                evalResult = typeof response.result === 'string' ? JSON.parse(response.result) : response.result;
+                            } catch { evalResult = response.result; }
+
+                            result = {
+                                success: true,
+                                overallScore: Math.round((evalResult.SuggestedScore || evalResult.PronAccuracy || 0) * 100) / 100,
+                                pronunciationScore: Math.round((evalResult.PronAccuracy || 0) * 100) / 100,
+                                fluencyScore: Math.round((evalResult.PronFluency || 0) * 100),
+                                integrityScore: Math.round((evalResult.PronCompletion || 0) * 100),
+                                details: { words: evalResult.Words || [], sentenceInfo: evalResult.SentenceInfoSet || [] }
+                            };
+                        } else if (response.final === 1) {
+                            ws.close();
+                        } else if (response.code !== 0 && response.code !== undefined) {
+                            if (result && result.success) { ws.close(); return; }
+                            result = { success: false, error: response.message || '评测失败' };
+                            ws.close();
+                        }
+                    } catch (e) { console.error('解析SOE响应错误:', e); }
+                });
+
+                ws.on('close', () => {
+                    resolve(result || this.mockAssessment(referenceText));
+                });
+
+                ws.on('error', (error) => {
+                    if (result && result.success) return;
+                    resolve(this.mockAssessment(referenceText));
+                });
+
+                setTimeout(() => {
+                    if (ws.readyState === WebSocket.OPEN) ws.close();
+                    if (!result) resolve(this.mockAssessment(referenceText));
+                }, 30000);
+
+            } catch (error) {
+                console.error('语音评测错误:', error.message);
+                resolve(this.mockAssessment(referenceText));
+            }
+        });
+    }
+
+    /**
+     * 调用腾讯云API (TC3签名)
+     */
+    async callTencentAPI(host, service, action, payload, secretId, secretKey, timestamp) {
+        const date = new Date(timestamp * 1000).toISOString().split('T')[0];
+        const payloadStr = JSON.stringify(payload);
+        const hashedPayload = crypto.createHash('sha256').update(payloadStr).digest('hex');
+
+        const canonicalRequest = [
+            'POST', '/', '',
+            `content-type:application/json; charset=utf-8\nhost:${host}\n`,
+            'content-type;host',
+            hashedPayload
+        ].join('\n');
+
+        const algorithm = 'TC3-HMAC-SHA256';
+        const credentialScope = `${date}/${service}/tc3_request`;
+        const hashedCanonicalRequest = crypto.createHash('sha256').update(canonicalRequest).digest('hex');
+        const stringToSign = `${algorithm}\n${timestamp}\n${credentialScope}\n${hashedCanonicalRequest}`;
+
+        const secretDate = crypto.createHmac('sha256', `TC3${secretKey}`).update(date).digest();
+        const secretService = crypto.createHmac('sha256', secretDate).update(service).digest();
+        const secretSigning = crypto.createHmac('sha256', secretService).update('tc3_request').digest();
+        const signature = crypto.createHmac('sha256', secretSigning).update(stringToSign).digest('hex');
+
+        const authorization = `${algorithm} Credential=${secretId}/${credentialScope}, SignedHeaders=content-type;host, Signature=${signature}`;
+
+        const response = await axios.post(`https://${host}`, payload, {
+            headers: {
+                'Content-Type': 'application/json; charset=utf-8',
+                'Host': host,
+                'Authorization': authorization,
+                'X-TC-Action': action,
+                'X-TC-Version': '2019-08-23',
+                'X-TC-Timestamp': timestamp.toString(),
+                'X-TC-Region': this.tencentConfig.region
+            },
+            timeout: 15000
+        });
+
+        return response.data;
+    }
+
+    /**
+     * 模拟评测结果（开发测试用）
+     */
+    mockAssessment(referenceText) {
+        const baseScore = 70 + Math.random() * 25;
+        return {
+            success: true,
+            overallScore: Math.round(baseScore),
+            pronunciationScore: Math.round(baseScore + (Math.random() - 0.5) * 10),
+            fluencyScore: Math.round(baseScore + (Math.random() - 0.5) * 10),
+            integrityScore: Math.round(baseScore + (Math.random() - 0.5) * 5),
+            details: {
+                words: referenceText.split(' ').map(word => ({
+                    word, score: Math.round(70 + Math.random() * 25)
+                })),
+                isMock: true
+            }
+        };
+    }
+
+    /**
+     * 保存音频文件：优先上传 COS，不可用时回退到本地
+     */
+    async saveAudio(audioData, prefix, ext = 'mp3') {
+        // 优先上传到 COS
+        if (cosService.isConfigured) {
+            try {
+                const url = await cosService.uploadAudio(audioData, prefix, ext);
+                console.log(`[VoiceService] 音频已上传 COS: ${url}`);
+                return url;
+            } catch (err) {
+                console.error('[VoiceService] COS 上传失败，回退本地:', err.message);
+            }
+        }
+
+        // 回退：保存到本地
+        const audioDir = path.join(__dirname, '../../uploads/audio');
+        if (!fs.existsSync(audioDir)) {
+            fs.mkdirSync(audioDir, { recursive: true });
+        }
+        const filename = `${prefix}_${Date.now()}.${ext}`;
+        const filePath = path.join(audioDir, filename);
+        fs.writeFileSync(filePath, audioData);
+        return `/uploads/audio/${filename}`;
+    }
+}
+
+module.exports = new VoiceService();

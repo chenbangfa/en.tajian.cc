@@ -1,0 +1,313 @@
+<div class="bg-white rounded-xl shadow-sm border border-gray-100">
+    <div class="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50 rounded-t-xl">
+        <div class="flex items-center space-x-4">
+            <h2 class="text-lg font-bold text-gray-800">内容列表</h2>
+            <select id="podcast-filter-cat" onchange="loadPodcastContents()"
+                class="px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                <option value="">全部分类</option>
+            </select>
+        </div>
+        <button onclick="openPodcastContentModal()"
+            class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm flex items-center">
+            <i class="fas fa-plus mr-2"></i> 新增内容
+        </button>
+    </div>
+
+    <div class="overflow-x-auto">
+        <table class="w-full text-left" id="podcast-contents-table">
+            <thead>
+                <tr class="bg-gray-50 text-gray-600 text-sm uppercase tracking-wider">
+                    <th class="px-6 py-4 font-semibold w-20">ID</th>
+                    <th class="px-6 py-4 font-semibold">标题</th>
+                    <th class="px-6 py-4 font-semibold w-32">分类</th>
+                    <th class="px-6 py-4 font-semibold w-24">难度</th>
+                    <th class="px-6 py-4 font-semibold w-40">音频状态</th>
+                    <th class="px-6 py-4 font-semibold w-64 text-right">操作</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                <!-- Data loaded via JS -->
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Modal -->
+<div id="podcast-content-modal"
+    class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden z-50 flex items-center justify-center transition-opacity duration-300">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl transform transition-all duration-300 scale-95 opacity-0"
+        id="modal-content">
+        <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50 rounded-t-xl">
+            <h3 class="text-lg font-bold text-gray-800" id="podcast-content-modal-title">新增内容</h3>
+            <button onclick="closePodcastContentModal()"
+                class="text-gray-400 hover:text-gray-600 transition-colors text-xl">&times;</button>
+        </div>
+
+        <form id="podcast-content-form" class="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+            <input type="hidden" id="pcontent-id">
+
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">标题 *</label>
+                    <input type="text" id="pcontent-title" required
+                        class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">分类</label>
+                    <select id="pcontent-category"
+                        class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"></select>
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">英文内容 *</label>
+                <textarea id="pcontent-text" rows="4" required placeholder="英文对话或句子"
+                    class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"></textarea>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">中文翻译</label>
+                <textarea id="pcontent-translation" rows="3" placeholder="对应的中文翻译"
+                    class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"></textarea>
+            </div>
+
+            <div class="grid grid-cols-3 gap-4 items-end">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">难度等级 (1-5)</label>
+                    <input type="number" id="pcontent-difficulty" min="1" max="5" value="1"
+                        class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">排序</label>
+                    <input type="number" id="pcontent-sort" value="0"
+                        class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                </div>
+                <div class="pb-2">
+                    <label class="flex items-center space-x-2 cursor-pointer">
+                        <input type="checkbox" id="pcontent-free" checked
+                            class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 border-gray-300">
+                        <span class="text-gray-700 text-sm">免费内容</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="flex justify-end space-x-3 mt-6 pt-4 border-t border-gray-100">
+                <button type="button" onclick="closePodcastContentModal()"
+                    class="px-4 py-2 text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">取消</button>
+                <button type="submit"
+                    class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm">保存</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    let podcastContents = [];
+    let podcastCategories = [];
+
+    async function loadPodcastCategories() {
+        try {
+            const res = await fetch(`${API_BASE}/podcast_categories`);
+            const data = await res.json();
+            if (data.success) {
+                podcastCategories = data.data;
+                populateSelects();
+            }
+        } catch (e) { console.error('加载分类失败:', e); }
+    }
+
+    async function loadPodcastContents() {
+        try {
+            const categoryId = document.getElementById('podcast-filter-cat').value;
+            const url = categoryId ? `${API_BASE}/podcast?category_id=${categoryId}` : `${API_BASE}/podcast`;
+            const res = await fetch(url);
+            const data = await res.json();
+            if (data.success) {
+                podcastContents = data.data.list;
+                renderPodcastContents();
+            }
+        } catch (e) {
+            console.error('加载内容失败:', e);
+            showToast('加载内容失败', 'error');
+        }
+    }
+
+    function populateSelects() {
+        const buildOptions = (categories, level = 0) => {
+            let options = '';
+            categories.forEach(c => {
+                const indent = '&nbsp;&nbsp;&nbsp;&nbsp;'.repeat(level);
+                const icon = c.icon || '';
+                const prefix = level > 0 ? '└─ ' : '';
+                options += `<option value="${c.id}">${indent}${prefix}${icon} ${c.name}</option>`;
+                if (c.children && c.children.length > 0) {
+                    options += buildOptions(c.children, level + 1);
+                }
+            });
+            return options;
+        };
+
+        const options = buildOptions(podcastCategories);
+        document.getElementById('podcast-filter-cat').innerHTML = '<option value="">全部分类</option>' + options;
+        document.getElementById('pcontent-category').innerHTML = '<option value="">选择分类</option>' + options;
+    }
+
+    function renderPodcastContents() {
+        const tbody = document.querySelector('#podcast-contents-table tbody');
+        if (podcastContents.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-8 text-center text-gray-500">暂无内容数据</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = podcastContents.map(c => {
+            const hasM = c.male_audio_url ? '<span class="text-blue-500" title="男声">♂</span>' : '<span class="text-gray-300">♂</span>';
+            const hasF = c.female_audio_url ? '<span class="text-pink-500" title="女声">♀</span>' : '<span class="text-gray-300">♀</span>';
+            const hasC = c.chinese_audio_url ? '<span class="text-red-500" title="中文">中</span>' : '<span class="text-gray-300">中</span>';
+
+            return `
+            <tr class="hover:bg-gray-50 transition-colors group">
+                <td class="px-6 py-4 text-gray-500">#${c.id}</td>
+                <td class="px-6 py-4 font-medium text-gray-900">${c.title}</td>
+                <td class="px-6 py-4"><span class="px-2 py-1 bg-blue-50 text-blue-600 rounded text-xs">${c.category_name || '-'}</span></td>
+                <td class="px-6 py-4 text-yellow-400 text-sm">${'⭐'.repeat(c.difficulty_level || 1)}</td>
+                <td class="px-6 py-4 text-lg space-x-1">${hasM} ${hasF} ${hasC}</td>
+                <td class="px-6 py-4 text-right space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button class="text-purple-600 hover:text-purple-800 transition-colors" onclick="generatePodcastAudio(${c.id})"><i class="fas fa-volume-up"></i> 生成音频</button>
+                    <button class="text-blue-600 hover:text-blue-800 transition-colors" onclick="editPodcastContent(${c.id})"><i class="fas fa-edit"></i> 编辑</button>
+                    <button class="text-red-600 hover:text-red-800 transition-colors" onclick="deletePodcastContent(${c.id})"><i class="fas fa-trash"></i> 删除</button>
+                </td>
+            </tr>
+        `}).join('');
+    }
+
+    function openPodcastContentModal() {
+        document.getElementById('pcontent-id').value = '';
+        document.getElementById('pcontent-title').value = '';
+        document.getElementById('pcontent-text').value = '';
+        document.getElementById('pcontent-translation').value = '';
+        document.getElementById('pcontent-category').value = '';
+        document.getElementById('pcontent-difficulty').value = '1';
+        document.getElementById('pcontent-sort').value = '0';
+        document.getElementById('pcontent-free').checked = true;
+        document.getElementById('podcast-content-modal-title').textContent = '新增内容';
+
+        const modal = document.getElementById('podcast-content-modal');
+        const content = document.getElementById('modal-content');
+        modal.classList.remove('hidden');
+        requestAnimationFrame(() => {
+            content.classList.remove('scale-95', 'opacity-0');
+            content.classList.add('scale-100', 'opacity-100');
+        });
+    }
+
+    function closePodcastContentModal() {
+        const modal = document.getElementById('podcast-content-modal');
+        const content = document.getElementById('modal-content');
+        content.classList.remove('scale-100', 'opacity-100');
+        content.classList.add('scale-95', 'opacity-0');
+        setTimeout(() => modal.classList.add('hidden'), 300);
+    }
+
+    async function editPodcastContent(id) {
+        try {
+            const res = await fetch(`${API_BASE}/podcast/${id}`);
+            const data = await res.json();
+            if (data.success) {
+                const c = data.data;
+                document.getElementById('pcontent-id').value = c.id;
+                document.getElementById('pcontent-title').value = c.title;
+                document.getElementById('pcontent-text').value = c.content_text || '';
+                document.getElementById('pcontent-translation').value = c.translation || '';
+                document.getElementById('pcontent-category').value = c.category_id || '';
+                document.getElementById('pcontent-difficulty').value = c.difficulty_level || 1;
+                document.getElementById('pcontent-sort').value = c.sort_order || 0;
+                document.getElementById('pcontent-free').checked = c.is_free;
+                document.getElementById('podcast-content-modal-title').textContent = '编辑内容';
+
+                const modal = document.getElementById('podcast-content-modal');
+                const content = document.getElementById('modal-content');
+                modal.classList.remove('hidden');
+                requestAnimationFrame(() => {
+                    content.classList.remove('scale-95', 'opacity-0');
+                    content.classList.add('scale-100', 'opacity-100');
+                });
+            }
+        } catch (e) { showToast('获取详情失败', 'error'); }
+    }
+
+    async function deletePodcastContent(id) {
+        if (!confirm('确定删除此内容？')) return;
+        try {
+            const res = await fetch(`${API_BASE}/podcast/${id}`, { method: 'DELETE' });
+            if (res.ok) {
+                showToast('删除成功');
+                loadPodcastContents();
+            } else {
+                showToast('删除失败', 'error');
+            }
+        } catch (e) { showToast('删除失败', 'error'); }
+    }
+
+    document.getElementById('podcast-content-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const id = document.getElementById('pcontent-id').value;
+        const data = {
+            title: document.getElementById('pcontent-title').value,
+            content_text: document.getElementById('pcontent-text').value,
+            translation: document.getElementById('pcontent-translation').value,
+            category_id: document.getElementById('pcontent-category').value || null,
+            difficulty_level: parseInt(document.getElementById('pcontent-difficulty').value) || 1,
+            sort_order: parseInt(document.getElementById('pcontent-sort').value) || 0,
+            is_free: document.getElementById('pcontent-free').checked
+        };
+        try {
+            const url = id ? `${API_BASE}/podcast/${id}` : `${API_BASE}/podcast`;
+            const res = await fetch(url, {
+                method: id ? 'PUT' : 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            if (res.ok) {
+                showToast('保存成功');
+                closePodcastContentModal();
+                loadPodcastContents();
+            } else {
+                showToast('保存失败', 'error');
+            }
+        } catch (e) { showToast('保存失败', 'error'); }
+    });
+
+    async function generatePodcastAudio(id) {
+        if (!confirm('将生成男声、女声和中文三个音频，是否继续？')) return;
+        try {
+            const btn = event.target.closest('button');
+            const originalText = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 生成中...';
+
+            const res = await fetch(`${API_BASE}/podcast/generate-all-audio`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content_id: id })
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                showToast('音频生成完成！');
+                loadPodcastContents();
+            } else {
+                showToast('生成失败: ' + (data.message || '未知错误'), 'error');
+            }
+        } catch (e) {
+            showToast('生成失败: ' + e.message, 'error');
+        } finally {
+            // Restore button state is handled by reload, but if reload fails/not called immediately:
+            // btn.disabled = false; btn.innerHTML = originalText;
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadPodcastCategories();
+        loadPodcastContents();
+    });
+</script>

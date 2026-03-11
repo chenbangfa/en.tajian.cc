@@ -1,0 +1,242 @@
+<div class="bg-white rounded-xl shadow-sm border border-gray-100">
+    <div class="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50 rounded-t-xl">
+        <h2 class="text-lg font-bold text-gray-800">分类列表</h2>
+        <button onclick="openCategoryModal()"
+            class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm flex items-center">
+            <i class="fas fa-plus mr-2"></i> 新增分类
+        </button>
+    </div>
+
+    <div class="overflow-x-auto">
+        <table class="w-full text-left" id="categories-table">
+            <thead>
+                <tr class="bg-gray-50 text-gray-600 text-sm uppercase tracking-wider">
+                    <th class="px-6 py-4 font-semibold w-20">ID</th>
+                    <th class="px-6 py-4 font-semibold w-20">图标</th>
+                    <th class="px-6 py-4 font-semibold">名称</th>
+                    <th class="px-6 py-4 font-semibold">英文名</th>
+                    <th class="px-6 py-4 font-semibold">父分类</th>
+                    <th class="px-6 py-4 font-semibold w-24">排序</th>
+                    <th class="px-6 py-4 font-semibold w-48 text-right">操作</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                <!-- Data loaded via JS -->
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Modal -->
+<div id="category-modal"
+    class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden z-50 flex items-center justify-center transition-opacity duration-300">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg transform transition-all duration-300 scale-95 opacity-0"
+        id="modal-content">
+        <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50 rounded-t-xl">
+            <h3 class="text-lg font-bold text-gray-800" id="category-modal-title">新增分类</h3>
+            <button onclick="closeCategoryModal()"
+                class="text-gray-400 hover:text-gray-600 transition-colors text-xl">&times;</button>
+        </div>
+
+        <form id="category-form" class="p-6 space-y-4">
+            <input type="hidden" id="category-id">
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">父分类</label>
+                <select id="category-parent"
+                    class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all">
+                    <option value="0">（无，作为顶级分类）</option>
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">分类名称 *</label>
+                <input type="text" id="category-name" required
+                    class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">英文名</label>
+                <input type="text" id="category-name-en"
+                    class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">图标 (Emoji)</label>
+                <input type="text" id="category-icon" placeholder="例如: 🍎"
+                    class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">排序</label>
+                <input type="number" id="category-sort" value="0"
+                    class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all">
+            </div>
+
+            <div class="flex justify-end space-x-3 mt-6 pt-4 border-t border-gray-100">
+                <button type="button" onclick="closeCategoryModal()"
+                    class="px-4 py-2 text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">取消</button>
+                <button type="submit"
+                    class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm">保存</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    let categories = [];
+
+    async function loadCategories() {
+        try {
+            const res = await fetch(`${API_BASE}/categories`);
+            const data = await res.json();
+            if (data.success) {
+                categories = data.data;
+                renderCategories();
+                populateParentSelect();
+            }
+        } catch (e) {
+            console.error('加载分类失败:', e);
+            showToast('加载分类失败', 'error');
+        }
+    }
+
+    function renderCategories() {
+        const tbody = document.querySelector('#categories-table tbody');
+        if (categories.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="px-6 py-8 text-center text-gray-500">暂无分类数据</td></tr>';
+            return;
+        }
+
+        const parentCats = categories.filter(c => !c.parent_id || c.parent_id === 0);
+        const childCats = categories.filter(c => c.parent_id && c.parent_id !== 0);
+        const sorted = [];
+
+        parentCats.forEach(parent => {
+            sorted.push(parent);
+            const children = childCats.filter(c => c.parent_id === parent.id)
+                .sort((a, b) => a.sort_order - b.sort_order);
+            sorted.push(...children);
+        });
+
+        // Orphans
+        const orphans = childCats.filter(c => !parentCats.some(p => p.id === c.parent_id));
+        sorted.push(...orphans);
+
+        tbody.innerHTML = sorted.map(c => `
+            <tr class="hover:bg-gray-50 transition-colors group ${c.parent_id ? 'bg-gray-50/50' : ''}">
+                <td class="px-6 py-4 text-gray-500">#${c.id}</td>
+                <td class="px-6 py-4 text-xl">${c.icon || '-'}</td>
+                <td class="px-6 py-4 text-gray-900">
+                    ${c.parent_id ? '<span class="text-gray-400 mr-2">↳</span>' : ''}
+                    <span class="${!c.parent_id ? 'font-semibold' : ''}">${c.name}</span>
+                </td>
+                <td class="px-6 py-4 text-gray-600 font-mono text-sm">${c.name_en || '-'}</td>
+                <td class="px-6 py-4 text-gray-500 text-sm">${getParentName(c.parent_id)}</td>
+                <td class="px-6 py-4 text-gray-600">${c.sort_order}</td>
+                <td class="px-6 py-4 text-right space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button class="text-blue-600 hover:text-blue-800 transition-colors" onclick="editCategory(${c.id})"><i class="fas fa-edit"></i> 编辑</button>
+                    <button class="text-red-600 hover:text-red-800 transition-colors" onclick="deleteCategory(${c.id})"><i class="fas fa-trash"></i> 删除</button>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    function getParentName(parentId) {
+        if (!parentId) return '-';
+        const p = categories.find(c => c.id === parentId);
+        return p ? p.name : `<span class="text-red-400">未知(${parentId})</span>`;
+    }
+
+    function populateParentSelect() {
+        const parentSelect = document.getElementById('category-parent');
+        const parentCats = categories.filter(c => !c.parent_id || c.parent_id === 0);
+        let options = '<option value="0">（无，作为顶级分类）</option>';
+        parentCats.forEach(p => {
+            options += `<option value="${p.id}">${p.icon || ''} ${p.name}</option>`;
+        });
+        parentSelect.innerHTML = options;
+    }
+
+    function openCategoryModal(id = null) {
+        document.getElementById('category-id').value = '';
+        document.getElementById('category-name').value = '';
+        document.getElementById('category-name-en').value = '';
+        document.getElementById('category-icon').value = '';
+        document.getElementById('category-sort').value = '0';
+        document.getElementById('category-parent').value = '0';
+        document.getElementById('category-modal-title').textContent = id ? '编辑分类' : '新增分类';
+
+        const modal = document.getElementById('category-modal');
+        const content = document.getElementById('modal-content');
+        modal.classList.remove('hidden');
+        requestAnimationFrame(() => {
+            content.classList.remove('scale-95', 'opacity-0');
+            content.classList.add('scale-100', 'opacity-100');
+        });
+    }
+
+    function closeCategoryModal() {
+        const modal = document.getElementById('category-modal');
+        const content = document.getElementById('modal-content');
+        content.classList.remove('scale-100', 'opacity-100');
+        content.classList.add('scale-95', 'opacity-0');
+        setTimeout(() => modal.classList.add('hidden'), 300);
+    }
+
+    function editCategory(id) {
+        const cat = categories.find(c => c.id === id);
+        if (cat) {
+            // 先打开弹窗（会清空表单），再填充数据
+            openCategoryModal(id);
+            document.getElementById('category-id').value = cat.id;
+            document.getElementById('category-name').value = cat.name;
+            document.getElementById('category-name-en').value = cat.name_en || '';
+            document.getElementById('category-icon').value = cat.icon || '';
+            document.getElementById('category-sort').value = cat.sort_order;
+            document.getElementById('category-parent').value = cat.parent_id || 0;
+        }
+    }
+
+    async function deleteCategory(id) {
+        if (!confirm('确定删除此分类？')) return;
+        try {
+            const res = await fetch(`${API_BASE}/categories/${id}`, { method: 'DELETE' });
+            if (res.ok) {
+                showToast('删除成功');
+                loadCategories();
+            } else {
+                showToast('删除失败', 'error');
+            }
+        } catch (e) { showToast('删除失败', 'error'); }
+    }
+
+    document.getElementById('category-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const id = document.getElementById('category-id').value;
+        const data = {
+            name: document.getElementById('category-name').value,
+            name_en: document.getElementById('category-name-en').value,
+            icon: document.getElementById('category-icon').value,
+            sort_order: parseInt(document.getElementById('category-sort').value) || 0,
+            parent_id: parseInt(document.getElementById('category-parent').value) || 0
+        };
+        try {
+            const url = id ? `${API_BASE}/categories/${id}` : `${API_BASE}/categories`;
+            const res = await fetch(url, {
+                method: id ? 'PUT' : 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            if (res.ok) {
+                showToast('保存成功');
+                closeCategoryModal();
+                loadCategories();
+            } else {
+                showToast('保存失败', 'error');
+            }
+        } catch (e) { showToast('保存失败', 'error'); }
+    });
+
+    document.addEventListener('DOMContentLoaded', loadCategories);
+</script>

@@ -1,0 +1,101 @@
+/* pages/profile/edit/edit.wxss */
+page {
+  background-color: #F8F9FA;
+  padding-bottom: 40rpx;
+}
+
+.container {
+  padding: 32rpx;
+}
+
+.form-group {
+  background: #FFFFFF;
+  border-radius: 32rpx;
+  overflow: hidden;
+  margin-bottom: 48rpx;
+  padding: 0 32rpx;
+}
+
+.form-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 32rpx 0;
+  border-bottom: 2rpx solid #F8F9FA;
+  position: relative;
+}
+
+.form-item:last-child {
+  border-bottom: none;
+}
+
+.label {
+  font-size: 30rpx;
+  color: #2D3436;
+  font-weight: 600;
+  width: 160rpx;
+}
+
+.content {
+  display: flex;
+  align-items: center;
+}
+
+.avatar-item {
+  padding: 24rpx 0;
+}
+
+.avatar {
+  width: 100rpx;
+  height: 100rpx;
+  border-radius: 50%;
+  background: #F1F2F6;
+  margin-right: 16rpx;
+}
+
+.arrow {
+  width: 24rpx;
+  height: 24rpx;
+  transform: rotate(180deg);
+  opacity: 0.3;
+}
+
+/* 覆盖透明按钮 */
+.avatar-wrapper {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  z-index: 1;
+}
+
+.input {
+  flex: 1;
+  text-align: right;
+  font-size: 30rpx;
+  color: #2D3436;
+  height: 48rpx;
+}
+
+.text-val {
+  font-size: 30rpx;
+  color: #B2BEC3;
+}
+
+.save-btn {
+  background: #2D3436;
+  color: #FFFFFF;
+  border-radius: 48rpx;
+  font-size: 32rpx;
+  font-weight: 600;
+  padding: 24rpx 0;
+  box-shadow: 0 8rpx 24rpx rgba(45, 52, 54, 0.2);
+}
+
+.save-btn[disabled] {
+  background: #B2BEC3;
+  color: #FFFFFF;
+  box-shadow: none;
+}
