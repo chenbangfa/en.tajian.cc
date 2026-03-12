@@ -19,7 +19,10 @@ class VoiceService {
         this.tencentConfig = config.tencent;
         // TTS 引擎优先级（可通过环境变量 TTS_ENGINE 设置首选）
         this.preferredEngine = (process.env.TTS_ENGINE || 'google').toLowerCase();
+        // 评测引擎（可通过环境变量 ASSESS_ENGINE 设置，默认 tencent）
+        this.assessEngine = (process.env.ASSESS_ENGINE || 'tencent').toLowerCase();
         console.log(`[VoiceService] TTS 引擎: ${this.preferredEngine} (可在.env中修改 TTS_ENGINE)`);
+        console.log(`[VoiceService] 评测引擎: ${this.assessEngine} (可在.env中修改 ASSESS_ENGINE)`);
     }
 
     /**
@@ -277,9 +280,96 @@ class VoiceService {
     }
 
     /**
-     * 腾讯云智聆口语评测（WebSocket API）
+     * 统一评测入口 - 根据 ASSESS_ENGINE 选择引擎
      */
     async assessPronunciation(audioPath, referenceText, contentType = 'sentence') {
+        if (this.assessEngine === 'youdao') {
+            return this._youdaoAssess(audioPath, referenceText, contentType);
+        }
+        return this._tencentAssess(audioPath, referenceText, contentType);
+    }
+
+    /**
+     * 有道口语评测
+     */
+    async _youdaoAssess(audioPath, referenceText, contentType = 'sentence') {
+        const { appKey, appSecret } = this.youdaoConfig;
+        if (!appKey || !appSecret) {
+            console.warn('[Assess:Youdao] 未配置 YOUDAO_APP_KEY/SECRET，降级为模拟评测');
+            return this.mockAssessment(referenceText);
+        }
+
+        try {
+            const typeMap = { word: '1', sentence: '2', paragraph: '3' };
+            const type = typeMap[contentType] || '1';
+
+            const audioBuffer = fs.readFileSync(audioPath);
+            const audioBase64 = audioBuffer.toString('base64');
+
+            const salt = uuidv4();
+            const curtime = Math.floor(Date.now() / 1000).toString();
+            const input = referenceText.length > 20
+                ? referenceText.substring(0, 10) + referenceText.length + referenceText.substring(referenceText.length - 10)
+                : referenceText;
+            const sign = crypto.createHash('sha256')
+                .update(appKey + input + salt + curtime + appSecret)
+                .digest('hex');
+
+            console.log(`[Assess:Youdao] 评测 "${referenceText}" type=${type}`);
+
+            const response = await axios.post(
+                'https://openapi.youdao.com/evaluate',
+                new URLSearchParams({
+                    q: referenceText,
+                    audio: audioBase64,
+                    rate: '16000',
+                    format: 'mp3',
+                    channel: '1',
+                    type,
+                    appKey,
+                    salt,
+                    sign,
+                    signType: 'v3',
+                    curtime
+                }).toString(),
+                {
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    timeout: 15000
+                }
+            );
+
+            const data = response.data;
+            console.log('[Assess:Youdao] 原始响应:', JSON.stringify(data).substring(0, 300));
+
+            if (data.errorCode && data.errorCode !== '0') {
+                console.error(`[Assess:Youdao] 错误 errorCode=${data.errorCode}`);
+                return this.mockAssessment(referenceText);
+            }
+
+            const r = data.result || {};
+            return {
+                success: true,
+                overallScore: Math.round(parseFloat(r.overall || r.score || 0)),
+                pronunciationScore: Math.round(parseFloat(r.pronunciation || r.phone || 0)),
+                fluencyScore: Math.round(parseFloat(r.fluency || 0)),
+                integrityScore: Math.round(parseFloat(r.integrity || 0)),
+                details: {
+                    words: (r.words || r.word || []).map(w => ({
+                        word: w.word || w.text || '',
+                        score: Math.round(parseFloat(w.pronunciation || w.score || 0))
+                    }))
+                }
+            };
+        } catch (error) {
+            console.error('[Assess:Youdao] 异常:', error.message);
+            return this.mockAssessment(referenceText);
+        }
+    }
+
+    /**
+     * 腾讯云智聆口语评测（WebSocket API）
+     */
+    async _tencentAssess(audioPath, referenceText, contentType = 'sentence') {
         const { secretId, secretKey, appId } = this.tencentConfig;
 
         if (!secretId || !secretKey || !appId) {
