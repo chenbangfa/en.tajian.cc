@@ -1,4 +1,5 @@
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- 左栏：课程列表 -->
     <section class="bg-white rounded-xl shadow-sm border border-gray-100">
         <div class="p-6 border-b border-gray-100 bg-gray-50 rounded-t-xl flex items-center justify-between">
             <h2 class="text-lg font-bold text-gray-800">打卡课程</h2>
@@ -11,33 +12,54 @@
         </div>
     </section>
 
-    <section class="bg-white rounded-xl shadow-sm border border-gray-100">
-        <div class="p-6 border-b border-gray-100 bg-gray-50 rounded-t-xl flex items-center justify-between">
+    <!-- 右栏：章节 + 内容 -->
+    <section class="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col">
+        <!-- 标题行 -->
+        <div class="p-5 border-b border-gray-100 bg-gray-50 rounded-t-xl flex items-center justify-between">
             <div>
-                <h2 class="text-lg font-bold text-gray-800">课程内容</h2>
-                <p id="course-items-title" class="text-sm text-gray-500 mt-1">请先在左侧选择课程</p>
+                <h2 class="text-lg font-bold text-gray-800" id="right-panel-title">课程内容</h2>
+                <p id="right-panel-subtitle" class="text-sm text-gray-500 mt-0.5">请先在左侧选择课程</p>
             </div>
-            <button id="add-item-btn" onclick="openItemModal()" disabled class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm disabled:opacity-40 disabled:cursor-not-allowed">
-                <i class="fas fa-plus mr-2"></i>新增内容
-            </button>
+            <div id="right-panel-actions" class="flex gap-2">
+                <button id="add-chapter-btn" onclick="openChapterModal()" disabled
+                    class="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm disabled:opacity-40 disabled:cursor-not-allowed">
+                    <i class="fas fa-folder-plus mr-1"></i>新增章节
+                </button>
+                <button id="add-item-btn" onclick="openItemModal()" disabled
+                    class="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm disabled:opacity-40 disabled:cursor-not-allowed">
+                    <i class="fas fa-plus mr-1"></i>新增内容
+                </button>
+            </div>
         </div>
-        <div class="p-4">
+
+        <!-- 章节 Tab 栏 -->
+        <div id="chapter-tabs-wrap" class="px-4 pt-3 border-b border-gray-100 hidden">
+            <div id="chapter-tabs" class="flex gap-1 flex-wrap"></div>
+        </div>
+
+        <!-- 内容表格 -->
+        <div class="p-4 flex-1 overflow-auto">
             <table class="w-full text-left text-sm">
                 <thead>
                     <tr class="text-gray-500 border-b">
-                        <th class="py-2">排序</th>
-                        <th class="py-2">类型</th>
+                        <th class="py-2 w-12">排序</th>
+                        <th class="py-2 w-16">类型</th>
                         <th class="py-2">目标</th>
-                        <th class="py-2">难度</th>
-                        <th class="py-2 text-right">操作</th>
+                        <th class="py-2 w-24">章节</th>
+                        <th class="py-2 w-20 text-right">操作</th>
                     </tr>
                 </thead>
-                <tbody id="item-table-body"></tbody>
+                <tbody id="item-table-body">
+                    <tr><td colspan="5" class="py-10 text-center text-gray-400">请先在左侧选择课程</td></tr>
+                </tbody>
             </table>
         </div>
     </section>
 </div>
 
+<!-- ══════════════════════════════════════════════════
+     课程 Modal
+══════════════════════════════════════════════════ -->
 <div id="course-modal" class="fixed inset-0 bg-black/50 hidden z-50 items-center justify-center">
     <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6">
         <h3 id="course-modal-title" class="text-lg font-bold mb-4">新增课程</h3>
@@ -74,6 +96,45 @@
     </div>
 </div>
 
+<!-- ══════════════════════════════════════════════════
+     章节 Modal
+══════════════════════════════════════════════════ -->
+<div id="chapter-modal" class="fixed inset-0 bg-black/50 hidden z-50 items-center justify-center">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+        <h3 id="chapter-modal-title" class="text-lg font-bold mb-4">新增章节</h3>
+        <form id="chapter-form" class="space-y-3">
+            <input type="hidden" id="chapter-id">
+            <div>
+                <label class="block text-sm text-gray-700 mb-1">章节名称</label>
+                <input id="chapter-name" required placeholder="如：Unit 1: Hello World"
+                    class="w-full px-3 py-2 border border-gray-200 rounded-lg" />
+            </div>
+            <div>
+                <label class="block text-sm text-gray-700 mb-1">描述（选填）</label>
+                <input id="chapter-description" class="w-full px-3 py-2 border border-gray-200 rounded-lg" />
+            </div>
+            <div class="grid grid-cols-3 gap-3">
+                <div class="col-span-2">
+                    <label class="block text-sm text-gray-700 mb-1">排序</label>
+                    <input id="chapter-sort" type="number" value="0" class="w-full px-3 py-2 border border-gray-200 rounded-lg" />
+                </div>
+                <div class="flex items-end pb-2">
+                    <label class="inline-flex items-center text-sm text-gray-700">
+                        <input id="chapter-active" type="checkbox" checked class="mr-2" />启用
+                    </label>
+                </div>
+            </div>
+            <div class="flex justify-end gap-2 pt-4">
+                <button type="button" onclick="closeChapterModal()" class="px-4 py-2 border rounded-lg">取消</button>
+                <button type="submit" class="px-4 py-2 bg-purple-600 text-white rounded-lg">保存</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     课程内容 Modal
+══════════════════════════════════════════════════ -->
 <div id="item-modal" class="fixed inset-0 bg-black/50 hidden z-50 items-center justify-center">
     <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl p-6">
         <h3 id="item-modal-title" class="text-lg font-bold mb-4">新增课程内容</h3>
@@ -90,7 +151,8 @@
                 </div>
                 <div>
                     <label class="block text-sm text-gray-700 mb-1">搜索关键词</label>
-                    <input id="source-keyword" class="w-full px-3 py-2 border border-gray-200 rounded-lg" />
+                    <input id="source-keyword" class="w-full px-3 py-2 border border-gray-200 rounded-lg"
+                        onkeydown="if(event.key==='Enter'){event.preventDefault();searchSources();}" />
                 </div>
                 <div class="flex items-end">
                     <button type="button" onclick="searchSources()" class="w-full px-3 py-2 bg-gray-100 border rounded-lg">查询素材</button>
@@ -101,6 +163,13 @@
                 <label class="block text-sm text-gray-700 mb-1">选择素材</label>
                 <select id="item-target" required class="w-full px-3 py-2 border border-gray-200 rounded-lg">
                     <option value="">请先查询素材</option>
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-sm text-gray-700 mb-1">所属章节</label>
+                <select id="item-chapter" class="w-full px-3 py-2 border border-gray-200 rounded-lg">
+                    <option value="">未分配（不属于任何章节）</option>
                 </select>
             </div>
 
@@ -130,9 +199,12 @@
 
 <script>
     let courses = [];
-    let selectedCourseId = null;
+    let chapters = [];
     let courseItems = [];
+    let selectedCourseId = null;
+    let selectedChapterId = null; // null=全部, 0=未分配, N=章节id
 
+    // ─── 课程 ────────────────────────────────────────────
     function openCourseModal(course) {
         document.getElementById('course-modal').classList.remove('hidden');
         document.getElementById('course-modal').classList.add('flex');
@@ -142,8 +214,8 @@
         if (course) {
             document.getElementById('course-name').value = course.name || '';
             document.getElementById('course-description').value = course.description || '';
-            document.getElementById('course-level').value = course.level || 1;
-            document.getElementById('course-sort').value = course.sort_order || 0;
+            document.getElementById('course-level').value = course.level ?? 1;
+            document.getElementById('course-sort').value = course.sort_order ?? 0;
             document.getElementById('course-active').checked = !!course.is_active;
         }
     }
@@ -153,27 +225,9 @@
         document.getElementById('course-modal').classList.remove('flex');
     }
 
-    function openItemModal(item) {
-        if (!selectedCourseId) return;
-        document.getElementById('item-modal').classList.remove('hidden');
-        document.getElementById('item-modal').classList.add('flex');
-        document.getElementById('item-form').reset();
-        document.getElementById('item-id').value = item ? item.id : '';
-        document.getElementById('item-modal-title').textContent = item ? '编辑课程内容' : '新增课程内容';
-        if (item) {
-            document.getElementById('item-type').value = item.task_type;
-            document.getElementById('item-sort').value = item.sort_order || 0;
-            document.getElementById('item-note').value = item.note || '';
-            document.getElementById('item-active').checked = !!item.is_active;
-            searchSources(item.target_id);
-        } else {
-            document.getElementById('item-target').innerHTML = '<option value="">请先查询素材</option>';
-        }
-    }
-
-    function closeItemModal() {
-        document.getElementById('item-modal').classList.add('hidden');
-        document.getElementById('item-modal').classList.remove('flex');
+    function openCourseModalById(id) {
+        const course = courses.find(c => String(c.id) === String(id));
+        if (course) openCourseModal(course);
     }
 
     async function loadCourses() {
@@ -189,77 +243,251 @@
         }
 
         wrap.innerHTML = courses.map(c => {
-            const activeClass = String(selectedCourseId) === String(c.id) ? 'border-blue-500 bg-blue-50' : 'border-gray-200';
+            const active = String(selectedCourseId) === String(c.id);
             return `
-            <div class="border ${activeClass} rounded-lg p-3 cursor-pointer" onclick="selectCourse(${c.id})">
+            <div class="border ${active ? 'border-blue-500 bg-blue-50' : 'border-gray-200'} rounded-lg p-3 cursor-pointer"
+                onclick="selectCourse(${c.id})">
                 <div class="flex items-start justify-between">
-                    <div>
-                        <div class="font-semibold text-gray-800">${c.name}</div>
-                        <div class="text-xs text-gray-500 mt-1">L${c.level} · 内容 ${c.item_count || 0} 条</div>
-                        <div class="text-xs text-gray-400 mt-1">${c.description || ''}</div>
+                    <div class="flex-1 min-w-0">
+                        <div class="font-semibold text-gray-800 truncate">${c.name}</div>
+                        <div class="text-xs text-gray-500 mt-1">
+                            L${c.level}
+                            · ${c.chapter_count || 0} 章
+                            · ${c.item_count || 0} 条内容
+                            ${c.is_active ? '' : '<span class="text-red-400 ml-1">已禁用</span>'}
+                        </div>
+                        ${c.description ? `<div class="text-xs text-gray-400 mt-1 truncate">${c.description}</div>` : ''}
                     </div>
-                    <div class="space-x-2 text-sm" onclick="event.stopPropagation()">
-                        <button class="text-blue-600" onclick="openCourseModalById(${c.id})">编辑</button>
-                        <button class="text-red-600" onclick="deleteCourse(${c.id})">删除</button>
+                    <div class="space-x-2 text-sm ml-3 shrink-0" onclick="event.stopPropagation()">
+                        <button class="text-blue-600 hover:underline" onclick="openCourseModalById(${c.id})">编辑</button>
+                        <button class="text-red-600 hover:underline" onclick="deleteCourse(${c.id})">删除</button>
                     </div>
                 </div>
             </div>`;
         }).join('');
-
-        if (!selectedCourseId && courses[0]) {
-            selectCourse(courses[0].id);
-        }
     }
 
     async function selectCourse(courseId) {
         selectedCourseId = courseId;
+        selectedChapterId = null;
         const course = courses.find(c => String(c.id) === String(courseId));
-        document.getElementById('course-items-title').textContent = course ? `${course.name}（L${course.level}）` : '课程内容';
-        document.getElementById('add-item-btn').disabled = !course;
+        document.getElementById('right-panel-title').textContent = course ? course.name : '课程内容';
+        document.getElementById('right-panel-subtitle').textContent = course
+            ? `L${course.level}${course.description ? '  ·  ' + course.description : ''}`
+            : '';
+        document.getElementById('add-chapter-btn').disabled = false;
+        document.getElementById('add-item-btn').disabled = false;
+
         await loadCourses();
+        await loadChapters();
         await loadCourseItems();
     }
 
-    function openCourseModalById(id) {
-        const course = courses.find(c => String(c.id) === String(id));
-        if (!course) return;
-        openCourseModal(course);
+    async function deleteCourse(id) {
+        if (!confirm('删除课程会同时删除其所有章节和内容，确定继续？')) return;
+        const res = await fetch(`${API_BASE}/checkin-curriculum/courses/${id}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!data.success) return showToast(data.message || '删除失败', 'error');
+        if (String(selectedCourseId) === String(id)) {
+            selectedCourseId = null;
+            selectedChapterId = null;
+            resetRightPanel();
+        }
+        showToast('删除成功');
+        loadCourses();
+    }
+
+    // ─── 章节 ────────────────────────────────────────────
+    function openChapterModal(chapter) {
+        if (!selectedCourseId) return;
+        document.getElementById('chapter-modal').classList.remove('hidden');
+        document.getElementById('chapter-modal').classList.add('flex');
+        document.getElementById('chapter-form').reset();
+        document.getElementById('chapter-id').value = chapter ? chapter.id : '';
+        document.getElementById('chapter-modal-title').textContent = chapter ? '编辑章节' : '新增章节';
+        if (chapter) {
+            document.getElementById('chapter-name').value = chapter.name || '';
+            document.getElementById('chapter-description').value = chapter.description || '';
+            document.getElementById('chapter-sort').value = chapter.sort_order ?? 0;
+            document.getElementById('chapter-active').checked = !!chapter.is_active;
+        }
+    }
+
+    function closeChapterModal() {
+        document.getElementById('chapter-modal').classList.add('hidden');
+        document.getElementById('chapter-modal').classList.remove('flex');
+    }
+
+    async function loadChapters() {
+        if (!selectedCourseId) { renderChapterTabs(); return; }
+        const res = await fetch(`${API_BASE}/checkin-curriculum/courses/${selectedCourseId}/chapters`);
+        const data = await res.json();
+        if (!data.success) return showToast(data.message || '加载章节失败', 'error');
+        chapters = data.data || [];
+        renderChapterTabs();
+    }
+
+    function renderChapterTabs() {
+        const wrap = document.getElementById('chapter-tabs-wrap');
+        const tabs = document.getElementById('chapter-tabs');
+
+        if (!selectedCourseId) { wrap.classList.add('hidden'); return; }
+        wrap.classList.remove('hidden');
+
+        const makeTab = (label, val, count, color) => {
+            const active = String(selectedChapterId) === String(val);
+            const baseClass = 'px-3 py-1.5 rounded-t-lg text-xs font-medium border border-b-0 cursor-pointer transition-colors';
+            const activeClass = `${baseClass} ${color} border-current text-current -mb-px bg-white`;
+            const inactiveClass = `${baseClass} border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300`;
+            return `<div class="${active ? activeClass : inactiveClass}" onclick="switchChapterTab(${JSON.stringify(val)})">${label}${count !== null ? ` <span class="opacity-60">(${count})</span>` : ''}</div>`;
+        };
+
+        const allCount = chapters.reduce((s, c) => s + (c.item_count || 0), 0);
+        const unassignedCount = courseItems.filter(i => !i.chapter_id).length;
+
+        const html = [
+            makeTab('全部', null, null, 'border-blue-500 text-blue-600'),
+        ];
+        chapters.forEach(ch => {
+            const label = ch.name + (ch.is_active ? '' : ' 🚫');
+            html.push(makeTab(label, ch.id, ch.item_count || 0, 'border-purple-500 text-purple-600'));
+        });
+        html.push(makeTab('未分配', 0, unassignedCount, 'border-gray-400 text-gray-600'));
+
+        // 章节操作按钮（仅在具体章节 tab 时显示）
+        const currentChapter = chapters.find(c => String(c.id) === String(selectedChapterId));
+        if (currentChapter) {
+            html.push(`<div class="ml-auto flex gap-2 text-xs" style="align-self:center">
+                <button onclick="openChapterModal(chapters.find(c=>String(c.id)==='${currentChapter.id}'))"
+                    class="text-purple-600 hover:underline px-2">编辑章节</button>
+                <button onclick="deleteChapter(${currentChapter.id})"
+                    class="text-red-500 hover:underline px-2">删除章节</button>
+            </div>`);
+        }
+
+        tabs.innerHTML = html.join('');
+    }
+
+    async function switchChapterTab(val) {
+        selectedChapterId = val;
+        renderChapterTabs();
+        await loadCourseItems();
+    }
+
+    async function deleteChapter(id) {
+        if (!confirm('删除章节后，该章节下的内容将移至"未分配"，确定继续？')) return;
+        const res = await fetch(`${API_BASE}/checkin-curriculum/chapters/${id}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!data.success) return showToast(data.message || '删除失败', 'error');
+        if (String(selectedChapterId) === String(id)) selectedChapterId = null;
+        showToast('章节已删除，内容已移至未分配');
+        await loadChapters();
+        await loadCourseItems();
+    }
+
+    // ─── 课程内容 ─────────────────────────────────────────
+    function openItemModal(item) {
+        if (!selectedCourseId) return;
+        document.getElementById('item-modal').classList.remove('hidden');
+        document.getElementById('item-modal').classList.add('flex');
+        document.getElementById('item-form').reset();
+        document.getElementById('item-id').value = item ? item.id : '';
+        document.getElementById('item-modal-title').textContent = item ? '编辑课程内容' : '新增课程内容';
+
+        // 填充章节下拉
+        const chapterSel = document.getElementById('item-chapter');
+        chapterSel.innerHTML = '<option value="">未分配（不属于任何章节）</option>' +
+            chapters.map(ch => `<option value="${ch.id}">${ch.name}</option>`).join('');
+
+        if (item) {
+            document.getElementById('item-type').value = item.task_type;
+            document.getElementById('item-sort').value = item.sort_order ?? 0;
+            document.getElementById('item-note').value = item.note || '';
+            document.getElementById('item-active').checked = !!item.is_active;
+            chapterSel.value = item.chapter_id ? String(item.chapter_id) : '';
+            searchSources(item.target_id);
+        } else {
+            document.getElementById('item-target').innerHTML = '<option value="">请先查询素材</option>';
+            // 若当前在某章节 tab，预选该章节
+            if (selectedChapterId && selectedChapterId !== 0) {
+                chapterSel.value = String(selectedChapterId);
+            }
+        }
+    }
+
+    function closeItemModal() {
+        document.getElementById('item-modal').classList.add('hidden');
+        document.getElementById('item-modal').classList.remove('flex');
+    }
+
+    function openItemModalById(id) {
+        const item = courseItems.find(i => String(i.id) === String(id));
+        if (item) openItemModal(item);
     }
 
     async function loadCourseItems() {
         if (!selectedCourseId) return;
-        const res = await fetch(`${API_BASE}/checkin-curriculum/courses/${selectedCourseId}/items`);
+        let url = `${API_BASE}/checkin-curriculum/courses/${selectedCourseId}/items`;
+        if (selectedChapterId === 0) url += '?chapterId=0';
+        else if (selectedChapterId !== null) url += `?chapterId=${selectedChapterId}`;
+
+        const res = await fetch(url);
         const data = await res.json();
         if (!data.success) return showToast(data.message || '加载课程内容失败', 'error');
 
         courseItems = data.data || [];
+        renderItemTable();
+        renderChapterTabs(); // 更新未分配 count
+    }
+
+    function renderItemTable() {
         const tbody = document.getElementById('item-table-body');
         if (!courseItems.length) {
             tbody.innerHTML = '<tr><td colspan="5" class="py-8 text-center text-gray-400">暂无内容</td></tr>';
             return;
         }
 
-        tbody.innerHTML = courseItems.map(item => `
-            <tr class="border-b">
-                <td class="py-2">${item.sort_order || 0}</td>
-                <td class="py-2">${item.task_type}</td>
-                <td class="py-2">
+        const typeLabel = { word: '单词', scene: '场景', podcast: '播客' };
+        const typeBadge = {
+            word: 'bg-blue-100 text-blue-700',
+            scene: 'bg-amber-100 text-amber-700',
+            podcast: 'bg-pink-100 text-pink-700'
+        };
+
+        tbody.innerHTML = courseItems.map(item => {
+            const chName = item.chapter_id
+                ? (chapters.find(c => String(c.id) === String(item.chapter_id))?.name || `#${item.chapter_id}`)
+                : '<span class="text-gray-400">未分配</span>';
+            return `
+            <tr class="border-b hover:bg-gray-50">
+                <td class="py-2 px-1 text-gray-500">${item.sort_order ?? 0}</td>
+                <td class="py-2 px-1">
+                    <span class="px-2 py-0.5 rounded text-xs font-medium ${typeBadge[item.task_type] || 'bg-gray-100 text-gray-600'}">
+                        ${typeLabel[item.task_type] || item.task_type}
+                    </span>
+                </td>
+                <td class="py-2 px-1">
                     <div class="font-medium text-gray-800">${item.target_title || `#${item.target_id}`}</div>
-                    <div class="text-xs text-gray-500">${item.target_subtitle || ''}</div>
+                    ${item.target_subtitle ? `<div class="text-xs text-gray-400">${item.target_subtitle}</div>` : ''}
+                    ${item.is_active ? '' : '<span class="text-xs text-red-400">已禁用</span>'}
                 </td>
-                <td class="py-2">-</td>
-                <td class="py-2 text-right space-x-2">
-                    <button class="text-blue-600" onclick="openItemModalById(${item.id})">编辑</button>
-                    <button class="text-red-600" onclick="deleteItem(${item.id})">删除</button>
+                <td class="py-2 px-1 text-xs text-gray-500">${chName}</td>
+                <td class="py-2 px-1 text-right space-x-3">
+                    <button class="text-blue-600 hover:underline text-sm" onclick="openItemModalById(${item.id})">编辑</button>
+                    <button class="text-red-600 hover:underline text-sm" onclick="deleteItem(${item.id})">删除</button>
                 </td>
-            </tr>
-        `).join('');
+            </tr>`;
+        }).join('');
     }
 
-    function openItemModalById(id) {
-        const item = courseItems.find(i => String(i.id) === String(id));
-        if (!item) return;
-        openItemModal(item);
+    async function deleteItem(id) {
+        if (!confirm('确定删除该课程内容？')) return;
+        const res = await fetch(`${API_BASE}/checkin-curriculum/items/${id}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!data.success) return showToast(data.message || '删除失败', 'error');
+        showToast('删除成功');
+        await loadCourseItems();
+        loadCourses();
     }
 
     async function searchSources(preselectId) {
@@ -272,32 +500,24 @@
         const select = document.getElementById('item-target');
         const options = ['<option value="">请选择</option>'];
         (data.data || []).forEach(row => {
-            options.push(`<option value="${row.id}">#${row.id} ${row.title} ${row.subtitle ? '｜' + row.subtitle : ''}</option>`);
+            options.push(`<option value="${row.id}">#${row.id} ${row.title}${row.subtitle ? ' ｜ ' + row.subtitle : ''}</option>`);
         });
         select.innerHTML = options.join('');
         if (preselectId) select.value = String(preselectId);
     }
 
-    async function deleteCourse(id) {
-        if (!confirm('删除课程会同时删除其课程内容，确定继续？')) return;
-        const res = await fetch(`${API_BASE}/checkin-curriculum/courses/${id}`, { method: 'DELETE' });
-        const data = await res.json();
-        if (!data.success) return showToast(data.message || '删除失败', 'error');
-        if (String(selectedCourseId) === String(id)) selectedCourseId = null;
-        showToast('删除成功');
-        loadCourses();
-        document.getElementById('item-table-body').innerHTML = '';
+    // ─── 重置右栏 ─────────────────────────────────────────
+    function resetRightPanel() {
+        document.getElementById('right-panel-title').textContent = '课程内容';
+        document.getElementById('right-panel-subtitle').textContent = '请先在左侧选择课程';
+        document.getElementById('add-chapter-btn').disabled = true;
+        document.getElementById('add-item-btn').disabled = true;
+        document.getElementById('chapter-tabs-wrap').classList.add('hidden');
+        document.getElementById('item-table-body').innerHTML =
+            '<tr><td colspan="5" class="py-10 text-center text-gray-400">请先在左侧选择课程</td></tr>';
     }
 
-    async function deleteItem(id) {
-        if (!confirm('确定删除该课程内容？')) return;
-        const res = await fetch(`${API_BASE}/checkin-curriculum/items/${id}`, { method: 'DELETE' });
-        const data = await res.json();
-        if (!data.success) return showToast(data.message || '删除失败', 'error');
-        showToast('删除成功');
-        loadCourseItems();
-    }
-
+    // ─── 表单提交 ─────────────────────────────────────────
     document.getElementById('course-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         const id = document.getElementById('course-id').value;
@@ -308,45 +528,77 @@
             sort_order: Number(document.getElementById('course-sort').value || 0),
             is_active: document.getElementById('course-active').checked
         };
-        const res = await fetch(id ? `${API_BASE}/checkin-curriculum/courses/${id}` : `${API_BASE}/checkin-curriculum/courses`, {
-            method: id ? 'PUT' : 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
-        });
+        const res = await fetch(
+            id ? `${API_BASE}/checkin-curriculum/courses/${id}` : `${API_BASE}/checkin-curriculum/courses`,
+            { method: id ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+        );
         const data = await res.json();
         if (!data.success) return showToast(data.message || '保存失败', 'error');
         closeCourseModal();
         showToast('保存成功');
-        loadCourses();
+        await loadCourses();
+        if (!id && data.data?.id) selectCourse(data.data.id);
+    });
+
+    document.getElementById('chapter-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (!selectedCourseId) return;
+        const id = document.getElementById('chapter-id').value;
+        const body = {
+            name: document.getElementById('chapter-name').value,
+            description: document.getElementById('chapter-description').value,
+            sort_order: Number(document.getElementById('chapter-sort').value || 0),
+            is_active: document.getElementById('chapter-active').checked
+        };
+        const res = await fetch(
+            id ? `${API_BASE}/checkin-curriculum/chapters/${id}` : `${API_BASE}/checkin-curriculum/courses/${selectedCourseId}/chapters`,
+            { method: id ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+        );
+        const data = await res.json();
+        if (!data.success) return showToast(data.message || '保存失败', 'error');
+        closeChapterModal();
+        showToast('保存成功');
+        await loadChapters();
+        await loadCourses();
+        // 切换到新章节
+        if (!id && data.data?.id) {
+            selectedChapterId = data.data.id;
+            renderChapterTabs();
+            await loadCourseItems();
+        }
     });
 
     document.getElementById('item-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         if (!selectedCourseId) return;
         const id = document.getElementById('item-id').value;
+        const chapterVal = document.getElementById('item-chapter').value;
         const body = {
             task_type: document.getElementById('item-type').value,
             target_id: Number(document.getElementById('item-target').value),
+            chapter_id: chapterVal ? Number(chapterVal) : null,
             sort_order: Number(document.getElementById('item-sort').value || 0),
             note: document.getElementById('item-note').value,
             is_active: document.getElementById('item-active').checked
         };
         if (!body.target_id) return showToast('请选择素材', 'error');
 
-        const res = await fetch(id ? `${API_BASE}/checkin-curriculum/items/${id}` : `${API_BASE}/checkin-curriculum/courses/${selectedCourseId}/items`, {
-            method: id ? 'PUT' : 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
-        });
+        const res = await fetch(
+            id ? `${API_BASE}/checkin-curriculum/items/${id}` : `${API_BASE}/checkin-curriculum/courses/${selectedCourseId}/items`,
+            { method: id ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+        );
         const data = await res.json();
         if (!data.success) return showToast(data.message || '保存失败', 'error');
         closeItemModal();
         showToast('保存成功');
-        loadCourseItems();
+        await loadCourseItems();
         loadCourses();
     });
 
     document.addEventListener('DOMContentLoaded', async () => {
         await loadCourses();
+        if (courses.length > 0) {
+            await selectCourse(courses[0].id);
+        }
     });
 </script>
