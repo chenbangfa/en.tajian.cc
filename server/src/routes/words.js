@@ -227,8 +227,7 @@ router.get('/random/:count', optionalAuth, async (req, res) => {
             params.push(parseInt(difficulty));
         }
 
-        sql += ' ORDER BY RAND() LIMIT ?';
-        params.push(wordCount);
+        sql += ` ORDER BY RAND() LIMIT ${wordCount}`;
 
         const words = await query(sql, params);
 
