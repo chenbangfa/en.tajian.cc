@@ -1525,14 +1525,37 @@ router.get('/v2/today', authMiddleware, async (req, res) => {
 router.post('/v2/done', authMiddleware, async (req, res) => {
     try {
         const userId = req.user.id;
-        const { item_id } = req.body;
+        const { item_id, assessment_id } = req.body;
         if (!item_id) return res.status(400).json({ success: false, message: '参数错误' });
 
         const [item] = await query('SELECT * FROM daily_task_items WHERE id = ? AND user_id = ?', [item_id, userId]);
         if (!item) return res.status(404).json({ success: false, message: '任务不存在' });
 
         if (item.status !== 'completed') {
-            await query('UPDATE daily_task_items SET status = "completed", completed_at = NOW() WHERE id = ?', [item_id]);
+            if (assessment_id) {
+                // 从 voice_assessments 取回录音地址和评分，一并写入 daily_task_items
+                const [assessment] = await query(
+                    'SELECT * FROM voice_assessments WHERE id = ? AND user_id = ?',
+                    [assessment_id, userId]
+                );
+                if (assessment) {
+                    await query(
+                        `UPDATE daily_task_items
+                         SET status = "completed", assessment_id = ?, audio_url = ?,
+                             score = ?, pronunciation_score = ?, fluency_score = ?, integrity_score = ?,
+                             completed_at = NOW()
+                         WHERE id = ?`,
+                        [assessment.id, assessment.audio_url,
+                         assessment.overall_score, assessment.pronunciation_score,
+                         assessment.fluency_score, assessment.integrity_score,
+                         item_id]
+                    );
+                } else {
+                    await query('UPDATE daily_task_items SET status = "completed", completed_at = NOW() WHERE id = ?', [item_id]);
+                }
+            } else {
+                await query('UPDATE daily_task_items SET status = "completed", completed_at = NOW() WHERE id = ?', [item_id]);
+            }
         }
 
         const [plan] = await query('SELECT * FROM daily_task_plans WHERE id = ?', [item.plan_id]);
