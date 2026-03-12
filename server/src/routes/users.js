@@ -83,7 +83,7 @@ router.get('/points', authMiddleware, async (req, res) => {
         console.error('获取积分详情错误:', error);
         res.status(500).json({
             success: false,
-            message: '获取积分详情失败'
+            message: error.sqlMessage || error.message || '获取积分详情失败'
         });
     }
 });

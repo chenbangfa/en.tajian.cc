@@ -301,7 +301,7 @@ router.get('/history', authMiddleware, async (req, res) => {
         });
     } catch (error) {
         console.error('获取评测历史错误:', error);
-        res.status(500).json({ success: false, message: '获取评测历史失败' });
+        res.status(500).json({ success: false, message: error.sqlMessage || error.message || '获取评测历史失败' });
     }
 });
 
@@ -373,13 +373,13 @@ router.get('/calendar', authMiddleware, async (req, res) => {
         }
 
         const days = await query(
-            `SELECT DATE_FORMAT(created_at, '%Y-%m-%d') as date,
+            `SELECT DATE_FORMAT(created_at, '%Y-%m-%d') as \`date\`,
                     COUNT(*) as count,
                     ROUND(AVG(overall_score), 1) as avg_score
              FROM voice_assessments
              WHERE user_id = ? AND DATE(created_at) BETWEEN ? AND ?
-             GROUP BY DATE(created_at)
-             ORDER BY date`,
+             GROUP BY DATE_FORMAT(created_at, '%Y-%m-%d')
+             ORDER BY \`date\``,
             [userId, startDate, endDate]
         );
 
@@ -389,7 +389,7 @@ router.get('/calendar', authMiddleware, async (req, res) => {
         });
     } catch (error) {
         console.error('获取日历数据错误:', error);
-        res.status(500).json({ success: false, message: '获取日历数据失败' });
+        res.status(500).json({ success: false, message: error.sqlMessage || error.message || '获取日历数据失败' });
     }
 });
 
