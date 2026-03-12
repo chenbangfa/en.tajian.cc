@@ -6,6 +6,7 @@
 const express = require('express');
 const axios = require('axios');
 const path = require('path');
+const sharp = require('sharp');
 
 require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
@@ -69,11 +70,20 @@ app.post('/proxy/generate-image', auth, async (req, res) => {
         const parts = response.data.candidates?.[0]?.content?.parts || [];
         for (const part of parts) {
             if (part.inlineData?.mimeType?.startsWith('image/')) {
-                console.log(`[Proxy] 图片生成成功, size: ${part.inlineData.data.length} chars`);
+                const rawBuffer = Buffer.from(part.inlineData.data, 'base64');
+                const rawKB = Math.round(rawBuffer.length / 1024);
+
+                // 压缩：最大 1024px，JPEG quality=82，目标 ~150-250KB
+                const compressed = await sharp(rawBuffer)
+                    .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
+                    .jpeg({ quality: 82, progressive: true })
+                    .toBuffer();
+
+                console.log(`[Proxy] 图片生成成功, 原始 ${rawKB}KB → 压缩后 ${Math.round(compressed.length / 1024)}KB`);
                 return res.json({
                     success: true,
-                    imageData: part.inlineData.data,
-                    mimeType: part.inlineData.mimeType
+                    imageData: compressed.toString('base64'),
+                    mimeType: 'image/jpeg'
                 });
             }
         }

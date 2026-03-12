@@ -594,14 +594,21 @@ Only return the JSON array, no other text.`
             }
         }
 
-        // 回退：保存到本地
+        // 回退：保存到本地（压缩至 JPEG quality=82，最大 1024px）
+        const sharp = require('sharp');
         const uploadsDir = path.join(__dirname, '../../uploads/images');
         if (!fs.existsSync(uploadsDir)) {
             fs.mkdirSync(uploadsDir, { recursive: true });
         }
-        const filename = `${prefix}_${Date.now()}.png`;
+        const filename = `${prefix}_${Date.now()}.jpg`;
         const filePath = path.join(uploadsDir, filename);
-        fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
+        const rawBuffer = Buffer.from(base64Data, 'base64');
+        const compressed = await sharp(rawBuffer)
+            .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
+            .jpeg({ quality: 82, progressive: true })
+            .toBuffer();
+        fs.writeFileSync(filePath, compressed);
+        console.log(`[AIService] 图片保存本地: ${Math.round(rawBuffer.length/1024)}KB → ${Math.round(compressed.length/1024)}KB`);
         return `/uploads/images/${filename}`;
     }
 
