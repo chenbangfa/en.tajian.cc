@@ -313,11 +313,10 @@ class VoiceService {
             const salt = uuidv4();
             const curtime = Math.floor(Date.now() / 1000).toString();
 
-            // 签名基于 q（base64音频），不是文本
-            const q = audioBase64;
-            const input = q.length > 20
-                ? q.substring(0, 10) + q.length + q.substring(q.length - 10)
-                : q;
+            // 签名基于 text（参考文本），与有道其他 API 一致；signType v3 = SHA256+curtime
+            const input = referenceText.length > 20
+                ? referenceText.substring(0, 10) + referenceText.length + referenceText.substring(referenceText.length - 10)
+                : referenceText;
             const sign = crypto.createHash('sha256')
                 .update(appKey + input + salt + curtime + appSecret)
                 .digest('hex');
@@ -334,7 +333,7 @@ class VoiceService {
                     salt,
                     curtime,
                     sign,
-                    signType: 'v2',
+                    signType: 'v3',
                     format: ext,
                     rate: '16000',
                     channel: '1',
