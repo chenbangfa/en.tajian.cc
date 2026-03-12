@@ -307,7 +307,7 @@ class VoiceService {
                     server_engine_type: '16k_en',
                     text_mode: 0,
                     timestamp,
-                    voice_format: 2,
+                    voice_format: 6,
                     voice_id: voiceId,
                     rec_mode: 0
                 };
