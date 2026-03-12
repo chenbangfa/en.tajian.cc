@@ -51,6 +51,23 @@
 
 ---
 
+## 2026-03-12（补充）
+
+### fix: 服务器实测确认 voice/history、voice/calendar、users/points 500 修复完成
+
+服务端 SSH 实测三个接口均返回 200 OK。根本原因已确认（服务器 error log）：
+
+```
+Error: Incorrect arguments to mysqld_stmt_execute
+errno: 1210, sqlState: 'HY000'
+sql: SELECT * FROM points_logs WHERE user_id = ? ORDER BY ... LIMIT ? OFFSET ?
+```
+
+`mysql2` 的 `pool.execute()`（Prepared Statement）在 MySQL 8.4 中传递整数型 LIMIT/OFFSET 参数时
+触发协议错误，改用 `pool.query()`（客户端转义）后完全消除。
+
+---
+
 ## 2026-02-08
 
 ### feat: add passing_score to v2 checkin API
