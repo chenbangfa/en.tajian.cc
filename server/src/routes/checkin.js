@@ -183,6 +183,9 @@ const handleCheckinUpload = (req, res, next) => {
         try {
             await query(`ALTER TABLE users ADD COLUMN daily_word_target INT DEFAULT 10 AFTER learning_level`);
         } catch (e) { /* 字段已存在则忽略 */ }
+        try {
+            await query(`ALTER TABLE users ADD COLUMN daily_passing_score TINYINT DEFAULT 60 AFTER daily_word_target`);
+        } catch (e) { /* 字段已存在则忽略 */ }
 
         // 补充 daily_task_items 可能缺少的字段
         const colsToAdd = [
@@ -1267,12 +1270,13 @@ router.get('/v2/status', authMiddleware, async (req, res) => {
         const today = new Date().toISOString().split('T')[0];
 
         const [user] = await query(
-            'SELECT current_course_id, daily_word_target FROM users WHERE id = ?',
+            'SELECT current_course_id, daily_word_target, daily_passing_score FROM users WHERE id = ?',
             [userId]
         );
 
         const courseId = user && user.current_course_id;
         const dailyTarget = (user && user.daily_word_target) || 10;
+        const passingScore = (user && user.daily_passing_score) || 60;
 
         let course = null;
         let courseWordCount = 0;
@@ -1319,7 +1323,7 @@ router.get('/v2/status', authMiddleware, async (req, res) => {
 
         res.json({
             success: true,
-            data: { enrolled: !!course, course, dailyTarget, courseWordCount, learnedCount, todayDoneCount, todayComplete, streakDays, totalDays }
+            data: { enrolled: !!course, course, dailyTarget, passingScore, courseWordCount, learnedCount, todayDoneCount, todayComplete, streakDays, totalDays }
         });
     } catch (e) {
         console.error('v2/status error:', e);
@@ -1343,10 +1347,15 @@ router.get('/v2/courses', authMiddleware, async (req, res) => {
             );
             c.wordCount = cnt ? cnt.cnt : 0;
         }
-        const [user] = await query('SELECT current_course_id, daily_word_target FROM users WHERE id = ?', [userId]);
+        const [user] = await query('SELECT current_course_id, daily_word_target, daily_passing_score FROM users WHERE id = ?', [userId]);
         res.json({
             success: true,
-            data: { courses, currentCourseId: user ? user.current_course_id : null, dailyTarget: user ? (user.daily_word_target || 10) : 10 }
+            data: {
+                courses,
+                currentCourseId: user ? user.current_course_id : null,
+                dailyTarget: user ? (user.daily_word_target || 10) : 10,
+                passingScore: user ? (user.daily_passing_score || 60) : 60
+            }
         });
     } catch (e) {
         console.error('v2/courses error:', e);
@@ -1567,6 +1576,39 @@ router.post('/v2/done', authMiddleware, async (req, res) => {
         });
     } catch (e) {
         console.error('v2/done error:', e);
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+/**
+ * POST /checkin/v2/settings - 更新每日目标和及格分数
+ * body: { daily_target?, passing_score? }
+ */
+router.post('/v2/settings', authMiddleware, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { daily_target, passing_score } = req.body;
+        const updates = [];
+        const params = [];
+
+        if (daily_target !== undefined) {
+            updates.push('daily_word_target = ?');
+            params.push(Math.min(50, Math.max(1, Number(daily_target))));
+        }
+        if (passing_score !== undefined) {
+            const validScores = [60, 70, 80, 90];
+            updates.push('daily_passing_score = ?');
+            params.push(validScores.includes(Number(passing_score)) ? Number(passing_score) : 60);
+        }
+
+        if (updates.length > 0) {
+            params.push(userId);
+            await query(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`, params);
+        }
+
+        res.json({ success: true });
+    } catch (e) {
+        console.error('v2/settings error:', e);
         res.status(500).json({ success: false, message: e.message });
     }
 });
