@@ -299,8 +299,7 @@ class VoiceService {
     async _youdaoAssess(audioPath, referenceText, contentType = 'sentence') {
         const { appKey, appSecret } = this.youdaoConfig;
         if (!appKey || !appSecret) {
-            console.warn('[Assess:Youdao] 未配置 YOUDAO_APP_KEY/SECRET，降级为模拟评测');
-            return this.mockAssessment(referenceText);
+            return { success: false, error: '评测服务未配置，请联系管理员' };
         }
 
         try {
@@ -350,8 +349,8 @@ class VoiceService {
             console.log('[Assess:Youdao] 原始响应:', JSON.stringify(data).substring(0, 400));
 
             if (data.errorCode && data.errorCode !== '0') {
-                console.error(`[Assess:Youdao] 错误 errorCode=${data.errorCode}${data.errorCode === '2005' ? ' (不支持音频格式，需改为wav)' : ''}`);
-                return this.mockAssessment(referenceText);
+                console.error(`[Assess:Youdao] 错误 errorCode=${data.errorCode}`);
+                return { success: false, error: '评测服务开小差了，请稍后重试' };
             }
 
             // 响应字段在顶层（无 result 嵌套）
@@ -370,7 +369,7 @@ class VoiceService {
             };
         } catch (error) {
             console.error('[Assess:Youdao] 异常:', error.message);
-            return this.mockAssessment(referenceText);
+            return { success: false, error: '评测服务开小差了，请稍后重试' };
         }
     }
 
@@ -381,8 +380,7 @@ class VoiceService {
         const { secretId, secretKey, appId } = this.tencentConfig;
 
         if (!secretId || !secretKey || !appId) {
-            console.log('腾讯云配置不完整，使用模拟评测');
-            return this.mockAssessment(referenceText);
+            return { success: false, error: '评测服务未配置，请联系管理员' };
         }
 
         return new Promise((resolve, reject) => {
@@ -477,22 +475,22 @@ class VoiceService {
                 });
 
                 ws.on('close', () => {
-                    resolve(result || this.mockAssessment(referenceText));
+                    resolve(result || { success: false, error: '评测服务开小差了，请稍后重试' });
                 });
 
                 ws.on('error', (error) => {
                     if (result && result.success) return;
-                    resolve(this.mockAssessment(referenceText));
+                    resolve({ success: false, error: '评测服务开小差了，请稍后重试' });
                 });
 
                 setTimeout(() => {
                     if (ws.readyState === WebSocket.OPEN) ws.close();
-                    if (!result) resolve(this.mockAssessment(referenceText));
+                    if (!result) resolve({ success: false, error: '评测超时，请稍后重试' });
                 }, 30000);
 
             } catch (error) {
                 console.error('语音评测错误:', error.message);
-                resolve(this.mockAssessment(referenceText));
+                resolve({ success: false, error: '评测服务开小差了，请稍后重试' });
             }
         });
     }
