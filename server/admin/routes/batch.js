@@ -251,11 +251,12 @@ router.post('/generate-single', async (req, res) => {
             return res.status(400).json({ success: false, message: '请提供单词' });
         }
 
-        // 如果有word_id，查询分类信息和图片建议
+        // 如果有word_id，查询分类信息、词性和图片建议
         let category = '', category_en = '', subcategory = '', image_hint = reqImageHint || '';
+        let effectivePromptKey = promptKey;
         if (word_id) {
             const [wordRecord] = await query(
-                `SELECT w.image_hint,
+                `SELECT w.image_hint, w.word_type,
                         c.name as category, c.name_en as category_en,
                         pc.name as parent_category, pc.name_en as parent_category_en
                  FROM words w
@@ -277,10 +278,14 @@ router.post('/generate-single', async (req, res) => {
                 if (!image_hint) {
                     image_hint = wordRecord.image_hint || '';
                 }
+                // 形容词/副词自动升级为抽象词模板
+                if (promptKey === 'image_generate' && ['adj', 'adv'].includes(wordRecord.word_type)) {
+                    effectivePromptKey = 'image_abstract';
+                }
             }
         }
 
-        console.log(`[AI] 生成图片: ${word}, 分类: ${category}${subcategory ? ' > ' + subcategory : ''}${image_hint ? ', 图片建议: ' + image_hint : ''}`);
+        console.log(`[AI] 生成图片: ${word}, 分类: ${category}${subcategory ? ' > ' + subcategory : ''}${image_hint ? ', 图片建议: ' + image_hint : ''}, 模板: ${effectivePromptKey}`);
 
         // 调用图片生成方法（携带 image_hint）
         const imageResult = await aiService.generateWordImage(word, {
@@ -289,7 +294,7 @@ router.post('/generate-single', async (req, res) => {
             category_en,
             subcategory,
             image_hint,
-            promptKey
+            promptKey: effectivePromptKey
         });
 
         if (!imageResult.success) {
@@ -425,9 +430,9 @@ router.post('/generate-images', async (req, res) => {
         // 限制一次最多处理20个
         const idsToProcess = word_ids.slice(0, 20);
 
-        // 查询单词及其分类信息（包括父分类和图片建议）
+        // 查询单词及其分类信息（包括父分类、词性和图片建议）
         const words = await query(
-            `SELECT w.id, w.word, w.translation, w.image_hint,
+            `SELECT w.id, w.word, w.translation, w.image_hint, w.word_type,
                     c.name as category, c.name_en as category_en,
                     pc.name as parent_category, pc.name_en as parent_category_en
              FROM words w
@@ -459,13 +464,18 @@ router.post('/generate-images', async (req, res) => {
                     subcategory = '';
                 }
 
+                // 形容词/副词自动升级为抽象词模板
+                const wordPromptKey = (promptKey === 'image_generate' && ['adj', 'adv'].includes(wordRecord.word_type))
+                    ? 'image_abstract'
+                    : promptKey;
+
                 const imageResult = await aiService.generateWordImage(wordRecord.word, {
                     translation: wordRecord.translation,
                     category,
                     category_en,
                     subcategory,
                     image_hint: wordRecord.image_hint || '',
-                    promptKey
+                    promptKey: wordPromptKey
                 });
 
                 if (imageResult.success) {
