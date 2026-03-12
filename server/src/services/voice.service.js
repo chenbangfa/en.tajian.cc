@@ -290,7 +290,11 @@ class VoiceService {
     }
 
     /**
-     * 有道口语评测
+     * 有道口语评测 (ISE API)
+     * 文档: https://ai.youdao.com/DOCSIRMA/html/tts/api/yypc/index.html
+     *
+     * 注意：q = base64音频数据，text = 评测参考文本
+     * 签名基于 q（音频base64）而非文本，signType 固定 v2
      */
     async _youdaoAssess(audioPath, referenceText, contentType = 'sentence') {
         const { appKey, appSecret } = this.youdaoConfig;
@@ -300,37 +304,41 @@ class VoiceService {
         }
 
         try {
-            const typeMap = { word: '1', sentence: '2', paragraph: '3' };
-            const type = typeMap[contentType] || '1';
-
             const audioBuffer = fs.readFileSync(audioPath);
             const audioBase64 = audioBuffer.toString('base64');
 
+            // 判断音频格式（小程序录 mp3，如报 2005 错误需改为 wav）
+            const ext = path.extname(audioPath).toLowerCase().replace('.', '') || 'mp3';
+
             const salt = uuidv4();
             const curtime = Math.floor(Date.now() / 1000).toString();
-            const input = referenceText.length > 20
-                ? referenceText.substring(0, 10) + referenceText.length + referenceText.substring(referenceText.length - 10)
-                : referenceText;
+
+            // 签名基于 q（base64音频），不是文本
+            const q = audioBase64;
+            const input = q.length > 20
+                ? q.substring(0, 10) + q.length + q.substring(q.length - 10)
+                : q;
             const sign = crypto.createHash('sha256')
                 .update(appKey + input + salt + curtime + appSecret)
                 .digest('hex');
 
-            console.log(`[Assess:Youdao] 评测 "${referenceText}" type=${type}`);
+            console.log(`[Assess:Youdao] 评测 "${referenceText}" format=${ext}`);
 
             const response = await axios.post(
-                'https://openapi.youdao.com/evaluate',
+                'https://openapi.youdao.com/iseapi',
                 new URLSearchParams({
-                    q: referenceText,
-                    audio: audioBase64,
-                    rate: '16000',
-                    format: 'mp3',
-                    channel: '1',
-                    type,
+                    q: audioBase64,       // 音频 base64
+                    text: referenceText,  // 参考文本
+                    langType: 'en',
                     appKey,
                     salt,
+                    curtime,
                     sign,
-                    signType: 'v3',
-                    curtime
+                    signType: 'v2',
+                    format: ext,
+                    rate: '16000',
+                    channel: '1',
+                    type: '1'             // 固定: base64上传
                 }).toString(),
                 {
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -339,24 +347,24 @@ class VoiceService {
             );
 
             const data = response.data;
-            console.log('[Assess:Youdao] 原始响应:', JSON.stringify(data).substring(0, 300));
+            console.log('[Assess:Youdao] 原始响应:', JSON.stringify(data).substring(0, 400));
 
             if (data.errorCode && data.errorCode !== '0') {
-                console.error(`[Assess:Youdao] 错误 errorCode=${data.errorCode}`);
+                console.error(`[Assess:Youdao] 错误 errorCode=${data.errorCode}${data.errorCode === '2005' ? ' (不支持音频格式，需改为wav)' : ''}`);
                 return this.mockAssessment(referenceText);
             }
 
-            const r = data.result || {};
+            // 响应字段在顶层（无 result 嵌套）
             return {
                 success: true,
-                overallScore: Math.round(parseFloat(r.overall || r.score || 0)),
-                pronunciationScore: Math.round(parseFloat(r.pronunciation || r.phone || 0)),
-                fluencyScore: Math.round(parseFloat(r.fluency || 0)),
-                integrityScore: Math.round(parseFloat(r.integrity || 0)),
+                overallScore: Math.round(parseFloat(data.overall || 0)),
+                pronunciationScore: Math.round(parseFloat(data.pronunciation || 0)),
+                fluencyScore: Math.round(parseFloat(data.fluency || 0)),
+                integrityScore: Math.round(parseFloat(data.integrity || 0)),
                 details: {
-                    words: (r.words || r.word || []).map(w => ({
-                        word: w.word || w.text || '',
-                        score: Math.round(parseFloat(w.pronunciation || w.score || 0))
+                    words: (data.words || []).map(w => ({
+                        word: w.word || '',
+                        score: Math.round(parseFloat(w.pronunciation || 0))
                     }))
                 }
             };
