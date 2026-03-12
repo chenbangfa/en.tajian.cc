@@ -33,8 +33,10 @@ class VoiceService {
      */
     async textToSpeech(text, voice = 'female', speed = 1.0) {
         // 构建引擎尝试顺序：首选引擎排第一，其余按顺序fallback
-        const allEngines = ['google', 'tencent', 'youdao'];
-        const engines = [this.preferredEngine, ...allEngines.filter(e => e !== this.preferredEngine)];
+        // 注：google TTS 输出 PCM WAV，微信小程序无法播放，不纳入 fallback 链
+        const allEngines = ['tencent', 'youdao'];
+        const preferred = this.preferredEngine === 'google' ? 'youdao' : this.preferredEngine;
+        const engines = [preferred, ...allEngines.filter(e => e !== preferred)];
 
         for (let i = 0; i < engines.length; i++) {
             const engine = engines[i];
