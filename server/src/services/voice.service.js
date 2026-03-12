@@ -313,15 +313,16 @@ class VoiceService {
             const salt = uuidv4();
             const curtime = Math.floor(Date.now() / 1000).toString();
 
-            // 签名基于 text（参考文本），与有道其他 API 一致；signType v3 = SHA256+curtime
-            const input = referenceText.length > 20
-                ? referenceText.substring(0, 10) + referenceText.length + referenceText.substring(referenceText.length - 10)
-                : referenceText;
+            // 签名基于 q（音频base64），signType 固定 v2（文档规定）
+            const q = audioBase64;
+            const input = q.length > 20
+                ? q.substring(0, 10) + q.length + q.substring(q.length - 10)
+                : q;
             const sign = crypto.createHash('sha256')
                 .update(appKey + input + salt + curtime + appSecret)
                 .digest('hex');
 
-            console.log(`[Assess:Youdao] 评测 "${referenceText}" format=${ext}`);
+            console.log(`[Assess:Youdao] 评测 "${referenceText}"`);
 
             const response = await axios.post(
                 'https://openapi.youdao.com/iseapi',
@@ -333,8 +334,8 @@ class VoiceService {
                     salt,
                     curtime,
                     sign,
-                    signType: 'v3',
-                    format: ext,
+                    signType: 'v2',
+                    format: 'wav',
                     rate: '16000',
                     channel: '1',
                     type: '1'             // 固定: base64上传
