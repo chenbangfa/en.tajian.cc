@@ -180,6 +180,9 @@ const handleCheckinUpload = (req, res, next) => {
         try {
             await query(`ALTER TABLE users ADD COLUMN learning_level TINYINT DEFAULT 1 AFTER current_course_id`);
         } catch (e) { /* 字段已存在则忽略 */ }
+        try {
+            await query(`ALTER TABLE users ADD COLUMN daily_word_target INT DEFAULT 10 AFTER learning_level`);
+        } catch (e) { /* 字段已存在则忽略 */ }
 
         // 补充 daily_task_items 可能缺少的字段
         const colsToAdd = [
@@ -1252,5 +1255,320 @@ async function checkAchievements(userId) {
 
     return newAchievements;
 }
+
+// ===== V2 简化打卡 API =====
+
+/**
+ * GET /checkin/v2/status - 获取打卡状态（课程报名+今日进度+连续天数）
+ */
+router.get('/v2/status', authMiddleware, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const today = new Date().toISOString().split('T')[0];
+
+        const [user] = await query(
+            'SELECT current_course_id, daily_word_target FROM users WHERE id = ?',
+            [userId]
+        );
+
+        const courseId = user && user.current_course_id;
+        const dailyTarget = (user && user.daily_word_target) || 10;
+
+        let course = null;
+        let courseWordCount = 0;
+        let learnedCount = 0;
+
+        if (courseId) {
+            [course] = await query(
+                'SELECT id, name, description FROM checkin_courses WHERE id = ? AND is_active = 1',
+                [courseId]
+            );
+            if (course) {
+                const [cnt] = await query(
+                    'SELECT COUNT(*) as cnt FROM checkin_course_items WHERE course_id = ? AND task_type = "word" AND is_active = 1',
+                    [courseId]
+                );
+                courseWordCount = cnt ? cnt.cnt : 0;
+
+                const [lcnt] = await query(`
+                    SELECT COUNT(DISTINCT dti.course_item_id) as cnt
+                    FROM daily_task_items dti
+                    WHERE dti.user_id = ? AND dti.status = 'completed' AND dti.course_item_id IS NOT NULL
+                    AND dti.course_item_id IN (
+                        SELECT id FROM checkin_course_items WHERE course_id = ? AND task_type = 'word'
+                    )
+                `, [userId, courseId]);
+                learnedCount = lcnt ? lcnt.cnt : 0;
+            }
+        }
+
+        let todayDoneCount = 0;
+        let todayComplete = false;
+        const [plan] = await query(
+            'SELECT word_completed, is_completed FROM daily_task_plans WHERE user_id = ? AND task_date = ?',
+            [userId, today]
+        );
+        if (plan) {
+            todayDoneCount = plan.word_completed || 0;
+            todayComplete = !!plan.is_completed;
+        }
+
+        const [stats] = await query('SELECT consecutive_days, total_days FROM checkin_stats WHERE user_id = ?', [userId]);
+        const streakDays = stats ? stats.consecutive_days : 0;
+        const totalDays = stats ? stats.total_days : 0;
+
+        res.json({
+            success: true,
+            data: { enrolled: !!course, course, dailyTarget, courseWordCount, learnedCount, todayDoneCount, todayComplete, streakDays, totalDays }
+        });
+    } catch (e) {
+        console.error('v2/status error:', e);
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+/**
+ * GET /checkin/v2/courses - 获取可报名课程列表
+ */
+router.get('/v2/courses', authMiddleware, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const courses = await query(
+            'SELECT id, name, description, level FROM checkin_courses WHERE is_active = 1 ORDER BY sort_order, id'
+        );
+        for (const c of courses) {
+            const [cnt] = await query(
+                'SELECT COUNT(*) as cnt FROM checkin_course_items WHERE course_id = ? AND task_type = "word" AND is_active = 1',
+                [c.id]
+            );
+            c.wordCount = cnt ? cnt.cnt : 0;
+        }
+        const [user] = await query('SELECT current_course_id, daily_word_target FROM users WHERE id = ?', [userId]);
+        res.json({
+            success: true,
+            data: { courses, currentCourseId: user ? user.current_course_id : null, dailyTarget: user ? (user.daily_word_target || 10) : 10 }
+        });
+    } catch (e) {
+        console.error('v2/courses error:', e);
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+/**
+ * POST /checkin/v2/enroll - 报名课程
+ * body: { course_id, daily_target }
+ */
+router.post('/v2/enroll', authMiddleware, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { course_id, daily_target = 10 } = req.body;
+        if (!course_id) return res.status(400).json({ success: false, message: '请选择课程' });
+
+        const target = Math.min(50, Math.max(1, Number(daily_target)));
+        const [course] = await query('SELECT id, name FROM checkin_courses WHERE id = ? AND is_active = 1', [course_id]);
+        if (!course) return res.status(404).json({ success: false, message: '课程不存在' });
+
+        await query(
+            'UPDATE users SET current_course_id = ?, daily_word_target = ?, checkin_strategy = "curriculum" WHERE id = ?',
+            [course_id, target, userId]
+        );
+
+        // 删除今天未完成的计划，让今天重新生成
+        const today = new Date().toISOString().split('T')[0];
+        const [todayPlan] = await query(
+            'SELECT id, is_completed FROM daily_task_plans WHERE user_id = ? AND task_date = ?',
+            [userId, today]
+        );
+        if (todayPlan && !todayPlan.is_completed) {
+            await query('DELETE FROM daily_task_items WHERE plan_id = ?', [todayPlan.id]);
+            await query('DELETE FROM daily_task_plans WHERE id = ?', [todayPlan.id]);
+        }
+
+        res.json({ success: true, message: `已报名《${course.name}》`, data: { course } });
+    } catch (e) {
+        console.error('v2/enroll error:', e);
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+/**
+ * GET /checkin/v2/today - 获取今日单词列表
+ */
+router.get('/v2/today', authMiddleware, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const today = new Date().toISOString().split('T')[0];
+
+        const [user] = await query(
+            'SELECT current_course_id, daily_word_target FROM users WHERE id = ?',
+            [userId]
+        );
+        if (!user || !user.current_course_id) {
+            return res.json({ success: false, message: '请先选择课程' });
+        }
+
+        const courseId = user.current_course_id;
+        const dailyTarget = Number(user.daily_word_target) || 10;
+
+        let [plan] = await query(
+            'SELECT * FROM daily_task_plans WHERE user_id = ? AND task_date = ?',
+            [userId, today]
+        );
+
+        if (!plan) {
+            // 获取已学过的 course_item_id（历史任意日期）
+            const learnedRows = await query(`
+                SELECT DISTINCT course_item_id
+                FROM daily_task_items
+                WHERE user_id = ? AND status = 'completed' AND course_item_id IN (
+                    SELECT id FROM checkin_course_items WHERE course_id = ? AND task_type = 'word'
+                )
+            `, [userId, courseId]);
+            const learnedIds = new Set(learnedRows.map(r => r.course_item_id));
+
+            // 课程所有单词（按顺序）
+            const courseItems = await query(`
+                SELECT ci.id as course_item_id, ci.target_id as word_id, ci.sort_order
+                FROM checkin_course_items ci
+                WHERE ci.course_id = ? AND ci.task_type = 'word' AND ci.is_active = 1
+                ORDER BY ci.sort_order, ci.id
+            `, [courseId]);
+
+            let todayItems = courseItems.filter(ci => !learnedIds.has(ci.course_item_id));
+            // 课程快学完时，用已学的补充（复习）
+            if (todayItems.length < dailyTarget) {
+                const reviewItems = courseItems.filter(ci => learnedIds.has(ci.course_item_id));
+                todayItems = [...todayItems, ...reviewItems].slice(0, dailyTarget);
+            }
+            todayItems = todayItems.slice(0, dailyTarget);
+
+            // 创建计划
+            const planResult = await query(
+                `INSERT INTO daily_task_plans (user_id, task_date, mode, strategy, course_id, word_target, scene_target, podcast_target)
+                 VALUES (?, ?, 'easy', 'curriculum', ?, ?, 0, 0)`,
+                [userId, today, courseId, dailyTarget]
+            );
+            const planId = planResult.insertId;
+
+            if (todayItems.length > 0) {
+                const wordIds = todayItems.map(i => i.word_id);
+                const words = await query(
+                    `SELECT id, word, phonetic, translation, image_url, audio_url_female, audio_url_male, example_sentence, example_translation
+                     FROM words WHERE id IN (${wordIds.map(() => '?').join(',')})`,
+                    wordIds
+                );
+                const wordMap = {};
+                words.forEach(w => { wordMap[w.id] = w; });
+
+                for (let i = 0; i < todayItems.length; i++) {
+                    const ci = todayItems[i];
+                    const word = wordMap[ci.word_id];
+                    if (!word) continue;
+                    await query(
+                        `INSERT INTO daily_task_items (plan_id, user_id, task_type, target_id, course_item_id, reference_text, extra_info, status, sort_order)
+                         VALUES (?, ?, 'word', ?, ?, ?, ?, 'pending', ?)`,
+                        [planId, userId, word.id, ci.course_item_id, word.word, JSON.stringify({
+                            word: word.word, phonetic: word.phonetic, translation: word.translation,
+                            image_url: word.image_url, audio_url_female: word.audio_url_female, audio_url_male: word.audio_url_male,
+                            example_sentence: word.example_sentence, example_translation: word.example_translation
+                        }), i]
+                    );
+                }
+            }
+
+            [plan] = await query('SELECT * FROM daily_task_plans WHERE id = ?', [planId]);
+        }
+
+        const items = await query(
+            'SELECT * FROM daily_task_items WHERE plan_id = ? AND task_type = "word" ORDER BY sort_order, id',
+            [plan.id]
+        );
+
+        const [stats] = await query('SELECT consecutive_days FROM checkin_stats WHERE user_id = ?', [userId]);
+
+        res.json({
+            success: true,
+            data: {
+                planId: plan.id,
+                dailyTarget: plan.word_target,
+                doneCount: plan.word_completed || 0,
+                isComplete: !!plan.is_completed,
+                streakDays: stats ? stats.consecutive_days : 0,
+                items: items.map(item => ({
+                    id: item.id,
+                    status: item.status,
+                    courseItemId: item.course_item_id,
+                    wordId: item.target_id,
+                    ...(typeof item.extra_info === 'string' ? JSON.parse(item.extra_info) : (item.extra_info || {}))
+                }))
+            }
+        });
+    } catch (e) {
+        console.error('v2/today error:', e);
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+/**
+ * POST /checkin/v2/done - 标记单词已学
+ * body: { item_id }
+ */
+router.post('/v2/done', authMiddleware, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { item_id } = req.body;
+        if (!item_id) return res.status(400).json({ success: false, message: '参数错误' });
+
+        const [item] = await query('SELECT * FROM daily_task_items WHERE id = ? AND user_id = ?', [item_id, userId]);
+        if (!item) return res.status(404).json({ success: false, message: '任务不存在' });
+
+        if (item.status !== 'completed') {
+            await query('UPDATE daily_task_items SET status = "completed", completed_at = NOW() WHERE id = ?', [item_id]);
+        }
+
+        const [plan] = await query('SELECT * FROM daily_task_plans WHERE id = ?', [item.plan_id]);
+        if (!plan) return res.json({ success: true, data: { doneCount: 1, isComplete: false, streakDays: 0, newAchievements: [] } });
+
+        // 重新统计已完成数（避免重复计数）
+        const [cntRow] = await query(
+            'SELECT COUNT(*) as cnt FROM daily_task_items WHERE plan_id = ? AND status = "completed"',
+            [plan.id]
+        );
+        const newDoneCount = cntRow ? cntRow.cnt : 0;
+        const isComplete = newDoneCount >= (plan.word_target || 10);
+
+        if (isComplete && !plan.is_completed) {
+            await query('UPDATE daily_task_plans SET word_completed = ?, is_completed = 1, completed_at = NOW() WHERE id = ?',
+                [newDoneCount, plan.id]);
+            const today = new Date().toISOString().split('T')[0];
+            await updateCheckinStats(userId, today, 0);
+        } else {
+            await query('UPDATE daily_task_plans SET word_completed = ? WHERE id = ?', [newDoneCount, plan.id]);
+        }
+
+        // 更新单词学习记录
+        if (item.target_id) {
+            try {
+                await query(`
+                    INSERT INTO word_learning_records (user_id, word_id, learning_count, mastery_level, last_learned_at, updated_at)
+                    VALUES (?, ?, 1, 1, NOW(), NOW())
+                    ON DUPLICATE KEY UPDATE learning_count = learning_count + 1,
+                        mastery_level = LEAST(mastery_level + 1, 5), last_learned_at = NOW(), updated_at = NOW()
+                `, [userId, item.target_id]);
+            } catch (e) { /* word_learning_records 可能不存在，忽略 */ }
+        }
+
+        const newAchievements = isComplete ? await checkAchievements(userId) : [];
+        const [stats] = await query('SELECT consecutive_days FROM checkin_stats WHERE user_id = ?', [userId]);
+
+        res.json({
+            success: true,
+            data: { doneCount: newDoneCount, dailyTarget: plan.word_target, isComplete, streakDays: stats ? stats.consecutive_days : 0, newAchievements }
+        });
+    } catch (e) {
+        console.error('v2/done error:', e);
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
 
 module.exports = router;
