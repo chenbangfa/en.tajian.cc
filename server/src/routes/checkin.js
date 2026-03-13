@@ -830,6 +830,12 @@ router.post('/share', authMiddleware, async (req, res) => {
         const [stats] = await query('SELECT consecutive_days FROM checkin_stats WHERE user_id = ?', [userId]);
         const streakDays = (stats && stats.consecutive_days) || 0;
 
+        // 直接从已完成任务项计算平均分（plan.avg_score 只有全部完成后才写入）
+        const scoredItems = items.filter(i => i.status === 'completed' && i.score > 0);
+        const avgScore = scoredItems.length > 0
+            ? Math.round(scoredItems.reduce((sum, i) => sum + Number(i.score), 0) / scoredItems.length)
+            : 0;
+
         // 生成分享ID
         const shareId = crypto.randomBytes(12).toString('hex');
 
@@ -839,7 +845,7 @@ router.post('/share', authMiddleware, async (req, res) => {
             [shareId, userId, plan.id,
              user ? user.nickname : null, user ? user.avatar_url : null,
              plan.task_date, plan.mode, streakDays,
-             plan.total_score, plan.avg_score, plan.total_points,
+             plan.total_score, avgScore, plan.total_points,
              JSON.stringify(itemsSnapshot)]
         );
 
@@ -1332,6 +1338,32 @@ router.get('/v2/status', authMiddleware, async (req, res) => {
 });
 
 /**
+ * GET /checkin/v2/hot-courses - 热门课程列表（公开，首页展示用）
+ */
+router.get('/v2/hot-courses', async (req, res) => {
+    try {
+        const courses = await query(
+            `SELECT
+               c.id, c.name, c.description, c.level,
+               COUNT(DISTINCT CASE WHEN ci.task_type = 'word' THEN ci.target_id END) AS word_count,
+               COUNT(DISTINCT ci.id) AS total_count,
+               COUNT(DISTINCT w.category_id) AS chapter_count,
+               (SELECT COUNT(*) FROM users u WHERE u.current_course_id = c.id) + 1000 AS learner_count
+             FROM checkin_courses c
+             LEFT JOIN checkin_course_items ci ON ci.course_id = c.id AND ci.is_active = 1
+             LEFT JOIN words w ON w.id = ci.target_id AND ci.task_type = 'word'
+             WHERE c.is_active = 1
+             GROUP BY c.id
+             ORDER BY c.sort_order, c.id`
+        );
+        res.json({ success: true, data: courses });
+    } catch (e) {
+        console.error('hot-courses error:', e);
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+/**
  * GET /checkin/v2/courses - 获取可报名课程列表
  */
 router.get('/v2/courses', authMiddleware, async (req, res) => {
@@ -1489,7 +1521,15 @@ router.get('/v2/today', authMiddleware, async (req, res) => {
         }
 
         const items = await query(
-            'SELECT * FROM daily_task_items WHERE plan_id = ? AND task_type = "word" ORDER BY sort_order, id',
+            `SELECT dti.id, dti.status, dti.course_item_id, dti.target_id, dti.sort_order,
+                    w.word, w.phonetic, w.translation, w.image_url,
+                    w.audio_url_female, w.audio_url_male,
+                    w.example_sentence, w.example_translation,
+                    w.example_audio_female, w.example_audio_male
+             FROM daily_task_items dti
+             LEFT JOIN words w ON w.id = dti.target_id
+             WHERE dti.plan_id = ? AND dti.task_type = 'word'
+             ORDER BY dti.sort_order, dti.id`,
             [plan.id]
         );
 
@@ -1508,7 +1548,16 @@ router.get('/v2/today', authMiddleware, async (req, res) => {
                     status: item.status,
                     courseItemId: item.course_item_id,
                     wordId: item.target_id,
-                    ...(typeof item.extra_info === 'string' ? JSON.parse(item.extra_info) : (item.extra_info || {}))
+                    word: item.word,
+                    phonetic: item.phonetic,
+                    translation: item.translation,
+                    image_url: item.image_url,
+                    audio_url_female: item.audio_url_female,
+                    audio_url_male: item.audio_url_male,
+                    example_sentence: item.example_sentence,
+                    example_translation: item.example_translation,
+                    example_audio_female: item.example_audio_female,
+                    example_audio_male: item.example_audio_male,
                 }))
             }
         });
