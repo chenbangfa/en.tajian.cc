@@ -1661,7 +1661,8 @@ router.get('/v2/today', authMiddleware, async (req, res) => {
                     w.word, w.phonetic, w.translation, w.image_url,
                     w.audio_url_female, w.audio_url_male,
                     w.example_sentence, w.example_translation,
-                    w.example_audio_female, w.example_audio_male
+                    w.example_audio_female, w.example_audio_male,
+                    COALESCE(w.content_type, 'word') AS content_type
              FROM daily_task_items dti
              LEFT JOIN words w ON w.id = dti.target_id
              WHERE dti.plan_id = ? AND dti.task_type = 'word'
