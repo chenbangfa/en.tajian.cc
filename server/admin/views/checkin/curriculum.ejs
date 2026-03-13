@@ -1,3 +1,18 @@
+<!-- 课程分类管理 -->
+<div class="bg-white rounded-xl shadow-sm border border-gray-100 mb-6">
+    <div class="p-4 border-b border-gray-100 bg-gray-50 rounded-t-xl flex items-center justify-between">
+        <h2 class="text-base font-bold text-gray-800">课程分类</h2>
+        <button onclick="openCatModal()" class="px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm">
+            <i class="fas fa-plus mr-1"></i>新增分类
+        </button>
+    </div>
+    <div class="p-4">
+        <div id="cat-list" class="flex flex-wrap gap-3">
+            <span class="text-sm text-gray-400">加载中…</span>
+        </div>
+    </div>
+</div>
+
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
     <!-- 左栏：课程列表 -->
     <section class="bg-white rounded-xl shadow-sm border border-gray-100">
@@ -58,6 +73,43 @@
 </div>
 
 <!-- ══════════════════════════════════════════════════
+     分类 Modal
+══════════════════════════════════════════════════ -->
+<div id="cat-modal" class="fixed inset-0 bg-black/50 hidden z-50 items-center justify-center">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6">
+        <h3 id="cat-modal-title" class="text-lg font-bold mb-4">新增分类</h3>
+        <form id="cat-form" class="space-y-3">
+            <input type="hidden" id="cat-id">
+            <div class="grid grid-cols-3 gap-3">
+                <div class="col-span-1">
+                    <label class="block text-sm text-gray-700 mb-1">图标</label>
+                    <input id="cat-icon" value="📚" maxlength="4" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-center text-xl" />
+                </div>
+                <div class="col-span-2">
+                    <label class="block text-sm text-gray-700 mb-1">分类名称</label>
+                    <input id="cat-name" required placeholder="如：基础词汇" class="w-full px-3 py-2 border border-gray-200 rounded-lg" />
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-sm text-gray-700 mb-1">排序</label>
+                    <input id="cat-sort" type="number" value="0" class="w-full px-3 py-2 border border-gray-200 rounded-lg" />
+                </div>
+                <div class="flex items-end pb-2">
+                    <label class="inline-flex items-center text-sm text-gray-700">
+                        <input id="cat-active" type="checkbox" checked class="mr-2" />启用
+                    </label>
+                </div>
+            </div>
+            <div class="flex justify-end gap-2 pt-4">
+                <button type="button" onclick="closeCatModal()" class="px-4 py-2 border rounded-lg">取消</button>
+                <button type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded-lg">保存</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════
      课程 Modal
 ══════════════════════════════════════════════════ -->
 <div id="course-modal" class="fixed inset-0 bg-black/50 hidden z-50 items-center justify-center">
@@ -73,6 +125,12 @@
                 <label class="block text-sm text-gray-700 mb-1">描述</label>
                 <textarea id="course-description" rows="2" class="w-full px-3 py-2 border border-gray-200 rounded-lg"></textarea>
             </div>
+            <div>
+                <label class="block text-sm text-gray-700 mb-1">课程分类</label>
+                <select id="course-category" class="w-full px-3 py-2 border border-gray-200 rounded-lg">
+                    <option value="">无分类</option>
+                </select>
+            </div>
             <div class="grid grid-cols-3 gap-3">
                 <div>
                     <label class="block text-sm text-gray-700 mb-1">等级</label>
@@ -82,9 +140,12 @@
                     <label class="block text-sm text-gray-700 mb-1">排序</label>
                     <input id="course-sort" type="number" value="0" class="w-full px-3 py-2 border border-gray-200 rounded-lg" />
                 </div>
-                <div class="flex items-end pb-2">
+                <div class="flex items-end pb-2 gap-4">
                     <label class="inline-flex items-center text-sm text-gray-700">
                         <input id="course-active" type="checkbox" checked class="mr-2" />启用
+                    </label>
+                    <label class="inline-flex items-center text-sm text-amber-700">
+                        <input id="course-vip" type="checkbox" class="mr-2" />VIP专属
                     </label>
                 </div>
             </div>
@@ -201,8 +262,99 @@
     let courses = [];
     let chapters = [];
     let courseItems = [];
+    let categories = [];
     let selectedCourseId = null;
     let selectedChapterId = null; // null=全部, 0=未分配, N=章节id
+
+    // ─── 分类 ────────────────────────────────────────────
+    async function loadCategories() {
+        const res = await fetch(`${API_BASE}/checkin-curriculum/categories`);
+        const data = await res.json();
+        if (!data.success) return;
+        categories = data.data || [];
+        renderCatList();
+        updateCategorySelects();
+    }
+
+    function renderCatList() {
+        const wrap = document.getElementById('cat-list');
+        if (!categories.length) {
+            wrap.innerHTML = '<span class="text-sm text-gray-400">暂无分类，点击右侧新增</span>';
+            return;
+        }
+        wrap.innerHTML = categories.map(cat => `
+            <div class="flex items-center gap-2 border border-gray-200 rounded-xl px-4 py-2 bg-gray-50">
+                <span class="text-xl">${cat.icon || '📚'}</span>
+                <div>
+                    <div class="text-sm font-semibold text-gray-800">${cat.name}</div>
+                    <div class="text-xs text-gray-400">${cat.course_count || 0} 门课程</div>
+                </div>
+                <div class="flex gap-2 ml-2 text-xs">
+                    <button onclick="openCatModal(categories.find(c=>c.id===${cat.id}))" class="text-indigo-600 hover:underline">编辑</button>
+                    <button onclick="deleteCat(${cat.id})" class="text-red-500 hover:underline">删除</button>
+                </div>
+            </div>`).join('');
+    }
+
+    function updateCategorySelects() {
+        const sel = document.getElementById('course-category');
+        if (!sel) return;
+        const current = sel.value;
+        sel.innerHTML = '<option value="">无分类</option>' +
+            categories.map(c => `<option value="${c.id}">${c.icon || ''} ${c.name}</option>`).join('');
+        sel.value = current;
+    }
+
+    function openCatModal(cat) {
+        document.getElementById('cat-modal').classList.remove('hidden');
+        document.getElementById('cat-modal').classList.add('flex');
+        document.getElementById('cat-form').reset();
+        document.getElementById('cat-id').value = cat ? cat.id : '';
+        document.getElementById('cat-modal-title').textContent = cat ? '编辑分类' : '新增分类';
+        if (cat) {
+            document.getElementById('cat-name').value = cat.name || '';
+            document.getElementById('cat-icon').value = cat.icon || '📚';
+            document.getElementById('cat-sort').value = cat.sort_order ?? 0;
+            document.getElementById('cat-active').checked = !!cat.is_active;
+        } else {
+            document.getElementById('cat-icon').value = '📚';
+        }
+    }
+
+    function closeCatModal() {
+        document.getElementById('cat-modal').classList.add('hidden');
+        document.getElementById('cat-modal').classList.remove('flex');
+    }
+
+    async function deleteCat(id) {
+        if (!confirm('删除分类后，关联课程将变为无分类，确定继续？')) return;
+        const res = await fetch(`${API_BASE}/checkin-curriculum/categories/${id}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!data.success) return showToast(data.message || '删除失败', 'error');
+        showToast('分类已删除');
+        await loadCategories();
+        await loadCourses();
+    }
+
+    document.getElementById('cat-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const id = document.getElementById('cat-id').value;
+        const body = {
+            name: document.getElementById('cat-name').value,
+            icon: document.getElementById('cat-icon').value || '📚',
+            sort_order: Number(document.getElementById('cat-sort').value || 0),
+            is_active: document.getElementById('cat-active').checked
+        };
+        const res = await fetch(
+            id ? `${API_BASE}/checkin-curriculum/categories/${id}` : `${API_BASE}/checkin-curriculum/categories`,
+            { method: id ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+        );
+        const data = await res.json();
+        if (!data.success) return showToast(data.message || '保存失败', 'error');
+        closeCatModal();
+        showToast('保存成功');
+        await loadCategories();
+    });
 
     // ─── 课程 ────────────────────────────────────────────
     function openCourseModal(course) {
@@ -211,12 +363,15 @@
         document.getElementById('course-form').reset();
         document.getElementById('course-id').value = course ? course.id : '';
         document.getElementById('course-modal-title').textContent = course ? '编辑课程' : '新增课程';
+        updateCategorySelects();
         if (course) {
             document.getElementById('course-name').value = course.name || '';
             document.getElementById('course-description').value = course.description || '';
             document.getElementById('course-level').value = course.level ?? 1;
             document.getElementById('course-sort').value = course.sort_order ?? 0;
             document.getElementById('course-active').checked = !!course.is_active;
+            document.getElementById('course-vip').checked = !!course.is_vip;
+            document.getElementById('course-category').value = course.category_id ? String(course.category_id) : '';
         }
     }
 
@@ -244,17 +399,19 @@
 
         wrap.innerHTML = courses.map(c => {
             const active = String(selectedCourseId) === String(c.id);
+            const cat = categories.find(x => String(x.id) === String(c.category_id));
+            const catBadge = cat ? `<span class="text-xs bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded">${cat.icon || ''} ${cat.name}</span>` : '';
+            const vipBadge = c.is_vip ? `<span class="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-bold">VIP</span>` : '';
             return `
             <div class="border ${active ? 'border-blue-500 bg-blue-50' : 'border-gray-200'} rounded-lg p-3 cursor-pointer"
                 onclick="selectCourse(${c.id})">
                 <div class="flex items-start justify-between">
                     <div class="flex-1 min-w-0">
                         <div class="font-semibold text-gray-800 truncate">${c.name}</div>
-                        <div class="text-xs text-gray-500 mt-1">
-                            L${c.level}
-                            · ${c.chapter_count || 0} 章
-                            · ${c.item_count || 0} 条内容
-                            ${c.is_active ? '' : '<span class="text-red-400 ml-1">已禁用</span>'}
+                        <div class="text-xs text-gray-500 mt-1 flex items-center gap-1 flex-wrap">
+                            <span>L${c.level} · ${c.chapter_count || 0} 章 · ${c.item_count || 0} 条</span>
+                            ${vipBadge}${catBadge}
+                            ${c.is_active ? '' : '<span class="text-red-400">已禁用</span>'}
                         </div>
                         ${c.description ? `<div class="text-xs text-gray-400 mt-1 truncate">${c.description}</div>` : ''}
                     </div>
@@ -521,12 +678,15 @@
     document.getElementById('course-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         const id = document.getElementById('course-id').value;
+        const catVal = document.getElementById('course-category').value;
         const body = {
             name: document.getElementById('course-name').value,
             description: document.getElementById('course-description').value,
             level: Number(document.getElementById('course-level').value || 1),
             sort_order: Number(document.getElementById('course-sort').value || 0),
-            is_active: document.getElementById('course-active').checked
+            is_active: document.getElementById('course-active').checked,
+            is_vip: document.getElementById('course-vip').checked,
+            category_id: catVal ? Number(catVal) : null
         };
         const res = await fetch(
             id ? `${API_BASE}/checkin-curriculum/courses/${id}` : `${API_BASE}/checkin-curriculum/courses`,
@@ -596,6 +756,7 @@
     });
 
     document.addEventListener('DOMContentLoaded', async () => {
+        await loadCategories();
         await loadCourses();
         if (courses.length > 0) {
             await selectCourse(courses[0].id);

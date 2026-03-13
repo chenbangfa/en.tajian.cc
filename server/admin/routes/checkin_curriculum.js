@@ -52,12 +52,25 @@ async function ensureCurriculumTables() {
         CONSTRAINT fk_checkin_course_items_chapter FOREIGN KEY (chapter_id) REFERENCES checkin_course_chapters(id) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
 
+    await query(`CREATE TABLE IF NOT EXISTS checkin_course_categories (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(60) NOT NULL,
+        icon VARCHAR(10) DEFAULT '📚' COMMENT 'emoji图标',
+        sort_order INT DEFAULT 0,
+        is_active TINYINT(1) DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+
     // 兼容旧表：尝试加 chapter_id 列，已存在则忽略
     try {
         await query(`ALTER TABLE checkin_course_items ADD COLUMN chapter_id INT DEFAULT NULL AFTER course_id`);
         await query(`ALTER TABLE checkin_course_items ADD KEY idx_chapter (chapter_id)`);
         await query(`ALTER TABLE checkin_course_items ADD CONSTRAINT fk_checkin_course_items_chapter FOREIGN KEY (chapter_id) REFERENCES checkin_course_chapters(id) ON DELETE SET NULL`);
     } catch (e) { /* 列已存在，忽略 */ }
+
+    // 兼容旧 checkin_courses：尝试加 is_vip / category_id 列
+    try { await query(`ALTER TABLE checkin_courses ADD COLUMN is_vip TINYINT(1) DEFAULT 0 AFTER is_active`); } catch (e) {}
+    try { await query(`ALTER TABLE checkin_courses ADD COLUMN category_id INT DEFAULT NULL AFTER is_vip`); } catch (e) {}
 
     inited = true;
 }
@@ -94,11 +107,11 @@ router.get('/courses', async (req, res) => {
 
 router.post('/courses', async (req, res) => {
     try {
-        const { name, description = null, level = 1, sort_order = 0, is_active = 1 } = req.body;
+        const { name, description = null, level = 1, sort_order = 0, is_active = 1, is_vip = 0, category_id = null } = req.body;
         if (!name) return res.status(400).json({ success: false, message: '课程名称不能为空' });
         const result = await query(
-            `INSERT INTO checkin_courses (name, description, level, sort_order, is_active) VALUES (?, ?, ?, ?, ?)`,
-            [name, description, Number(level) || 1, Number(sort_order) || 0, is_active ? 1 : 0]
+            `INSERT INTO checkin_courses (name, description, level, sort_order, is_active, is_vip, category_id) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [name, description, Number(level) || 1, Number(sort_order) || 0, is_active ? 1 : 0, is_vip ? 1 : 0, category_id ? Number(category_id) : null]
         );
         res.json({ success: true, data: { id: result.insertId }, message: '课程创建成功' });
     } catch (error) {
@@ -109,11 +122,11 @@ router.post('/courses', async (req, res) => {
 
 router.put('/courses/:id', async (req, res) => {
     try {
-        const { name, description = null, level = 1, sort_order = 0, is_active = 1 } = req.body;
+        const { name, description = null, level = 1, sort_order = 0, is_active = 1, is_vip = 0, category_id = null } = req.body;
         if (!name) return res.status(400).json({ success: false, message: '课程名称不能为空' });
         await query(
-            `UPDATE checkin_courses SET name=?, description=?, level=?, sort_order=?, is_active=? WHERE id=?`,
-            [name, description, Number(level) || 1, Number(sort_order) || 0, is_active ? 1 : 0, req.params.id]
+            `UPDATE checkin_courses SET name=?, description=?, level=?, sort_order=?, is_active=?, is_vip=?, category_id=? WHERE id=?`,
+            [name, description, Number(level) || 1, Number(sort_order) || 0, is_active ? 1 : 0, is_vip ? 1 : 0, category_id ? Number(category_id) : null, req.params.id]
         );
         res.json({ success: true, message: '课程更新成功' });
     } catch (error) {
@@ -353,6 +366,68 @@ router.get('/sources/:taskType', async (req, res) => {
     } catch (error) {
         console.error('查询素材失败:', error);
         res.status(500).json({ success: false, message: '查询素材失败' });
+    }
+});
+
+// ═══════════════════════════════════════════
+// 课程分类 CRUD
+// ═══════════════════════════════════════════
+
+router.get('/categories', async (req, res) => {
+    try {
+        const rows = await query(
+            `SELECT cat.*, COUNT(c.id) AS course_count
+             FROM checkin_course_categories cat
+             LEFT JOIN checkin_courses c ON c.category_id = cat.id
+             GROUP BY cat.id
+             ORDER BY cat.sort_order ASC, cat.id ASC`
+        );
+        res.json({ success: true, data: rows });
+    } catch (error) {
+        console.error('获取分类失败:', error);
+        res.status(500).json({ success: false, message: '获取分类失败' });
+    }
+});
+
+router.post('/categories', async (req, res) => {
+    try {
+        const { name, icon = '📚', sort_order = 0, is_active = 1 } = req.body;
+        if (!name) return res.status(400).json({ success: false, message: '分类名称不能为空' });
+        const result = await query(
+            `INSERT INTO checkin_course_categories (name, icon, sort_order, is_active) VALUES (?, ?, ?, ?)`,
+            [name, icon, Number(sort_order) || 0, is_active ? 1 : 0]
+        );
+        res.json({ success: true, data: { id: result.insertId }, message: '分类创建成功' });
+    } catch (error) {
+        console.error('创建分类失败:', error);
+        res.status(500).json({ success: false, message: '创建分类失败' });
+    }
+});
+
+router.put('/categories/:id', async (req, res) => {
+    try {
+        const { name, icon = '📚', sort_order = 0, is_active = 1 } = req.body;
+        if (!name) return res.status(400).json({ success: false, message: '分类名称不能为空' });
+        await query(
+            `UPDATE checkin_course_categories SET name=?, icon=?, sort_order=?, is_active=? WHERE id=?`,
+            [name, icon, Number(sort_order) || 0, is_active ? 1 : 0, req.params.id]
+        );
+        res.json({ success: true, message: '分类更新成功' });
+    } catch (error) {
+        console.error('更新分类失败:', error);
+        res.status(500).json({ success: false, message: '更新分类失败' });
+    }
+});
+
+router.delete('/categories/:id', async (req, res) => {
+    try {
+        // 将该分类下的课程 category_id 置空
+        await query(`UPDATE checkin_courses SET category_id = NULL WHERE category_id = ?`, [req.params.id]);
+        await query(`DELETE FROM checkin_course_categories WHERE id = ?`, [req.params.id]);
+        res.json({ success: true, message: '分类已删除，关联课程已解除绑定' });
+    } catch (error) {
+        console.error('删除分类失败:', error);
+        res.status(500).json({ success: false, message: '删除分类失败' });
     }
 });
 
