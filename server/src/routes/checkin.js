@@ -1376,12 +1376,11 @@ const COURSE_AGGREGATE_SQL = `
            cc.name AS category_name,
            COUNT(DISTINCT CASE WHEN ci.task_type = 'word' THEN ci.target_id END) AS word_count,
            COUNT(DISTINCT ci.id) AS total_count,
-           COUNT(DISTINCT w.category_id) AS chapter_count,
+           (SELECT COUNT(*) FROM checkin_course_chapters ch WHERE ch.course_id = c.id AND ch.is_active = 1) AS chapter_count,
            (SELECT COUNT(*) FROM users u WHERE u.current_course_id = c.id) + 1000 AS learner_count
     FROM checkin_courses c
     LEFT JOIN checkin_course_categories cc ON cc.id = c.category_id
-    LEFT JOIN checkin_course_items ci ON ci.course_id = c.id AND ci.is_active = 1
-    LEFT JOIN words w ON w.id = ci.target_id AND ci.task_type = 'word'`;
+    LEFT JOIN checkin_course_items ci ON ci.course_id = c.id AND ci.is_active = 1`;
 
 /**
  * GET /checkin/v2/hot-courses - 热门课程列表（公开，首页展示用，支持分页）
@@ -1457,17 +1456,15 @@ router.get('/v2/course-detail/:id', async (req, res) => {
         );
         if (!course) return res.status(404).json({ success: false, message: '课程不存在' });
 
-        // 章节列表（按单词所属分类分组）
+        // 章节列表（从 checkin_course_chapters 表读取）
         const chapters = await query(
-            `SELECT COALESCE(wc.id, 0) AS category_id,
-                    COALESCE(wc.name, '基础词汇') AS category_name,
-                    COUNT(ci.id) AS word_count
-             FROM checkin_course_items ci
-             LEFT JOIN words w ON w.id = ci.target_id
-             LEFT JOIN word_categories wc ON wc.id = w.category_id
-             WHERE ci.course_id = ? AND ci.task_type = 'word' AND ci.is_active = 1
-             GROUP BY wc.id, wc.name
-             ORDER BY MIN(ci.sort_order)`,
+            `SELECT ch.id, ch.name, ch.description, ch.sort_order,
+                    COUNT(ci.id) AS item_count
+             FROM checkin_course_chapters ch
+             LEFT JOIN checkin_course_items ci ON ci.chapter_id = ch.id AND ci.is_active = 1
+             WHERE ch.course_id = ? AND ch.is_active = 1
+             GROUP BY ch.id
+             ORDER BY ch.sort_order ASC, ch.id ASC`,
             [courseId]
         );
 
