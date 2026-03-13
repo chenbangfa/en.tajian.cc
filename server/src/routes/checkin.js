@@ -1352,11 +1352,18 @@ router.get('/v2/status', authMiddleware, async (req, res) => {
 });
 
 /**
- * GET /checkin/v2/course-categories - 课程分类列表（公开）
+ * GET /checkin/v2/course-categories - 课程分类列表（公开，带各分类课程数）
  */
 router.get('/v2/course-categories', async (req, res) => {
     try {
-        const cats = await query('SELECT id, name, icon FROM checkin_course_categories ORDER BY sort_order, id');
+        const cats = await query(`
+            SELECT cc.id, cc.name, cc.icon,
+                   COUNT(c.id) AS course_count
+            FROM checkin_course_categories cc
+            LEFT JOIN checkin_courses c ON c.category_id = cc.id AND c.is_active = 1
+            GROUP BY cc.id
+            ORDER BY cc.sort_order, cc.id`
+        );
         res.json({ success: true, data: cats });
     } catch (e) {
         res.status(500).json({ success: false, message: e.message });
@@ -1410,10 +1417,12 @@ router.get('/v2/all-courses', async (req, res) => {
         const limit = Math.min(30, Number(req.query.limit) || 20);
         const offset = (page - 1) * limit;
         const categoryId = req.query.category_id ? Number(req.query.category_id) : null;
+        const keyword = (req.query.q || '').trim();
 
         const whereParts = ['c.is_active = 1'];
         const params = [];
         if (categoryId) { whereParts.push('c.category_id = ?'); params.push(categoryId); }
+        if (keyword) { whereParts.push('c.name LIKE ?'); params.push(`%${keyword}%`); }
         const where = whereParts.join(' AND ');
 
         const courses = await query(
@@ -1462,14 +1471,14 @@ router.get('/v2/course-detail/:id', async (req, res) => {
             [courseId]
         );
 
-        // 示例单词（最多6个，带图片）
+        // 示例单词（随机取20个，带图片）
         const baseUrl = process.env.BASE_URL || '';
         const sampleWords = await query(
             `SELECT w.id, w.word, w.translation, w.phonetic, w.image_url
              FROM checkin_course_items ci
              JOIN words w ON w.id = ci.target_id
              WHERE ci.course_id = ? AND ci.task_type = 'word' AND ci.is_active = 1
-             ORDER BY ci.sort_order, ci.id LIMIT 6`,
+             ORDER BY RAND() LIMIT 20`,
             [courseId]
         );
         sampleWords.forEach(w => {
