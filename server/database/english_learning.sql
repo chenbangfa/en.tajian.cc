@@ -70,6 +70,21 @@ CREATE TABLE `antonyms` (
 -- --------------------------------------------------------
 
 --
+-- 表的结构 `checkin_course_categories`
+--
+
+CREATE TABLE `checkin_course_categories` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `name` varchar(60) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `icon` varchar(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT '📚' COMMENT 'emoji图标或路径',
+  `sort_order` int DEFAULT '0',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
 -- 表的结构 `checkin_courses`
 --
 
@@ -454,21 +469,23 @@ CREATE TABLE `voice_shares` (
 
 CREATE TABLE `words` (
   `id` int NOT NULL,
-  `word` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '单词',
-  `phonetic` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '音标',
+  `word` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '单词/短语/句子内容',
+  `phonetic` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '音标（单词/短语均适用）',
   `translation` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '中文翻译',
   `category_id` int DEFAULT NULL COMMENT '分类ID',
   `difficulty_level` tinyint DEFAULT '1' COMMENT '难度等级 1-5',
   `word_type` enum('noun','verb','adj','adv','prep','conj','pron','other') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'noun' COMMENT '词性',
+  `content_type` enum('word','phrase','sentence') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'word' COMMENT '内容类型：单词/短语/句子',
   `display_mode` enum('image','calendar','animation','icon') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'image' COMMENT '展示模式',
-  `image_url` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '图片URL',
+  `image_url` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '图片URL（短语/句子可用场景图）',
   `audio_url` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '音频URL',
   `audio_url_male` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '男声音频URL',
   `audio_url_female` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '女声音频URL',
-  `example_sentence` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT '例句',
+  `example_sentence` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT '例句（sentence类型时为扩展说明）',
   `example_translation` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT '例句翻译',
-  `grammar_explanation` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT '例句语法详解',
+  `grammar_explanation` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT '语法/用法详解',
   `image_hint` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '图片生成建议',
+  `video_url` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '视频URL（短语/句子动态演示）',
   `example_audio_male` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '例句男声音频URL',
   `example_audio_female` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '例句女声音频URL',
   `view_count` int NOT NULL DEFAULT '0' COMMENT '浏览次数',
