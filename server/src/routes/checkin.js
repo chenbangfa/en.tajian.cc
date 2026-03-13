@@ -138,12 +138,22 @@ const handleCheckinUpload = (req, res, next) => {
             KEY idx_user (user_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
 
+        await query(`CREATE TABLE IF NOT EXISTS checkin_course_categories (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(60) NOT NULL,
+            icon VARCHAR(100) DEFAULT NULL COMMENT '图标emoji或路径',
+            sort_order INT DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+
         await query(`CREATE TABLE IF NOT EXISTS checkin_courses (
             id INT AUTO_INCREMENT PRIMARY KEY,
             name VARCHAR(120) NOT NULL,
             description VARCHAR(500) DEFAULT NULL,
             level TINYINT DEFAULT 1 COMMENT '建议学习等级 0-9',
             is_active TINYINT(1) DEFAULT 1,
+            is_vip TINYINT(1) DEFAULT 0 COMMENT '是否VIP专属课程',
+            category_id INT DEFAULT NULL COMMENT '课程分类',
             sort_order INT DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -166,6 +176,10 @@ const handleCheckinUpload = (req, res, next) => {
             KEY idx_type (task_type),
             CONSTRAINT fk_checkin_course_items_course FOREIGN KEY (course_id) REFERENCES checkin_courses(id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+
+        // 兼容旧库：给 checkin_courses 加新字段
+        try { await query(`ALTER TABLE checkin_courses ADD COLUMN is_vip TINYINT(1) DEFAULT 0 AFTER sort_order`); } catch (e) {}
+        try { await query(`ALTER TABLE checkin_courses ADD COLUMN category_id INT DEFAULT NULL AFTER is_vip`); } catch (e) {}
 
         // 尝试添加 daily_mode 字段（如果不存在）
         try {
@@ -1338,27 +1352,133 @@ router.get('/v2/status', authMiddleware, async (req, res) => {
 });
 
 /**
- * GET /checkin/v2/hot-courses - 热门课程列表（公开，首页展示用）
+ * GET /checkin/v2/course-categories - 课程分类列表（公开）
+ */
+router.get('/v2/course-categories', async (req, res) => {
+    try {
+        const cats = await query('SELECT id, name, icon FROM checkin_course_categories ORDER BY sort_order, id');
+        res.json({ success: true, data: cats });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// 课程聚合公共 SQL 片段
+const COURSE_AGGREGATE_SQL = `
+    SELECT c.id, c.name, c.description, c.level, c.is_vip, c.category_id,
+           cc.name AS category_name,
+           COUNT(DISTINCT CASE WHEN ci.task_type = 'word' THEN ci.target_id END) AS word_count,
+           COUNT(DISTINCT ci.id) AS total_count,
+           COUNT(DISTINCT w.category_id) AS chapter_count,
+           (SELECT COUNT(*) FROM users u WHERE u.current_course_id = c.id) + 1000 AS learner_count
+    FROM checkin_courses c
+    LEFT JOIN checkin_course_categories cc ON cc.id = c.category_id
+    LEFT JOIN checkin_course_items ci ON ci.course_id = c.id AND ci.is_active = 1
+    LEFT JOIN words w ON w.id = ci.target_id AND ci.task_type = 'word'`;
+
+/**
+ * GET /checkin/v2/hot-courses - 热门课程列表（公开，首页展示用，支持分页）
  */
 router.get('/v2/hot-courses', async (req, res) => {
     try {
+        const page = Math.max(1, Number(req.query.page) || 1);
+        const limit = Math.min(20, Number(req.query.limit) || 5);
+        const offset = (page - 1) * limit;
+
         const courses = await query(
-            `SELECT
-               c.id, c.name, c.description, c.level,
-               COUNT(DISTINCT CASE WHEN ci.task_type = 'word' THEN ci.target_id END) AS word_count,
-               COUNT(DISTINCT ci.id) AS total_count,
-               COUNT(DISTINCT w.category_id) AS chapter_count,
-               (SELECT COUNT(*) FROM users u WHERE u.current_course_id = c.id) + 1000 AS learner_count
-             FROM checkin_courses c
-             LEFT JOIN checkin_course_items ci ON ci.course_id = c.id AND ci.is_active = 1
-             LEFT JOIN words w ON w.id = ci.target_id AND ci.task_type = 'word'
+            `${COURSE_AGGREGATE_SQL}
              WHERE c.is_active = 1
              GROUP BY c.id
-             ORDER BY c.sort_order, c.id`
+             ORDER BY c.sort_order, c.id
+             LIMIT ? OFFSET ?`,
+            [limit, offset]
         );
-        res.json({ success: true, data: courses });
+        const [{ total }] = await query('SELECT COUNT(*) AS total FROM checkin_courses WHERE is_active = 1');
+        res.json({ success: true, data: courses, pagination: { total, page, limit, hasMore: offset + courses.length < total } });
     } catch (e) {
         console.error('hot-courses error:', e);
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+/**
+ * GET /checkin/v2/all-courses - 全部课程（公开，支持分类筛选 + 分页）
+ */
+router.get('/v2/all-courses', async (req, res) => {
+    try {
+        const page = Math.max(1, Number(req.query.page) || 1);
+        const limit = Math.min(30, Number(req.query.limit) || 20);
+        const offset = (page - 1) * limit;
+        const categoryId = req.query.category_id ? Number(req.query.category_id) : null;
+
+        const whereParts = ['c.is_active = 1'];
+        const params = [];
+        if (categoryId) { whereParts.push('c.category_id = ?'); params.push(categoryId); }
+        const where = whereParts.join(' AND ');
+
+        const courses = await query(
+            `${COURSE_AGGREGATE_SQL}
+             WHERE ${where}
+             GROUP BY c.id
+             ORDER BY c.is_vip ASC, c.sort_order, c.id
+             LIMIT ? OFFSET ?`,
+            [...params, limit, offset]
+        );
+        const [{ total }] = await query(
+            `SELECT COUNT(*) AS total FROM checkin_courses c WHERE ${where}`, params
+        );
+        res.json({ success: true, data: courses, pagination: { total, page, limit, hasMore: offset + courses.length < total } });
+    } catch (e) {
+        console.error('all-courses error:', e);
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+/**
+ * GET /checkin/v2/course-detail/:id - 课程详情（公开）
+ */
+router.get('/v2/course-detail/:id', async (req, res) => {
+    try {
+        const courseId = Number(req.params.id);
+        const [course] = await query(
+            `${COURSE_AGGREGATE_SQL}
+             WHERE c.id = ? AND c.is_active = 1
+             GROUP BY c.id`,
+            [courseId]
+        );
+        if (!course) return res.status(404).json({ success: false, message: '课程不存在' });
+
+        // 章节列表（按单词所属分类分组）
+        const chapters = await query(
+            `SELECT COALESCE(wc.id, 0) AS category_id,
+                    COALESCE(wc.name, '基础词汇') AS category_name,
+                    COUNT(ci.id) AS word_count
+             FROM checkin_course_items ci
+             LEFT JOIN words w ON w.id = ci.target_id
+             LEFT JOIN word_categories wc ON wc.id = w.category_id
+             WHERE ci.course_id = ? AND ci.task_type = 'word' AND ci.is_active = 1
+             GROUP BY wc.id, wc.name
+             ORDER BY MIN(ci.sort_order)`,
+            [courseId]
+        );
+
+        // 示例单词（最多6个，带图片）
+        const baseUrl = process.env.BASE_URL || '';
+        const sampleWords = await query(
+            `SELECT w.id, w.word, w.translation, w.phonetic, w.image_url
+             FROM checkin_course_items ci
+             JOIN words w ON w.id = ci.target_id
+             WHERE ci.course_id = ? AND ci.task_type = 'word' AND ci.is_active = 1
+             ORDER BY ci.sort_order, ci.id LIMIT 6`,
+            [courseId]
+        );
+        sampleWords.forEach(w => {
+            if (w.image_url && w.image_url.startsWith('/')) w.image_url = baseUrl + w.image_url;
+        });
+
+        res.json({ success: true, data: { ...course, chapters, sampleWords } });
+    } catch (e) {
+        console.error('course-detail error:', e);
         res.status(500).json({ success: false, message: e.message });
     }
 });
@@ -1406,8 +1526,18 @@ router.post('/v2/enroll', authMiddleware, async (req, res) => {
         if (!course_id) return res.status(400).json({ success: false, message: '请选择课程' });
 
         const target = Math.min(50, Math.max(1, Number(daily_target)));
-        const [course] = await query('SELECT id, name FROM checkin_courses WHERE id = ? AND is_active = 1', [course_id]);
+        const [course] = await query('SELECT id, name, is_vip FROM checkin_courses WHERE id = ? AND is_active = 1', [course_id]);
         if (!course) return res.status(404).json({ success: false, message: '课程不存在' });
+
+        // VIP 课程鉴权
+        if (course.is_vip) {
+            const [user] = await query('SELECT vip_level, vip_expire_date FROM users WHERE id = ?', [userId]);
+            const today = new Date().toISOString().split('T')[0];
+            const isVip = user && user.vip_level > 0 && user.vip_expire_date && user.vip_expire_date >= today;
+            if (!isVip) {
+                return res.json({ success: false, message: '该课程为VIP专属，请先开通会员', code: 'VIP_REQUIRED' });
+            }
+        }
 
         await query(
             'UPDATE users SET current_course_id = ?, daily_word_target = ?, checkin_strategy = "curriculum" WHERE id = ?',
