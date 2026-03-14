@@ -743,4 +743,246 @@ NO text, labels, or watermarks in the image.`;
     }
 });
 
+/**
+ * 批量 AI 补全已有单词（音标 / 例句翻译）
+ *
+ * 规则：
+ *   - content_type = 'word'   : 缺音标 → 补音标；有例句无翻译 → 补例句翻译；无例句 → 生成例句+翻译
+ *   - content_type = 'phrase' : 不补音标；有例句无翻译 → 补例句翻译；无例句 → 生成例句+翻译
+ *   - content_type = 'sentence': 不补音标；将 example_sentence（或 word 本身）翻译填入 example_translation
+ *
+ * body: { word_ids: number[] }
+ */
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+router.post('/enhance-existing', async (req, res) => {
+    try {
+        const { word_ids } = req.body;
+        if (!Array.isArray(word_ids) || word_ids.length === 0) {
+            return res.status(400).json({ success: false, message: '请提供单词ID列表' });
+        }
+        // 限制单次最多 30 条（每条 ~5s，30条约 2.5 分钟）
+        const ids = word_ids.slice(0, 30);
+
+        const words = await query(
+            `SELECT id, word, translation, phonetic, content_type, example_sentence, example_translation
+             FROM words WHERE id IN (${ids.map(() => '?').join(',')})`,
+            ids
+        );
+
+        const results = { success: [], failed: [], skipped: [] };
+
+        for (let i = 0; i < words.length; i++) {
+            const w = words[i];
+            const ct = w.content_type || 'word';
+
+            // 判断需要补什么
+            const needPhonetic = !w.phonetic && ct === 'word';
+            const hasExample   = !!(w.example_sentence && w.example_sentence.trim());
+            const needExTrans  = !w.example_translation || !w.example_translation.trim();
+
+            // sentence 类型：word 字段本身就是句子，直接翻译
+            const isSentenceType = ct === 'sentence';
+
+            if (!needPhonetic && !needExTrans && !isSentenceType) {
+                results.skipped.push({ id: w.id, word: w.word, reason: '字段已完整' });
+                continue;
+            }
+            // sentence 类型已有翻译也跳过
+            if (isSentenceType && !needExTrans) {
+                results.skipped.push({ id: w.id, word: w.word, reason: '已有翻译' });
+                continue;
+            }
+
+            // 构建针对性 prompt
+            let prompt;
+
+            if (isSentenceType) {
+                // 句子类型：翻译例句（优先）或 word 本身
+                const toTranslate = hasExample ? w.example_sentence : w.word;
+                prompt = `You are an English teacher for Chinese children.
+Translate the following English sentence/phrase into natural Chinese. Keep it simple and suitable for children ages 5-10.
+IMPORTANT: Output ONLY the Chinese translation. Do NOT include pinyin, romanization, phonetics, or any extra parentheses/brackets.
+
+English: "${toTranslate}"
+Chinese hint about the content: ${w.translation}
+
+Respond ONLY with valid JSON:
+{"example_translation": "今天鞋子打折啦！"}`;
+
+            } else if (ct === 'phrase') {
+                if (hasExample && needExTrans) {
+                    // 短语已有例句，只需翻译
+                    prompt = `Translate this English example sentence to Chinese for children's English learning (ages 5-10).
+Phrase: "${w.word}" (meaning: ${w.translation})
+Example sentence: "${w.example_sentence}"
+IMPORTANT: Output ONLY the Chinese translation. Do NOT include pinyin, romanization, phonetics, or any extra parentheses/brackets.
+
+Respond ONLY with valid JSON:
+{"example_translation": "不客气！"}`;
+                } else {
+                    // 短语无例句，生成例句+翻译
+                    prompt = `You are an English teacher for Chinese children (ages 5-10).
+For the English phrase "${w.word}" (meaning: ${w.translation}), please provide:
+1. A simple, natural English example sentence using this phrase (max 12 words)
+2. Chinese translation of that sentence
+IMPORTANT: The Chinese translation must contain ONLY Chinese characters. Do NOT include pinyin, romanization, phonetics, or any extra parentheses/brackets.
+
+Respond ONLY with valid JSON:
+{"example_sentence": "Example sentence here.", "example_translation": "我知道这个单词。"}`;
+                }
+
+            } else {
+                // word 类型：按需组合请求字段
+                const parts = [];
+                if (needPhonetic) parts.push('1. **phonetic**: IPA transcription (e.g., /ˈæpl/)');
+                if (!hasExample)   parts.push('2. **example_sentence**: Simple sentence max 10 words, suitable for children');
+                if (needExTrans)   parts.push('3. **example_translation**: Chinese translation of the example sentence');
+
+                const existingNote = hasExample
+                    ? `\nThe word already has an example sentence: "${w.example_sentence}" — translate it for example_translation.`
+                    : '';
+
+                prompt = `You are an English teacher for Chinese children (ages 5-10).
+For the English word "${w.word}"${w.translation ? ` (meaning: ${w.translation})` : ''}:${existingNote}
+
+Please provide only the following:
+${parts.join('\n')}
+
+IMPORTANT: The Chinese translation (example_translation) must contain ONLY Chinese characters. Do NOT include pinyin, romanization, phonetics, or any extra parentheses/brackets.
+
+Respond ONLY with valid JSON containing only the fields listed above. Example:
+{"phonetic": "/wɜːd/", "example_sentence": "I know this word.", "example_translation": "我知道这个单词。"}`;
+            }
+
+            try {
+                const result = await aiService.enhanceWordData(w.word, w.translation, prompt);
+                if (!result.success) {
+                    results.failed.push({ id: w.id, word: w.word, error: result.error });
+                } else {
+                    const d = result.data;
+                    const sets = [];
+                    const params = [];
+
+                    if (needPhonetic && d.phonetic) {
+                        sets.push('phonetic = ?'); params.push(d.phonetic);
+                    }
+                    // 不覆盖已有例句
+                    if (!hasExample && d.example_sentence) {
+                        sets.push('example_sentence = ?'); params.push(d.example_sentence);
+                    }
+                    if (needExTrans && d.example_translation) {
+                        sets.push('example_translation = ?'); params.push(d.example_translation);
+                    }
+                    // sentence 类型：翻译放 example_translation
+                    if (isSentenceType && needExTrans && d.example_translation) {
+                        if (!sets.find(s => s.startsWith('example_translation'))) {
+                            sets.push('example_translation = ?'); params.push(d.example_translation);
+                        }
+                    }
+
+                    if (sets.length) {
+                        params.push(w.id);
+                        await query(`UPDATE words SET ${sets.join(', ')}, updated_at = NOW() WHERE id = ?`, params);
+                        results.success.push({
+                            id: w.id, word: w.word,
+                            phonetic: d.phonetic || null,
+                            example_translation: d.example_translation || null
+                        });
+                    } else {
+                        results.skipped.push({ id: w.id, word: w.word, reason: 'AI返回空数据' });
+                    }
+                }
+            } catch (err) {
+                results.failed.push({ id: w.id, word: w.word, error: err.message });
+            }
+
+            // 避免触发 Gemini 频率限制 (15 RPM，约 4s 间隔留余量)
+            if (i < words.length - 1) await sleep(4000);
+        }
+
+        res.json({
+            success: true,
+            message: `补全完成：成功 ${results.success.length}，跳过 ${results.skipped.length}，失败 ${results.failed.length}`,
+            data: results
+        });
+    } catch (error) {
+        console.error('批量AI补全错误:', error);
+        res.status(500).json({ success: false, message: '批量补全失败: ' + error.message });
+    }
+});
+
+/**
+ * 批量生成音频（单词发音 + 例句发音，female + male）
+ * body: { word_ids: number[], voices: string[], include_example: boolean }
+ */
+router.post('/generate-audio-batch', async (req, res) => {
+    try {
+        const { word_ids, voices = ['female'], include_example = false } = req.body;
+        if (!Array.isArray(word_ids) || word_ids.length === 0) {
+            return res.status(400).json({ success: false, message: '请提供单词ID列表' });
+        }
+        const ids = word_ids.slice(0, 20);
+
+        const words = await query(
+            `SELECT id, word, example_sentence, audio_url_female, audio_url_male,
+                    example_audio_female, example_audio_male
+             FROM words WHERE id IN (${ids.map(() => '?').join(',')})`,
+            ids
+        );
+
+        const results = { success: [], failed: [], total: 0 };
+        const voiceList = voices.filter(v => ['female', 'male'].includes(v));
+
+        for (const w of words) {
+            for (const voice of voiceList) {
+                const col = voice === 'male' ? 'audio_url_male' : 'audio_url_female';
+                // 跳过已有的
+                if (w[col]) continue;
+                results.total++;
+                try {
+                    const r = await voiceService.textToSpeech(w.word, voice);
+                    if (r.success) {
+                        await query(`UPDATE words SET ${col} = ?, updated_at = NOW() WHERE id = ?`, [r.audioUrl, w.id]);
+                        results.success.push({ id: w.id, word: w.word, voice, type: 'word' });
+                    } else {
+                        results.failed.push({ id: w.id, word: w.word, voice, type: 'word', error: r.error });
+                    }
+                } catch (e) {
+                    results.failed.push({ id: w.id, word: w.word, voice, type: 'word', error: e.message });
+                }
+            }
+
+            // 例句音频
+            if (include_example && w.example_sentence) {
+                for (const voice of voiceList) {
+                    const col = voice === 'male' ? 'example_audio_male' : 'example_audio_female';
+                    if (w[col]) continue;
+                    results.total++;
+                    try {
+                        const r = await voiceService.textToSpeech(w.example_sentence, voice);
+                        if (r.success) {
+                            await query(`UPDATE words SET ${col} = ?, updated_at = NOW() WHERE id = ?`, [r.audioUrl, w.id]);
+                            results.success.push({ id: w.id, word: w.word, voice, type: 'example' });
+                        } else {
+                            results.failed.push({ id: w.id, word: w.word, voice, type: 'example', error: r.error });
+                        }
+                    } catch (e) {
+                        results.failed.push({ id: w.id, word: w.word, voice, type: 'example', error: e.message });
+                    }
+                }
+            }
+        }
+
+        res.json({
+            success: true,
+            message: `音频生成完成：成功 ${results.success.length}，失败 ${results.failed.length}`,
+            data: results
+        });
+    } catch (error) {
+        console.error('批量生成音频错误:', error);
+        res.status(500).json({ success: false, message: '批量生成音频失败: ' + error.message });
+    }
+});
+
 module.exports = router;
