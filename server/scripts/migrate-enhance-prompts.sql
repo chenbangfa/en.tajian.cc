@@ -2,6 +2,8 @@
 -- 迁移：统一 AI 补全提示词到 ai_prompts 表
 -- 执行：mysql -u root -p english_learning < migrate-enhance-prompts.sql
 -- ============================================================
+SET NAMES utf8mb4;
+SET CHARACTER SET utf8mb4;
 
 -- 1. 更新 word_enhance：加入禁止拼音指令 + existing_sentence 支持
 UPDATE `ai_prompts` SET `prompt_template` =
