@@ -786,6 +786,15 @@ router.post('/enhance-existing', async (req, res) => {
 
         const results = { success: [], failed: [], skipped: [] };
 
+        // 从数据库加载提示词模板（统一管理入口：后台 /prompts 页面）
+        const [tmplWord, tmplWordTranslate, tmplPhraseEnhance, tmplPhraseTranslate, tmplSentence] = await Promise.all([
+            aiService.getPromptTemplate('word_enhance'),
+            aiService.getPromptTemplate('word_translate'),
+            aiService.getPromptTemplate('phrase_enhance'),
+            aiService.getPromptTemplate('phrase_translate'),
+            aiService.getPromptTemplate('sentence_translate'),
+        ]);
+
         for (let i = 0; i < words.length; i++) {
             const w = words[i];
             const ct = w.content_type || 'word';
@@ -808,65 +817,37 @@ router.post('/enhance-existing', async (req, res) => {
                 continue;
             }
 
-            // 构建针对性 prompt
+            // 从数据库模板构建 prompt，模板不存在时使用兜底
             let prompt;
 
             if (isSentenceType) {
-                // 句子类型：翻译例句（优先）或 word 本身
                 const toTranslate = hasExample ? w.example_sentence : w.word;
-                prompt = `You are an English teacher for Chinese children.
-Translate the following English sentence/phrase into natural Chinese. Keep it simple and suitable for children ages 5-10.
-IMPORTANT: Output ONLY the Chinese translation. Do NOT include pinyin, romanization, phonetics, or any extra parentheses/brackets.
-
-English: "${toTranslate}"
-Chinese hint about the content: ${w.translation}
-
-Respond ONLY with valid JSON:
-{"example_translation": "今天鞋子打折啦！"}`;
+                prompt = tmplSentence
+                    ? aiService.replaceTemplateVariables(tmplSentence, { sentence: toTranslate, translation: w.translation || '' })
+                    : `Translate this English sentence into natural Chinese for children (ages 5-10). IMPORTANT: Output ONLY Chinese characters, no pinyin.\nEnglish: "${toTranslate}"\nRespond ONLY with valid JSON: {"example_translation": "中文翻译"}`;
 
             } else if (ct === 'phrase') {
                 if (hasExample && needExTrans) {
-                    // 短语已有例句，只需翻译
-                    prompt = `Translate this English example sentence to Chinese for children's English learning (ages 5-10).
-Phrase: "${w.word}" (meaning: ${w.translation})
-Example sentence: "${w.example_sentence}"
-IMPORTANT: Output ONLY the Chinese translation. Do NOT include pinyin, romanization, phonetics, or any extra parentheses/brackets.
-
-Respond ONLY with valid JSON:
-{"example_translation": "不客气！"}`;
+                    prompt = tmplPhraseTranslate
+                        ? aiService.replaceTemplateVariables(tmplPhraseTranslate, { word: w.word, translation: w.translation || '', example_sentence: w.example_sentence })
+                        : `Translate this English example sentence to Chinese (ages 5-10). IMPORTANT: Output ONLY Chinese characters, no pinyin.\nPhrase: "${w.word}" (${w.translation})\nSentence: "${w.example_sentence}"\nRespond ONLY with valid JSON: {"example_translation": "中文翻译"}`;
                 } else {
-                    // 短语无例句，生成例句+翻译
-                    prompt = `You are an English teacher for Chinese children (ages 5-10).
-For the English phrase "${w.word}" (meaning: ${w.translation}), please provide:
-1. A simple, natural English example sentence using this phrase (max 12 words)
-2. Chinese translation of that sentence
-IMPORTANT: The Chinese translation must contain ONLY Chinese characters. Do NOT include pinyin, romanization, phonetics, or any extra parentheses/brackets.
-
-Respond ONLY with valid JSON:
-{"example_sentence": "Example sentence here.", "example_translation": "我知道这个单词。"}`;
+                    prompt = tmplPhraseEnhance
+                        ? aiService.replaceTemplateVariables(tmplPhraseEnhance, { word: w.word, translation: w.translation || '' })
+                        : `Generate a simple English example sentence (max 12 words) for the phrase "${w.word}" (${w.translation}) and translate it to Chinese. IMPORTANT: Chinese must be ONLY Chinese characters, no pinyin.\nRespond ONLY with valid JSON: {"example_sentence": "...", "example_translation": "中文翻译"}`;
                 }
 
             } else {
-                // word 类型：按需组合请求字段
-                const parts = [];
-                if (needPhonetic) parts.push('1. **phonetic**: IPA transcription (e.g., /ˈæpl/)');
-                if (!hasExample)   parts.push('2. **example_sentence**: Simple sentence max 10 words, suitable for children');
-                if (needExTrans)   parts.push('3. **example_translation**: Chinese translation of the example sentence');
-
-                const existingNote = hasExample
-                    ? `\nThe word already has an example sentence: "${w.example_sentence}" — translate it for example_translation.`
-                    : '';
-
-                prompt = `You are an English teacher for Chinese children (ages 5-10).
-For the English word "${w.word}"${w.translation ? ` (meaning: ${w.translation})` : ''}:${existingNote}
-
-Please provide only the following:
-${parts.join('\n')}
-
-IMPORTANT: The Chinese translation (example_translation) must contain ONLY Chinese characters. Do NOT include pinyin, romanization, phonetics, or any extra parentheses/brackets.
-
-Respond ONLY with valid JSON containing only the fields listed above. Example:
-{"phonetic": "/wɜːd/", "example_sentence": "I know this word.", "example_translation": "我知道这个单词。"}`;
+                // word 类型：用 word_enhance（含例句）或 word_translate（仅翻译已有例句）
+                if (hasExample && needExTrans && !needPhonetic) {
+                    prompt = tmplWordTranslate
+                        ? aiService.replaceTemplateVariables(tmplWordTranslate, { word: w.word, translation: w.translation || '', example_sentence: w.example_sentence })
+                        : `Translate this English example sentence to Chinese for children (ages 5-10). IMPORTANT: Output ONLY Chinese characters, no pinyin.\nWord: "${w.word}" (${w.translation})\nSentence: "${w.example_sentence}"\nRespond ONLY with valid JSON: {"example_translation": "中文翻译"}`;
+                } else {
+                    prompt = tmplWord
+                        ? aiService.replaceTemplateVariables(tmplWord, { word: w.word, translation: w.translation || '', existing_sentence: hasExample ? w.example_sentence : '' })
+                        : `You are an English teacher for children (ages 5-10). For "${w.word}"${w.translation ? ` (${w.translation})` : ''}, provide phonetic, example_sentence, example_translation. IMPORTANT: example_translation must be ONLY Chinese characters, no pinyin.\nRespond ONLY with valid JSON: {"phonetic": "/wɜːd/", "example_sentence": "I know this word.", "example_translation": "我知道这个单词。"}`;
+                }
             }
 
             try {
