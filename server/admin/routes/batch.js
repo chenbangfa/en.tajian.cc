@@ -755,14 +755,28 @@ NO text, labels, or watermarks in the image.`;
  */
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+/**
+ * 去除 AI 翻译中混入的拼音（括号内拉丁字母内容，或前缀标签）
+ * 例如："谢谢你！(Xièxiè nǐ!)" → "谢谢你！"
+ *      "（中文翻译）今天打折啦！(Jīntiān...)" → "今天打折啦！"
+ */
+function stripPinyin(text) {
+    if (!text) return text;
+    // 去除括号内包含拉丁字母的内容（拼音）
+    let result = text.replace(/\s*[（(][^）)]*[a-zA-Zāáǎàēéěèīíǐìōóǒòūúǔùüǖǘǚǜ][^）)]*[）)]/g, '');
+    // 去除开头形如 "（中文翻译）" 的标签
+    result = result.replace(/^[（(][^）)]{2,8}[）)]\s*/g, '');
+    return result.trim();
+}
+
 router.post('/enhance-existing', async (req, res) => {
     try {
         const { word_ids } = req.body;
         if (!Array.isArray(word_ids) || word_ids.length === 0) {
             return res.status(400).json({ success: false, message: '请提供单词ID列表' });
         }
-        // 限制单次最多 30 条（每条 ~5s，30条约 2.5 分钟）
-        const ids = word_ids.slice(0, 30);
+        // 限制单次最多 10 条，避免 nginx 超时（每条 ~3s，10条约 30s）
+        const ids = word_ids.slice(0, 10);
 
         const words = await query(
             `SELECT id, word, translation, phonetic, content_type, example_sentence, example_translation
@@ -872,12 +886,12 @@ Respond ONLY with valid JSON containing only the fields listed above. Example:
                         sets.push('example_sentence = ?'); params.push(d.example_sentence);
                     }
                     if (needExTrans && d.example_translation) {
-                        sets.push('example_translation = ?'); params.push(d.example_translation);
+                        sets.push('example_translation = ?'); params.push(stripPinyin(d.example_translation));
                     }
                     // sentence 类型：翻译放 example_translation
                     if (isSentenceType && needExTrans && d.example_translation) {
                         if (!sets.find(s => s.startsWith('example_translation'))) {
-                            sets.push('example_translation = ?'); params.push(d.example_translation);
+                            sets.push('example_translation = ?'); params.push(stripPinyin(d.example_translation));
                         }
                     }
 
@@ -898,7 +912,7 @@ Respond ONLY with valid JSON containing only the fields listed above. Example:
             }
 
             // 避免触发 Gemini 频率限制 (15 RPM，约 4s 间隔留余量)
-            if (i < words.length - 1) await sleep(4000);
+            if (i < words.length - 1) await sleep(2000);
         }
 
         res.json({
