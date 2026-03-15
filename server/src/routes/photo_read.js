@@ -504,6 +504,54 @@ router.post('/objects', authMiddleware, async (req, res) => {
     }
 });
 
+// 按需生成单个热点的TTS（同步等待，完成后返回音频URL）
+router.post('/objects/:id/tts', authMiddleware, async (req, res) => {
+    try {
+        const [obj] = await query(
+            'SELECT upo.*, upr.user_id FROM user_photo_objects upo JOIN user_photo_reads upr ON upr.id = upo.photo_id WHERE upo.id = ?',
+            [req.params.id]
+        );
+        if (!obj || obj.user_id !== req.user.id) {
+            return res.status(404).json({ success: false, message: '热点不存在' });
+        }
+
+        // 已有音频直接返回
+        if (obj.audio_url_male && obj.audio_url_female) {
+            return res.json({
+                success: true,
+                data: {
+                    audio_url_male: withDomain(obj.audio_url_male),
+                    audio_url_female: withDomain(obj.audio_url_female)
+                }
+            });
+        }
+
+        // 同步生成（等待完成）
+        await regenerateTTSForObject(obj.id, obj.english_text);
+
+        // 读取刚生成的结果
+        const [updated] = await query(
+            'SELECT audio_url_male, audio_url_female FROM user_photo_objects WHERE id = ?',
+            [obj.id]
+        );
+
+        if (!updated.audio_url_male && !updated.audio_url_female) {
+            return res.status(500).json({ success: false, message: '语音生成失败，请稍后重试' });
+        }
+
+        res.json({
+            success: true,
+            data: {
+                audio_url_male: withDomain(updated.audio_url_male),
+                audio_url_female: withDomain(updated.audio_url_female)
+            }
+        });
+    } catch (err) {
+        console.error('按需生成TTS失败:', err);
+        res.status(500).json({ success: false, message: '语音生成失败' });
+    }
+});
+
 // 手动触发重新生成TTS（针对整张图片）
 router.post('/:id/generate-tts', authMiddleware, async (req, res) => {
     try {
