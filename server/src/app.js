@@ -35,6 +35,7 @@ app.use('/api/podcast', require('./routes/podcast'));
 app.use('/api/podcast-categories', require('./routes/podcast_categories'));
 app.use('/api/checkin', require('./routes/checkin'));
 app.use('/api/users', require('./routes/users'));
+app.use('/api/photo-read', require('./routes/photo_read'));
 
 // 错误处理中间件
 app.use((err, req, res, next) => {
