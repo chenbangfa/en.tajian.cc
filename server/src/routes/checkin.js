@@ -1590,7 +1590,7 @@ router.post('/v2/enroll', authMiddleware, async (req, res) => {
 
         const today = new Date().toISOString().split('T')[0];
         const [todayPlan] = await query(
-            'SELECT id FROM daily_task_plans WHERE user_id = ? AND task_date = ?',
+            'SELECT id, is_completed FROM daily_task_plans WHERE user_id = ? AND task_date = ?',
             [userId, today]
         );
 
@@ -1613,8 +1613,9 @@ router.post('/v2/enroll', authMiddleware, async (req, res) => {
                 await query('DELETE FROM daily_task_plans WHERE id = ?', [todayPlan.id]);
             }
         } else {
-            // 继续学习：只删今天的 pending/skipped 项，保留 completed 让 generateCurriculumTaskItems 的 NOT EXISTS 查询继续生效
-            if (todayPlan) {
+            // 继续学习：若今天已打卡完成，保留计划不动（首页仍显示已完成），新课程明天生效
+            // 若今天计划未完成，清除 pending/skipped 项和计划，让新课程立即生效
+            if (todayPlan && !todayPlan.is_completed) {
                 await query(
                     "DELETE FROM daily_task_items WHERE plan_id = ? AND status != 'completed'",
                     [todayPlan.id]
@@ -1654,8 +1655,23 @@ router.get('/v2/today', authMiddleware, async (req, res) => {
             [userId, today]
         );
 
-        // 如果已有计划但对应的课程与当前课程不一致，删除旧计划重建
+        // 如果已有计划但课程不一致：已完成的保留（首页正常显示），未完成的删除重建
         if (plan && plan.course_id !== courseId) {
+            if (plan.is_completed) {
+                // 今天已打卡完成，直接返回已完成状态，不重新生成
+                const [stats] = await query('SELECT consecutive_days FROM checkin_stats WHERE user_id = ?', [userId]);
+                return res.json({
+                    success: true,
+                    data: {
+                        planId: plan.id,
+                        dailyTarget: plan.word_target,
+                        doneCount: plan.word_completed || 0,
+                        isComplete: true,
+                        streakDays: stats ? stats.consecutive_days : 0,
+                        items: []
+                    }
+                });
+            }
             await query('DELETE FROM daily_task_items WHERE plan_id = ?', [plan.id]);
             await query('DELETE FROM daily_task_plans WHERE id = ?', [plan.id]);
             plan = null;
