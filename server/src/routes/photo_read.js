@@ -543,12 +543,28 @@ async function generateTTSForPhoto(photoId, userId) {
 
 async function regenerateTTSForObject(objId, text) {
     try {
-        const [maleResult, femaleResult] = await Promise.all([
-            voiceService.textToSpeech(text, 'male'),
-            voiceService.textToSpeech(text, 'female')
-        ]);
-        const maleUrl = maleResult?.success ? maleResult.audioUrl : null;
-        const femaleUrl = femaleResult?.success ? femaleResult.audioUrl : null;
+        // 优先查 words 表：完全匹配（不区分大小写）
+        const [wordRow] = await query(
+            'SELECT audio_url_male, audio_url_female FROM words WHERE LOWER(word) = LOWER(?) AND audio_url_male IS NOT NULL LIMIT 1',
+            [text.trim()]
+        );
+
+        let maleUrl, femaleUrl;
+        if (wordRow && wordRow.audio_url_male) {
+            // 直接复用单词表里的音频
+            maleUrl = wordRow.audio_url_male;
+            femaleUrl = wordRow.audio_url_female || null;
+            console.log(`[TTS] 热点 ${objId} 复用单词表音频: ${text}`);
+        } else {
+            // 调用 TTS 服务生成
+            const [maleResult, femaleResult] = await Promise.all([
+                voiceService.textToSpeech(text, 'male'),
+                voiceService.textToSpeech(text, 'female')
+            ]);
+            maleUrl = maleResult?.success ? maleResult.audioUrl : null;
+            femaleUrl = femaleResult?.success ? femaleResult.audioUrl : null;
+            console.log(`[TTS] 热点 ${objId} TTS生成: ${text} male=${!!maleUrl} female=${!!femaleUrl}`);
+        }
 
         await query(
             'UPDATE user_photo_objects SET audio_url_male = ?, audio_url_female = ? WHERE id = ?',
