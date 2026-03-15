@@ -755,7 +755,14 @@ router.get('/today', authMiddleware, async (req, res) => {
             [userId, today]
         );
 
-        const [stats] = await query('SELECT consecutive_days, total_days FROM checkin_stats WHERE user_id = ?', [userId]);
+        const [stats] = await query('SELECT consecutive_days, total_days, last_checkin_date FROM checkin_stats WHERE user_id = ?', [userId]);
+
+        // 用 last_checkin_date 判断今日是否已打卡，切换课程后重新打卡也能保持"已打卡"状态
+        const checkedInToday = stats && stats.last_checkin_date
+            ? stats.last_checkin_date.toISOString
+                ? stats.last_checkin_date.toISOString().split('T')[0] === today
+                : String(stats.last_checkin_date).split('T')[0] === today
+            : (plan ? !!plan.is_completed : false);
 
         const totalTarget = plan ? (plan.word_target + plan.scene_target + plan.podcast_target) : 0;
         const totalCompleted = plan ? (plan.word_completed + plan.scene_completed + plan.podcast_completed) : 0;
@@ -764,7 +771,7 @@ router.get('/today', authMiddleware, async (req, res) => {
             success: true,
             data: {
                 has_plan: !!plan,
-                checked_in_today: plan ? !!plan.is_completed : false,
+                checked_in_today: checkedInToday,
                 progress: { total: totalTarget, completed: totalCompleted },
                 consecutive_days: (stats && stats.consecutive_days) || 0,
                 total_days: (stats && stats.total_days) || 0
@@ -1569,7 +1576,7 @@ router.post('/v2/enroll', authMiddleware, async (req, res) => {
         const { course_id, daily_target = 10, resume = true } = req.body;
         if (!course_id) return res.status(400).json({ success: false, message: '请选择课程' });
 
-        const target = Math.min(50, Math.max(1, Number(daily_target)));
+        const target = Math.min(500, Math.max(1, Number(daily_target)));
         const [course] = await query('SELECT id, name, is_vip FROM checkin_courses WHERE id = ? AND is_active = 1', [course_id]);
         if (!course) return res.status(404).json({ success: false, message: '课程不存在' });
 
@@ -1613,9 +1620,8 @@ router.post('/v2/enroll', authMiddleware, async (req, res) => {
                 await query('DELETE FROM daily_task_plans WHERE id = ?', [todayPlan.id]);
             }
         } else {
-            // 继续学习：若今天已打卡完成，保留计划不动（首页仍显示已完成），新课程明天生效
-            // 若今天计划未完成，清除 pending/skipped 项和计划，让新课程立即生效
-            if (todayPlan && !todayPlan.is_completed) {
+            // 继续学习：清除今天的 pending/skipped 项，保留 completed 让 NOT EXISTS 查询生效
+            if (todayPlan) {
                 await query(
                     "DELETE FROM daily_task_items WHERE plan_id = ? AND status != 'completed'",
                     [todayPlan.id]
@@ -1655,23 +1661,8 @@ router.get('/v2/today', authMiddleware, async (req, res) => {
             [userId, today]
         );
 
-        // 如果已有计划但课程不一致：已完成的保留（首页正常显示），未完成的删除重建
+        // 如果已有计划但对应的课程与当前课程不一致，删除旧计划重建
         if (plan && plan.course_id !== courseId) {
-            if (plan.is_completed) {
-                // 今天已打卡完成，直接返回已完成状态，不重新生成
-                const [stats] = await query('SELECT consecutive_days FROM checkin_stats WHERE user_id = ?', [userId]);
-                return res.json({
-                    success: true,
-                    data: {
-                        planId: plan.id,
-                        dailyTarget: plan.word_target,
-                        doneCount: plan.word_completed || 0,
-                        isComplete: true,
-                        streakDays: stats ? stats.consecutive_days : 0,
-                        items: []
-                    }
-                });
-            }
             await query('DELETE FROM daily_task_items WHERE plan_id = ?', [plan.id]);
             await query('DELETE FROM daily_task_plans WHERE id = ?', [plan.id]);
             plan = null;
@@ -1887,7 +1878,7 @@ router.post('/v2/settings', authMiddleware, async (req, res) => {
 
         if (daily_target !== undefined) {
             updates.push('daily_word_target = ?');
-            params.push(Math.min(50, Math.max(1, Number(daily_target))));
+            params.push(Math.min(500, Math.max(1, Number(daily_target))));
         }
         if (passing_score !== undefined) {
             const validScores = [60, 70, 80, 90];
