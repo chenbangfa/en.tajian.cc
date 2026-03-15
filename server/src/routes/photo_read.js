@@ -390,15 +390,17 @@ router.put('/objects/:id', authMiddleware, async (req, res) => {
             return res.status(404).json({ success: false, message: '热点不存在' });
         }
 
-        const textChanged = english_text && english_text !== obj.english_text;
+        const textChanged = english_text !== undefined && english_text.trim() !== obj.english_text.trim();
         const fields = [];
         const params = [];
 
         if (english_text !== undefined) {
             fields.push('english_text = ?');
             params.push(english_text);
-            // 文字变了清空旧TTS
-            fields.push('audio_url_male = NULL', 'audio_url_female = NULL');
+            // 只有英文内容真正变化时才清空旧TTS
+            if (textChanged) {
+                fields.push('audio_url_male = NULL', 'audio_url_female = NULL');
+            }
         }
         if (translation !== undefined) { fields.push('translation = ?'); params.push(translation); }
         if (phonetic !== undefined) { fields.push('phonetic = ?'); params.push(phonetic); }
