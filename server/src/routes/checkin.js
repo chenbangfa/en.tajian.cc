@@ -506,6 +506,20 @@ router.post('/complete-task', authMiddleware, requirePoints(1), handleCheckinUpl
             [overallScore, earnedPoints, plan.id]
         );
 
+        // 如果是课程任务，持久化更新 user_course_progress（独立于plan，切换课程不丢失）
+        if (task.course_item_id && plan.course_id) {
+            const [totalRow] = await query(
+                'SELECT COUNT(*) as cnt FROM checkin_course_items WHERE course_id = ? AND is_active = 1',
+                [plan.course_id]
+            );
+            await query(
+                `INSERT INTO user_course_progress (user_id, course_id, completed_count, total_count)
+                 VALUES (?, ?, 1, ?)
+                 ON DUPLICATE KEY UPDATE completed_count = completed_count + 1, total_count = ?`,
+                [userId, plan.course_id, totalRow.cnt, totalRow.cnt]
+            );
+        }
+
         // 扣除积分
         await query('UPDATE users SET points = points - ? WHERE id = ?', [req.pointsToDeduct, userId]);
 
@@ -1522,13 +1536,37 @@ router.get('/v2/courses', authMiddleware, async (req, res) => {
 });
 
 /**
+ * GET /checkin/v2/course-progress/:courseId - 获取某课程的学习进度
+ */
+router.get('/v2/course-progress/:courseId', authMiddleware, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const courseId = Number(req.params.courseId);
+        const [progress] = await query(
+            'SELECT completed_count, total_count FROM user_course_progress WHERE user_id = ? AND course_id = ?',
+            [userId, courseId]
+        );
+        res.json({
+            success: true,
+            data: {
+                completed_count: progress ? progress.completed_count : 0,
+                total_count: progress ? progress.total_count : 0
+            }
+        });
+    } catch (e) {
+        console.error('course-progress error:', e);
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+/**
  * POST /checkin/v2/enroll - 报名课程
  * body: { course_id, daily_target }
  */
 router.post('/v2/enroll', authMiddleware, async (req, res) => {
     try {
         const userId = req.user.id;
-        const { course_id, daily_target = 10 } = req.body;
+        const { course_id, daily_target = 10, resume = true } = req.body;
         if (!course_id) return res.status(400).json({ success: false, message: '请选择课程' });
 
         const target = Math.min(50, Math.max(1, Number(daily_target)));
@@ -1550,15 +1588,39 @@ router.post('/v2/enroll', authMiddleware, async (req, res) => {
             [course_id, target, userId]
         );
 
-        // 删除今天未完成的计划，让今天重新生成
         const today = new Date().toISOString().split('T')[0];
         const [todayPlan] = await query(
-            'SELECT id, is_completed FROM daily_task_plans WHERE user_id = ? AND task_date = ?',
+            'SELECT id FROM daily_task_plans WHERE user_id = ? AND task_date = ?',
             [userId, today]
         );
-        if (todayPlan && !todayPlan.is_completed) {
-            await query('DELETE FROM daily_task_items WHERE plan_id = ?', [todayPlan.id]);
-            await query('DELETE FROM daily_task_plans WHERE id = ?', [todayPlan.id]);
+
+        if (resume === false || resume === 'false') {
+            // 重新开始：清空该课程所有已完成记录（daily_task_items 中 course_item_id 属于该课程的）
+            await query(
+                `DELETE dti FROM daily_task_items dti
+                 JOIN checkin_course_items cci ON cci.id = dti.course_item_id
+                 WHERE dti.user_id = ? AND cci.course_id = ?`,
+                [userId, course_id]
+            );
+            // 重置进度计数
+            await query(
+                'DELETE FROM user_course_progress WHERE user_id = ? AND course_id = ?',
+                [userId, course_id]
+            );
+            // 删除今天计划（含已完成项）
+            if (todayPlan) {
+                await query('DELETE FROM daily_task_items WHERE plan_id = ?', [todayPlan.id]);
+                await query('DELETE FROM daily_task_plans WHERE id = ?', [todayPlan.id]);
+            }
+        } else {
+            // 继续学习：只删今天的 pending/skipped 项，保留 completed 让 generateCurriculumTaskItems 的 NOT EXISTS 查询继续生效
+            if (todayPlan) {
+                await query(
+                    "DELETE FROM daily_task_items WHERE plan_id = ? AND status != 'completed'",
+                    [todayPlan.id]
+                );
+                await query('DELETE FROM daily_task_plans WHERE id = ?', [todayPlan.id]);
+            }
         }
 
         res.json({ success: true, message: `已报名《${course.name}》`, data: { course } });
@@ -1591,6 +1653,13 @@ router.get('/v2/today', authMiddleware, async (req, res) => {
             'SELECT * FROM daily_task_plans WHERE user_id = ? AND task_date = ?',
             [userId, today]
         );
+
+        // 如果已有计划但对应的课程与当前课程不一致，删除旧计划重建
+        if (plan && plan.course_id !== courseId) {
+            await query('DELETE FROM daily_task_items WHERE plan_id = ?', [plan.id]);
+            await query('DELETE FROM daily_task_plans WHERE id = ?', [plan.id]);
+            plan = null;
+        }
 
         if (!plan) {
             // 获取已学过的 course_item_id（历史任意日期）
