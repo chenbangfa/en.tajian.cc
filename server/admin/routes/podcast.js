@@ -142,6 +142,12 @@ router.get('/:id', async (req, res) => {
             return res.status(404).json({ success: false, message: '内容不存在' });
         }
 
+        if (content.sentences_data && content.sentences_data !== 'processing') {
+            try { content.sentences_data = JSON.parse(content.sentences_data); } catch (e) { content.sentences_data = null; }
+        } else if (content.sentences_data === 'processing') {
+            content.sentences_data = { processing: true };
+        }
+
         res.json({ success: true, data: content });
     } catch (error) {
         console.error('获取播客内容失败:', error);
