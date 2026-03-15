@@ -9,7 +9,15 @@ const voiceService = require('../services/voice.service');
 
 const router = express.Router();
 
-const POINTS_COST = 10; // 拍摄点读消耗积分
+const POINTS_COST = 10;
+const BASE_URL = process.env.BASE_URL || 'https://english.tajian.cc';
+
+// 补全相对路径的域名
+function withDomain(url) {
+    if (!url) return null;
+    if (url.startsWith('http')) return url;
+    return BASE_URL + url;
+} // 拍摄点读消耗积分
 
 // 文件上传配置
 const storage = multer.diskStorage({
@@ -143,6 +151,9 @@ router.get('/list', authMiddleware, async (req, res) => {
         }
         const [{ total }] = await query(countSql, countParams);
 
+        // 补全图片域名
+        photos.forEach(p => { p.image_url = withDomain(p.image_url); });
+
         res.json({
             success: true,
             data: {
@@ -170,6 +181,14 @@ router.get('/:id', authMiddleware, async (req, res) => {
             'SELECT * FROM user_photo_objects WHERE photo_id = ? ORDER BY sort_order ASC, id ASC',
             [req.params.id]
         );
+
+        // 补全域名
+        photo.image_url = withDomain(photo.image_url);
+        objects.forEach(o => {
+            o.audio_url_male = withDomain(o.audio_url_male);
+            o.audio_url_female = withDomain(o.audio_url_female);
+        });
+
         res.json({ success: true, data: { ...photo, objects } });
     } catch (err) {
         console.error('获取图片详情失败:', err);
