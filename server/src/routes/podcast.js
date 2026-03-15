@@ -96,6 +96,14 @@ router.get('/:id', optionalAuth, async (req, res) => {
 
         const content = contents[0];
 
+        // 解析 sentences_data JSON
+        if (content.sentences_data && content.sentences_data !== 'processing') {
+            try { content.sentences_data = JSON.parse(content.sentences_data); }
+            catch (e) { content.sentences_data = null; }
+        } else if (content.sentences_data === 'processing') {
+            content.sentences_data = { processing: true };
+        }
+
         // 检查访问权限
         if (!content.is_free) {
             if (!req.user || req.user.vip_level === 0) {

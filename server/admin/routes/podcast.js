@@ -3,8 +3,10 @@
  */
 const express = require('express');
 const router = express.Router();
+const axios = require('axios');
 const { query } = require('../../src/config/database');
 const voiceService = require('../../src/services/voice.service');
+const config = require('../../src/config');
 
 // ==================== 分类管理 ====================
 
@@ -83,8 +85,13 @@ router.get('/', async (req, res) => {
         const { category_id, page = 1, limit = 20 } = req.query;
         const offset = (page - 1) * limit;
 
-        let sql = `SELECT c.*, cat.name as category_name 
-                   FROM podcast_contents c 
+        let sql = `SELECT c.id, c.title, c.title_en, c.category_id, c.difficulty_level,
+                          c.is_free, c.sort_order, c.male_audio_url, c.female_audio_url, c.chinese_audio_url,
+                          CASE WHEN c.sentences_data = 'processing' THEN -1
+                               WHEN c.sentences_data IS NOT NULL THEN 1
+                               ELSE 0 END as has_sentences,
+                          cat.name as category_name
+                   FROM podcast_contents c
                    LEFT JOIN podcast_categories cat ON c.category_id = cat.id`;
         const params = [];
 
@@ -325,5 +332,104 @@ router.post('/generate-all-audio', async (req, res) => {
         res.status(500).json({ success: false, message: '音频生成失败' });
     }
 });
+
+// ==================== AI 句子分析 ====================
+
+/**
+ * POST /podcast/analyze-sentences/:id
+ * 用 Gemini 拆分句子 + 翻译 + 语法 + 关键词，并为每句生成 TTS 音频
+ */
+router.post('/analyze-sentences/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const [content] = await query('SELECT * FROM podcast_contents WHERE id = ?', [id]);
+        if (!content) return res.status(404).json({ success: false, message: '内容不存在' });
+        if (!content.content_text) return res.status(400).json({ success: false, message: '内容文本为空' });
+
+        // 标记为处理中
+        await query("UPDATE podcast_contents SET sentences_data = 'processing' WHERE id = ?", [id]);
+
+        // 1. Gemini 分析
+        const aiResult = await _geminiAnalyze(content.content_text);
+        if (!aiResult.success) {
+            await query('UPDATE podcast_contents SET sentences_data = NULL WHERE id = ?', [id]);
+            return res.status(500).json({ success: false, message: 'AI分析失败: ' + aiResult.error });
+        }
+
+        const sentences = aiResult.sentences;
+
+        // 2. 为每句生成 TTS + 为关键词查找/生成音频
+        for (const s of sentences) {
+            // 句子男声
+            const mRes = await voiceService.textToSpeech(s.text, 'male', 'en-US').catch(() => ({ success: false }));
+            if (mRes.success) s.male_audio_url = mRes.audioUrl;
+
+            // 句子女声
+            const fRes = await voiceService.textToSpeech(s.text, 'female', 'en-US').catch(() => ({ success: false }));
+            if (fRes.success) s.female_audio_url = fRes.audioUrl;
+
+            // 关键词音频
+            for (const w of (s.words || [])) {
+                const [wRow] = await query(
+                    'SELECT audio_url_female, audio_url_male FROM words WHERE LOWER(word) = LOWER(?) LIMIT 1',
+                    [w.word]
+                );
+                if (wRow) {
+                    w.audio_url = wRow.audio_url_female || wRow.audio_url_male || null;
+                } else {
+                    const wTts = await voiceService.textToSpeech(w.word, 'female', 'en-US').catch(() => ({ success: false }));
+                    if (wTts.success) w.audio_url = wTts.audioUrl;
+                }
+            }
+        }
+
+        // 3. 保存
+        await query(
+            'UPDATE podcast_contents SET sentences_data = ? WHERE id = ?',
+            [JSON.stringify({ sentences }), id]
+        );
+
+        res.json({ success: true, data: { sentences_count: sentences.length }, message: `分析完成，共 ${sentences.length} 句` });
+    } catch (e) {
+        console.error('[Podcast] analyze-sentences error:', e);
+        await query('UPDATE podcast_contents SET sentences_data = NULL WHERE id = ?', [id]).catch(() => {});
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+async function _geminiAnalyze(text) {
+    try {
+        const apiKey = config.googleAI && config.googleAI.apiKey;
+        if (!apiKey) return { success: false, error: 'Google AI API Key 未配置' };
+
+        const prompt = `You are an English language learning assistant for Chinese learners.
+Analyze the following English text. Split into individual sentences.
+For each sentence provide:
+1. Exact sentence text (from original, trimmed)
+2. Natural Chinese translation
+3. Brief grammar analysis in Chinese (e.g. "主语+谓语+宾语，一般现在时")
+4. 3-5 key vocabulary words: IPA phonetic, abbreviated part of speech (n./v./adj./adv./prep./conj.), Chinese translation
+
+Return ONLY valid JSON (no markdown, no explanation):
+{"sentences":[{"text":"...","translation":"...","grammar":"...","words":[{"word":"...","phonetic":"...","pos":"...","translation":"..."}]}]}
+
+Text:
+${text}`;
+
+        const resp = await axios.post(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+            { contents: [{ parts: [{ text: prompt }] }] },
+            { timeout: 60000 }
+        );
+
+        let raw = resp.data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        raw = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed.sentences)) return { success: false, error: 'AI返回格式错误' };
+        return { success: true, sentences: parsed.sentences };
+    } catch (e) {
+        return { success: false, error: e.message };
+    }
+}
 
 module.exports = router;
