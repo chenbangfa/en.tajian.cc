@@ -399,36 +399,28 @@ router.post('/analyze-sentences/:id', async (req, res) => {
 
 async function _geminiAnalyze(text) {
     try {
-        const apiKey = config.googleAI && config.googleAI.apiKey;
-        if (!apiKey) return { success: false, error: 'Google AI API Key 未配置' };
-
-        const prompt = `You are an English language learning assistant for Chinese learners.
-Analyze the following English text. Split into individual sentences.
-For each sentence provide:
-1. Exact sentence text (from original, trimmed)
-2. Natural Chinese translation
-3. Brief grammar analysis in Chinese (e.g. "主语+谓语+宾语，一般现在时")
-4. 3-5 key vocabulary words: IPA phonetic, abbreviated part of speech (n./v./adj./adv./prep./conj.), Chinese translation
-
-Return ONLY valid JSON (no markdown, no explanation):
-{"sentences":[{"text":"...","translation":"...","grammar":"...","words":[{"word":"...","phonetic":"...","pos":"...","translation":"..."}]}]}
-
-Text:
-${text}`;
+        const proxyUrl = process.env.PROXY_BASE_URL;
+        const proxyKey = process.env.PROXY_API_KEY;
+        if (!proxyUrl) return { success: false, error: '未配置 PROXY_BASE_URL（美国代理服务器地址）' };
 
         const resp = await axios.post(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-            { contents: [{ parts: [{ text: prompt }] }] },
-            { timeout: 60000 }
+            `${proxyUrl}/proxy/analyze-podcast`,
+            { text },
+            {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Proxy-Key': proxyKey || ''
+                },
+                timeout: 90000
+            }
         );
 
-        let raw = resp.data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        raw = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-        const parsed = JSON.parse(raw);
-        if (!Array.isArray(parsed.sentences)) return { success: false, error: 'AI返回格式错误' };
-        return { success: true, sentences: parsed.sentences };
+        if (resp.data.success && Array.isArray(resp.data.sentences)) {
+            return { success: true, sentences: resp.data.sentences };
+        }
+        return { success: false, error: resp.data.error || '代理返回失败' };
     } catch (e) {
-        return { success: false, error: e.message };
+        return { success: false, error: `代理服务不可用: ${e.message}` };
     }
 }
 
