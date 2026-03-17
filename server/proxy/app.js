@@ -225,12 +225,11 @@ app.post('/proxy/tts', auth, async (req, res) => {
  * body: { text } - 完整的英文文章内容
  * response: { success, sentences: [...] }
  */
-app.post('/proxy/analyze-podcast', auth, async (req, res) => {
-    const { text } = req.body;
-    if (!text) return res.status(400).json({ success: false, error: '缺少 text 参数' });
-    if (!GOOGLE_AI_KEY) return res.status(500).json({ success: false, error: '未配置 GOOGLE_AI_KEY' });
+// 每次最多分析的句子数，避免输出超出 token 限制
+const PODCAST_CHUNK_SIZE = 6;
 
-    const prompt = `You are an English language learning assistant for Chinese children beginners.
+function buildAnalyzePrompt(chunkText) {
+    return `You are an English language learning assistant for Chinese children beginners.
 Analyze the following English text. Split into individual sentences.
 For each sentence provide:
 1. Exact sentence text (copied verbatim from the original, including any spelling mistakes — do NOT correct typos)
@@ -248,27 +247,48 @@ Return ONLY valid JSON (no markdown, no explanation):
 {"sentences":[{"text":"...","translation":"...","grammar":"...","words":[{"word":"...","phonetic":"...","pos":"...","translation":"..."}]}]}
 
 Text:
-${text}`;
+${chunkText}`;
+}
+
+async function analyzeChunk(chunkText) {
+    const response = await axios.post(
+        `${GEMINI_BASE}/models/gemini-2.0-flash:generateContent?key=${GOOGLE_AI_KEY}`,
+        {
+            contents: [{ parts: [{ text: buildAnalyzePrompt(chunkText) }] }],
+            generationConfig: { temperature: 0.2, maxOutputTokens: 8192 }
+        },
+        { headers: { 'Content-Type': 'application/json' }, timeout: 90000 }
+    );
+    let raw = response.data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    raw = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed.sentences)) throw new Error('AI返回格式错误');
+    return parsed.sentences;
+}
+
+app.post('/proxy/analyze-podcast', auth, async (req, res) => {
+    const { text } = req.body;
+    if (!text) return res.status(400).json({ success: false, error: '缺少 text 参数' });
+    if (!GOOGLE_AI_KEY) return res.status(500).json({ success: false, error: '未配置 GOOGLE_AI_KEY' });
 
     try {
-        console.log(`[Proxy] 分析播客句子, 文本长度: ${text.length}`);
-        const response = await axios.post(
-            `${GEMINI_BASE}/models/gemini-2.0-flash:generateContent?key=${GOOGLE_AI_KEY}`,
-            {
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { temperature: 0.2, maxOutputTokens: 8192 }
-            },
-            { headers: { 'Content-Type': 'application/json' }, timeout: 60000 }
-        );
-
-        let raw = response.data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        raw = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-        const parsed = JSON.parse(raw);
-        if (!Array.isArray(parsed.sentences)) {
-            return res.json({ success: false, error: 'AI返回格式错误' });
+        // 按句子分割，每块不超过 PODCAST_CHUNK_SIZE 句，避免输出超出 token 限制
+        const sentenceList = text.match(/[^.!?]+[.!?]+[\s]*/g) || [text];
+        const chunks = [];
+        for (let i = 0; i < sentenceList.length; i += PODCAST_CHUNK_SIZE) {
+            chunks.push(sentenceList.slice(i, i + PODCAST_CHUNK_SIZE).join('').trim());
         }
-        console.log(`[Proxy] 播客分析成功, ${parsed.sentences.length} 句`);
-        res.json({ success: true, sentences: parsed.sentences });
+
+        console.log(`[Proxy] 分析播客, 文本长度: ${text.length}, 分 ${chunks.length} 块处理`);
+
+        const allSentences = [];
+        for (const chunk of chunks) {
+            const sentences = await analyzeChunk(chunk);
+            allSentences.push(...sentences);
+        }
+
+        console.log(`[Proxy] 播客分析成功, ${allSentences.length} 句`);
+        res.json({ success: true, sentences: allSentences });
     } catch (error) {
         console.error('[Proxy] analyze-podcast error:', error.response?.data || error.message);
         res.status(500).json({ success: false, error: error.message });
