@@ -143,6 +143,7 @@
   <!-- ── 语法分析弹窗 ── -->
   <view wx:if="{{grammarPopup}}" class="popup-mask" catchtap="closeGrammarPopup">
     <view class="grammar-popup" catchtap="">
+      <view class="gp-close" catchtap="closeGrammarPopup">✕</view>
       <text class="gp-title">语法分析</text>
       <text class="gp-sentence">{{grammarPopup.text}}</text>
       <view class="gp-divider"></view>

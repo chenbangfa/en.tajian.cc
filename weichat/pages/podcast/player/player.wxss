@@ -339,11 +339,26 @@ slider {
 /* ── 语法弹窗 ── */
 .grammar-popup {
   background: #fff;
-  border-radius: 32rpx 32rpx 0 0;
-  padding: 40rpx 40rpx calc(40rpx + env(safe-area-inset-bottom));
+  border-radius: 40rpx 40rpx 0 0;
+  padding: 48rpx 40rpx calc(40rpx + env(safe-area-inset-bottom));
   width: 100%;
+  position: relative;
 }
-.gp-title { font-size: 32rpx; font-weight: 700; color: #2D3436; display: block; margin-bottom: 20rpx; }
+.gp-close {
+  position: absolute;
+  top: 32rpx;
+  right: 40rpx;
+  width: 56rpx;
+  height: 56rpx;
+  border-radius: 28rpx;
+  background: #F1F2F6;
+  color: #636E72;
+  font-size: 28rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.gp-title { font-size: 32rpx; font-weight: 700; color: #2D3436; display: block; margin-bottom: 20rpx; padding-right: 80rpx; }
 .gp-sentence { font-size: 30rpx; color: #2D3436; line-height: 1.6; display: block; margin-bottom: 12rpx; }
 .gp-divider { height: 1rpx; background: #f0f0f0; margin: 16rpx 0; }
 .gp-label { font-size: 22rpx; color: #b2bec3; display: block; margin-bottom: 6rpx; }
