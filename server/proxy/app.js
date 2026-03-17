@@ -256,7 +256,7 @@ ${text}`;
             `${GEMINI_BASE}/models/gemini-2.0-flash:generateContent?key=${GOOGLE_AI_KEY}`,
             {
                 contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { temperature: 0.2, maxOutputTokens: 4096 }
+                generationConfig: { temperature: 0.2, maxOutputTokens: 8192 }
             },
             { headers: { 'Content-Type': 'application/json' }, timeout: 60000 }
         );
