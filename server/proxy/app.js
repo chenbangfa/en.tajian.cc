@@ -236,9 +236,13 @@ For each sentence provide:
 1. Exact sentence text (copied verbatim from the original, including any spelling mistakes — do NOT correct typos)
 2. Natural Chinese translation
 3. Brief grammar analysis in Chinese (e.g. "主语+谓语+宾语，一般现在时")
-4. ALL content words in the sentence: nouns, verbs, adjectives, adverbs, numbers, pronouns (exclude only articles a/an/the, prepositions, conjunctions like and/or/but).
+4. Word/phrase list following these rules strictly:
+   STEP 1 — Find all common multi-word phrases first (phrasal verbs like "get up/wake up/go to bed", collocations like "every day/get home/o'clock", etc.)
+   STEP 2 — Find remaining individual content words (nouns, verbs, adjectives, adverbs, numbers, pronouns) that are NOT already covered by a phrase from Step 1.
+   STEP 3 — Combine Step 1 + Step 2 as the final word list. A word already inside a phrase must NOT appear again as a separate entry.
+   Example: "I get up at seven o'clock every day." → phrases: ["get up","o'clock","every day"] + words: ["seven"] (not "get","up","day" separately)
    IMPORTANT: the "word" field must use the EXACT spelling as it appears in the sentence (do not fix typos).
-   For each word: IPA phonetic, abbreviated part of speech (n./v./adj./adv./num./pron.), Chinese translation.
+   For each entry: IPA phonetic (for phrases use the full phrase pronunciation), abbreviated pos (n./v./adj./adv./num./pron./phr.v./phr.), Chinese translation.
 
 Return ONLY valid JSON (no markdown, no explanation):
 {"sentences":[{"text":"...","translation":"...","grammar":"...","words":[{"word":"...","phonetic":"...","pos":"...","translation":"..."}]}]}
