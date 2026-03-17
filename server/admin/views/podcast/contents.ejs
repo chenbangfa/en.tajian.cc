@@ -27,7 +27,7 @@
                     <th class="px-6 py-4">标题</th>
                     <th class="px-6 py-4 w-32">分类</th>
                     <th class="px-6 py-4 w-24">难度</th>
-                    <th class="px-6 py-4 w-40">音频状态</th>
+                    <th class="px-6 py-4 w-56">音频状态</th>
                     <th class="px-6 py-4 w-72 text-right">操作</th>
                 </tr>
             </thead>
@@ -197,7 +197,13 @@
                     <span class="text-sm font-semibold text-gray-800 group-hover:text-blue-600 transition-colors">${c.title}</span>
                 </td>
                 <td class="px-6 py-4">
-                    <span class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-600 border border-gray-200">${c.category_name || '-'}</span>
+                    ${c.parent_category_name
+                        ? `<div class="flex flex-col gap-0.5">
+                            <span class="text-[11px] text-gray-400 font-medium">${c.parent_category_name}</span>
+                            <span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-700 border border-gray-200">${c.category_name}</span>
+                           </div>`
+                        : `<span class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-600 border border-gray-200">${c.category_name || '-'}</span>`
+                    }
                 </td>
                 <td class="px-6 py-4">
                     <div class="flex text-yellow-400 text-xs drop-shadow-sm">${'⭐'.repeat(c.difficulty_level || 1)}</div>

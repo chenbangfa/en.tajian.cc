@@ -90,9 +90,12 @@ router.get('/', async (req, res) => {
                           CASE WHEN c.sentences_data = 'processing' THEN -1
                                WHEN c.sentences_data IS NOT NULL THEN 1
                                ELSE 0 END as has_sentences,
-                          cat.name as category_name
+                          cat.name as category_name,
+                          cat.parent_id as category_parent_id,
+                          pcat.name as parent_category_name
                    FROM podcast_contents c
-                   LEFT JOIN podcast_categories cat ON c.category_id = cat.id`;
+                   LEFT JOIN podcast_categories cat ON c.category_id = cat.id
+                   LEFT JOIN podcast_categories pcat ON cat.parent_id = pcat.id`;
         const params = [];
 
         if (category_id) {
@@ -374,15 +377,20 @@ router.post('/analyze-sentences/:id', async (req, res) => {
             const fRes = await voiceService.textToSpeech(s.text, 'female', 'en-US').catch(() => ({ success: false }));
             if (fRes.success) s.female_audio_url = fRes.audioUrl;
 
-            // 关键词音频
+            // 关键词音频 + 音标复用
+            // 策略：audio/phonetic 与含义无关可复用；translation/pos 用 AI 的（上下文相关）
             for (const w of (s.words || [])) {
                 const [wRow] = await query(
-                    'SELECT audio_url_female, audio_url_male FROM words WHERE LOWER(word) = LOWER(?) LIMIT 1',
+                    'SELECT audio_url_female, audio_url_male, phonetic FROM words WHERE LOWER(word) = LOWER(?) LIMIT 1',
                     [w.word]
                 );
                 if (wRow) {
+                    // 复用音频
                     w.audio_url = wRow.audio_url_female || wRow.audio_url_male || null;
+                    // 复用音标（仅当 AI 未提供时）
+                    if (!w.phonetic && wRow.phonetic) w.phonetic = wRow.phonetic;
                 } else {
+                    // words 表无记录：生成 TTS 音频
                     const wTts = await voiceService.textToSpeech(w.word, 'female', 'en-US').catch(() => ({ success: false }));
                     if (wTts.success) w.audio_url = wTts.audioUrl;
                 }
