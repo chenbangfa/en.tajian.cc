@@ -230,13 +230,15 @@ app.post('/proxy/analyze-podcast', auth, async (req, res) => {
     if (!text) return res.status(400).json({ success: false, error: '缺少 text 参数' });
     if (!GOOGLE_AI_KEY) return res.status(500).json({ success: false, error: '未配置 GOOGLE_AI_KEY' });
 
-    const prompt = `You are an English language learning assistant for Chinese learners.
+    const prompt = `You are an English language learning assistant for Chinese children beginners.
 Analyze the following English text. Split into individual sentences.
 For each sentence provide:
-1. Exact sentence text (from original, trimmed)
+1. Exact sentence text (copied verbatim from the original, including any spelling mistakes — do NOT correct typos)
 2. Natural Chinese translation
 3. Brief grammar analysis in Chinese (e.g. "主语+谓语+宾语，一般现在时")
-4. 3-5 key vocabulary words: IPA phonetic, abbreviated part of speech (n./v./adj./adv./prep./conj.), Chinese translation
+4. ALL content words in the sentence: nouns, verbs, adjectives, adverbs, numbers, pronouns (exclude only articles a/an/the, prepositions, conjunctions like and/or/but).
+   IMPORTANT: the "word" field must use the EXACT spelling as it appears in the sentence (do not fix typos).
+   For each word: IPA phonetic, abbreviated part of speech (n./v./adj./adv./num./pron.), Chinese translation.
 
 Return ONLY valid JSON (no markdown, no explanation):
 {"sentences":[{"text":"...","translation":"...","grammar":"...","words":[{"word":"...","phonetic":"...","pos":"...","translation":"..."}]}]}
