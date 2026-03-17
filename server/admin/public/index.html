@@ -885,11 +885,6 @@ grape"></textarea>
                         <textarea class="form-textarea" id="pcontent-text" rows="4" required
                             placeholder="英文对话或句子"></textarea>
                     </div>
-                    <div class="form-group">
-                        <label class="form-label">中文翻译</label>
-                        <textarea class="form-textarea" id="pcontent-translation" rows="3"
-                            placeholder="对应的中文翻译"></textarea>
-                    </div>
                     <div class="form-row">
                         <div class="form-group" style="flex:1">
                             <label class="form-label">难度等级 (1-5)</label>
@@ -2333,7 +2328,6 @@ grape"></textarea>
             document.getElementById('pcontent-id').value = '';
             document.getElementById('pcontent-title').value = '';
             document.getElementById('pcontent-text').value = '';
-            document.getElementById('pcontent-translation').value = '';
             document.getElementById('pcontent-category').value = '';
             document.getElementById('pcontent-difficulty').value = '1';
             document.getElementById('pcontent-sort').value = '0';
@@ -2355,7 +2349,6 @@ grape"></textarea>
                     document.getElementById('pcontent-id').value = c.id;
                     document.getElementById('pcontent-title').value = c.title;
                     document.getElementById('pcontent-text').value = c.content_text || '';
-                    document.getElementById('pcontent-translation').value = c.translation || '';
                     document.getElementById('pcontent-category').value = c.category_id || '';
                     document.getElementById('pcontent-difficulty').value = c.difficulty_level || 1;
                     document.getElementById('pcontent-sort').value = c.sort_order || 0;
@@ -2380,7 +2373,6 @@ grape"></textarea>
             const data = {
                 title: document.getElementById('pcontent-title').value,
                 content_text: document.getElementById('pcontent-text').value,
-                translation: document.getElementById('pcontent-translation').value,
                 category_id: document.getElementById('pcontent-category').value || null,
                 difficulty_level: parseInt(document.getElementById('pcontent-difficulty').value) || 1,
                 sort_order: parseInt(document.getElementById('pcontent-sort').value) || 0,
