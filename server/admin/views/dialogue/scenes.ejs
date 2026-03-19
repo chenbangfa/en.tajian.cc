@@ -1,0 +1,144 @@
+<div class="space-y-6">
+  <!-- Header -->
+  <div class="flex justify-between items-center bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+    <div>
+      <h2 class="text-2xl font-bold text-gray-800">对话场景管理</h2>
+      <p class="text-gray-500 mt-1">创建真实生活场景的对话练习内容</p>
+    </div>
+    <a href="/dialogue/edit" class="flex items-center space-x-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white px-6 py-3 rounded-xl shadow-lg transition-all hover:-translate-y-0.5">
+      <i class="fas fa-plus"></i><span>新建场景</span>
+    </a>
+  </div>
+
+  <!-- 筛选 -->
+  <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center gap-3 flex-wrap">
+    <select id="groupFilter" onchange="onGroupChange()" class="px-4 py-2 border border-gray-200 rounded-lg bg-gray-50 focus:outline-none focus:border-purple-500">
+      <option value="">全部分组</option>
+    </select>
+    <select id="catFilter" onchange="loadScenes()" class="px-4 py-2 border border-gray-200 rounded-lg bg-gray-50 focus:outline-none focus:border-purple-500">
+      <option value="">全部分类</option>
+    </select>
+    <select id="vipFilter" onchange="loadScenes()" class="px-4 py-2 border border-gray-200 rounded-lg bg-gray-50 focus:outline-none focus:border-purple-500">
+      <option value="">全部权限</option>
+      <option value="0">免费</option>
+      <option value="1">VIP</option>
+    </select>
+    <span class="text-gray-400 text-sm ml-auto" id="totalCount"></span>
+  </div>
+
+  <!-- 场景列表 -->
+  <div id="sceneList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <div class="col-span-full text-center py-12 text-gray-400"><i class="fas fa-spinner fa-spin text-2xl"></i></div>
+  </div>
+</div>
+
+<script>
+let allCats = [];
+
+async function loadCats() {
+  const res = await fetch(`${API_BASE}/dialogue/categories`);
+  const r = await res.json();
+  if (!r.success) return;
+  allCats = r.data;
+
+  // 填充分组筛选
+  const groups = [...new Set(allCats.map(c => c.group_name).filter(Boolean))];
+  const gSel = document.getElementById('groupFilter');
+  groups.forEach(g => { gSel.innerHTML += `<option value="${g}">${g}</option>`; });
+
+  // 填充分类筛选（全部）
+  renderCatOptions('');
+}
+
+function renderCatOptions(group) {
+  const sel = document.getElementById('catFilter');
+  const filtered = group ? allCats.filter(c => c.group_name === group) : allCats;
+  sel.innerHTML = `<option value="">${group ? group + ' · 全部' : '全部分类'}</option>`;
+  filtered.forEach(c => { sel.innerHTML += `<option value="${c.id}">${c.icon_emoji} ${c.name}</option>`; });
+}
+
+function onGroupChange() {
+  const group = document.getElementById('groupFilter').value;
+  renderCatOptions(group);
+  loadScenes();
+}
+
+async function loadScenes() {
+  const cat = document.getElementById('catFilter').value;
+  const group = document.getElementById('groupFilter').value;
+  const vip = document.getElementById('vipFilter').value;
+  let url = `${API_BASE}/dialogue/scenes?limit=200`;
+  if (cat) url += `&category_id=${cat}`;
+  const res = await fetch(url);
+  const r = await res.json();
+  const container = document.getElementById('sceneList');
+  if (!r.success) { container.innerHTML = `<div class="col-span-full text-center py-12 text-red-400">加载失败</div>`; return; }
+  let scenes = r.data;
+  // 按分组过滤（未选分类时）
+  if (group && !cat) {
+    const groupCatIds = new Set(allCats.filter(c => c.group_name === group).map(c => c.id));
+    scenes = scenes.filter(s => groupCatIds.has(s.category_id));
+  }
+  if (vip !== '') scenes = scenes.filter(s => String(s.is_vip) === vip);
+  document.getElementById('totalCount').textContent = `共 ${scenes.length} 个场景`;
+  if (!scenes.length) {
+    container.innerHTML = `<div class="col-span-full text-center py-16 text-gray-400 bg-white rounded-2xl border border-dashed border-gray-200">
+      <div class="text-4xl mb-3">💬</div><p>暂无场景，点击右上角新建</p></div>`;
+    return;
+  }
+  container.innerHTML = scenes.map(s => `
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-all group">
+      <div class="relative h-40 bg-gradient-to-br from-purple-100 to-indigo-100 overflow-hidden">
+        ${s.cover_image ? `<img src="${s.cover_image}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500">` : `<div class="w-full h-full flex items-center justify-center text-5xl">☕</div>`}
+        <div class="absolute top-3 left-3 flex gap-2">
+          <span class="text-xs font-bold px-2 py-1 rounded-full ${s.difficulty===1?'bg-green-100 text-green-700':s.difficulty===2?'bg-yellow-100 text-yellow-700':'bg-red-100 text-red-700'}">${['','入门','进阶','挑战'][s.difficulty]||'入门'}</span>
+          ${s.is_vip ? '<span class="text-xs font-bold px-2 py-1 rounded-full bg-yellow-100 text-yellow-700">🔒 VIP</span>' : ''}
+          ${!s.is_active ? '<span class="text-xs font-bold px-2 py-1 rounded-full bg-gray-200 text-gray-500">已下架</span>' : ''}
+        </div>
+        ${s.category_name ? `<div class="absolute bottom-3 right-3"><span class="text-xs px-2 py-1 rounded-full bg-black/30 text-white">${s.category_name}</span></div>` : ''}
+      </div>
+      <div class="p-4">
+        <h3 class="font-bold text-gray-800 text-lg truncate">${s.title}</h3>
+        <p class="text-sm text-gray-400 truncate">${s.title_en||''}</p>
+        <div class="flex items-center gap-3 mt-3 text-xs text-gray-500">
+          <span><i class="fas fa-comments mr-1"></i>${s.real_line_count||0} 句台词</span>
+          <span><i class="fas fa-user mr-1"></i>${s.user_role||'顾客'} vs ${s.guide_role||'服务员'}</span>
+        </div>
+        <div class="flex gap-2 mt-4">
+          <a href="/dialogue/edit/${s.id}" class="flex-1 text-center py-2 bg-purple-50 text-purple-600 rounded-lg text-sm font-medium hover:bg-purple-100 transition-colors">
+            <i class="fas fa-edit mr-1"></i>编辑
+          </a>
+          <button onclick="genTTS(${s.id}, this)" class="flex-1 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-100 transition-colors">
+            <i class="fas fa-volume-up mr-1"></i>生成TTS
+          </button>
+          <button onclick="deleteScene(${s.id})" class="px-3 py-2 bg-red-50 text-red-500 rounded-lg text-sm hover:bg-red-100 transition-colors">
+            <i class="fas fa-trash-alt"></i>
+          </button>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+async function genTTS(id, btn) {
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>生成中...';
+  try {
+    const res = await fetch(`${API_BASE}/dialogue/scenes/${id}/tts`, { method: 'POST' });
+    const r = await res.json();
+    if (r.success) showToast(`生成完成：${r.generated}/${r.total} 条`);
+    else showToast(r.message, 'error');
+  } catch(e) { showToast('生成失败', 'error'); }
+  btn.disabled = false;
+  btn.innerHTML = '<i class="fas fa-volume-up mr-1"></i>生成TTS';
+}
+
+async function deleteScene(id) {
+  if (!confirm('确定删除该场景及所有台词？')) return;
+  const res = await fetch(`${API_BASE}/dialogue/scenes/${id}`, { method: 'DELETE' });
+  const r = await res.json();
+  if (r.success) { showToast('删除成功'); loadScenes(); }
+  else showToast(r.message, 'error');
+}
+
+loadCats().then(() => loadScenes());
+</script>

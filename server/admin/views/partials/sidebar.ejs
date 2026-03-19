@@ -40,12 +40,18 @@
             <span>场景内容</span>
         </a>
 
-        <div class="px-4 mt-6 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">对话练习 Dialogue</div>
+        <div class="px-4 mt-6 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">对话场景 Dialogue</div>
 
-        <a href="/dialogue"
-            class="flex items-center px-6 py-3 hover:bg-gray-800 transition-colors duration-200 <%= page === 'dialogue' ? 'bg-gray-800 border-r-4 border-blue-500' : '' %>">
+        <a href="/dialogue/categories"
+            class="flex items-center px-6 py-3 hover:bg-gray-800 transition-colors duration-200 <%= page === 'dialogue-cat' ? 'bg-gray-800 border-r-4 border-purple-500' : '' %>">
+            <i class="fas fa-sitemap w-6"></i>
+            <span>分类管理</span>
+        </a>
+
+        <a href="/dialogue/scenes"
+            class="flex items-center px-6 py-3 hover:bg-gray-800 transition-colors duration-200 <%= page === 'dialogue-scenes' ? 'bg-gray-800 border-r-4 border-purple-500' : '' %>">
             <i class="fas fa-comments w-6"></i>
-            <span>对话场景</span>
+            <span>场景内容</span>
         </a>
 
         <div class="px-4 mt-6 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">磨耳朵 Podcast</div>

@@ -96,16 +96,17 @@ app.get('/scenes/edit/:id', requireAuth, async (req, res) => {
 });
 
 // 对话场景管理页面
-app.get('/dialogue', requireAuth, (req, res) => res.render('dialogue/list', { page: 'dialogue', title: '对话场景', user: req.session.adminUser }));
-app.get('/dialogue/edit', requireAuth, (req, res) => res.render('dialogue/edit', { page: 'dialogue', title: '新建对话场景', user: req.session.adminUser, scene: null }));
+app.get('/dialogue/categories', requireAuth, (req, res) => res.render('dialogue/categories', { page: 'dialogue-cat', title: '对话分类', user: req.session.adminUser }));
+app.get('/dialogue/scenes', requireAuth, (req, res) => res.render('dialogue/scenes', { page: 'dialogue-scenes', title: '对话场景', user: req.session.adminUser }));
+app.get('/dialogue/edit', requireAuth, (req, res) => res.render('dialogue/edit', { page: 'dialogue-scenes', title: '新建对话场景', user: req.session.adminUser, scene: null }));
 app.get('/dialogue/edit/:id', requireAuth, async (req, res) => {
     try {
         const { query } = require('../src/config/database');
         const [scene] = await query('SELECT * FROM dialogue_scenes WHERE id = ?', [req.params.id]);
-        if (!scene) return res.redirect('/dialogue');
-        res.render('dialogue/edit', { page: 'dialogue', title: '编辑对话场景', user: req.session.adminUser, scene });
+        if (!scene) return res.redirect('/dialogue/scenes');
+        res.render('dialogue/edit', { page: 'dialogue-scenes', title: '编辑对话场景', user: req.session.adminUser, scene });
     } catch (e) {
-        res.redirect('/dialogue');
+        res.redirect('/dialogue/scenes');
     }
 });
 

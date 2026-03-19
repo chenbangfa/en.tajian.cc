@@ -21,13 +21,69 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
+// ===== Categories CRUD =====
+
+router.get('/categories', async (req, res) => {
+    try {
+        const cats = await query('SELECT * FROM dialogue_categories WHERE is_active = 1 ORDER BY sort_order ASC, id ASC');
+        res.json({ success: true, data: cats });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+router.post('/categories', async (req, res) => {
+    try {
+        const { name, icon_emoji, group_name, sort_order } = req.body;
+        const result = await query(
+            'INSERT INTO dialogue_categories (name, icon_emoji, group_name, sort_order) VALUES (?,?,?,?)',
+            [name, icon_emoji || '💬', group_name || '', sort_order || 0]
+        );
+        res.json({ success: true, id: result.insertId });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+router.put('/categories/:id', async (req, res) => {
+    try {
+        const { name, icon_emoji, group_name, sort_order } = req.body;
+        await query(
+            'UPDATE dialogue_categories SET name=?, icon_emoji=?, group_name=?, sort_order=? WHERE id=?',
+            [name, icon_emoji || '💬', group_name || '', sort_order || 0, req.params.id]
+        );
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+router.delete('/categories/:id', async (req, res) => {
+    try {
+        await query('UPDATE dialogue_categories SET is_active = 0 WHERE id = ?', [req.params.id]);
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
 // ===== Scene CRUD =====
 
 router.get('/scenes', async (req, res) => {
     try {
-        const scenes = await query(
-            'SELECT * FROM dialogue_scenes WHERE is_active=1 ORDER BY sort_order ASC, id DESC'
-        );
+        const { category_id } = req.query;
+        let sql = `SELECT s.*, c.name as category_name,
+            (SELECT COUNT(*) FROM dialogue_lines WHERE scene_id = s.id) as real_line_count
+            FROM dialogue_scenes s
+            LEFT JOIN dialogue_categories c ON s.category_id = c.id
+            WHERE s.is_active=1`;
+        const params = [];
+        if (category_id) {
+            sql += ' AND s.category_id = ?';
+            params.push(parseInt(category_id));
+        }
+        sql += ' ORDER BY s.sort_order ASC, s.id DESC';
+        const scenes = await query(sql, params);
         res.json({ success: true, data: scenes });
     } catch (e) {
         res.status(500).json({ success: false, message: e.message });
