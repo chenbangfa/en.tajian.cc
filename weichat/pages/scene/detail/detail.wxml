@@ -1,0 +1,95 @@
+<!--pages/scene/detail/detail.wxml-->
+<view class="container">
+
+  <!-- 图片 + 热点 -->
+  <view wx:if="{{scene}}"
+    class="image-wrap"
+    style="width:{{imageWrapperWidth}}px;height:{{imageWrapperHeight}}px"
+  >
+    <image
+      class="main-img"
+      src="{{scene.image_url}}"
+      mode="widthFix"
+      bindload="onImageLoad"
+    />
+
+    <!-- 热点框（按面积从大到小渲染，小热点在上层优先响应点击） -->
+    <view
+      wx:for="{{sortedHotspots}}"
+      wx:key="objIndex"
+      class="hotspot {{currentIndex === item.objIndex ? 'hotspot-active' : ''}}"
+      style="left:{{item.position_x}}%; top:{{item.position_y}}%; width:{{item.label_width || 10}}%; height:{{item.label_height || 5}}%;"
+      catchtap="onHotspotTap"
+      data-index="{{item.objIndex}}"
+    ></view>
+  </view>
+
+  <!-- 加载中 -->
+  <view wx:if="{{!scene}}" class="loading-wrap">
+    <view class="loading-spinner"></view>
+  </view>
+
+  <!-- 未选中时提示 -->
+  <view wx:if="{{scene && !currentWord}}" class="hint-bar">
+    <text class="hint-text">点击图片中的物品开始学习</text>
+    <text class="hint-count">共 {{scene.objects.length}} 个词条</text>
+  </view>
+
+  <!-- 词条详情面板 -->
+  <view wx:if="{{currentWord}}" class="word-panel">
+
+    <!-- 导航行 -->
+    <view class="nav-row">
+      <view class="nav-btn {{currentIndex === 0 ? 'disabled' : ''}}" bindtap="prevWord">‹</view>
+      <text class="nav-pos">{{currentIndex + 1}} / {{scene.objects.length}}</text>
+      <view class="nav-btn {{currentIndex === scene.objects.length - 1 ? 'disabled' : ''}}" bindtap="nextWord">›</view>
+    </view>
+
+    <!-- 词条内容 -->
+    <view class="word-content">
+      <text class="word-en">{{currentWord.word || currentWord.custom_label}}</text>
+      <text wx:if="{{currentWord.phonetic}}" class="word-phonetic">/{{currentWord.phonetic}}/</text>
+      <text class="word-zh">{{currentWord.translation || ''}}</text>
+    </view>
+
+    <!-- 播放控制 -->
+    <view class="controls-row">
+      <!-- 上一场景 -->
+      <view class="ctrl-btn {{!scene.prev_id ? 'disabled' : ''}}" bindtap="onPrev">
+        <text class="ctrl-icon">⏮</text>
+        <text class="ctrl-label">上一页</text>
+      </view>
+
+      <!-- 播放 -->
+      <view class="play-btn" bindtap="playCurrentAudio">
+        <text class="play-icon">▶</text>
+      </view>
+
+      <!-- 下一场景 -->
+      <view class="ctrl-btn {{!scene.next_id ? 'disabled' : ''}}" bindtap="onNext">
+        <text class="ctrl-icon">⏭</text>
+        <text class="ctrl-label">下一页</text>
+      </view>
+    </view>
+
+    <!-- 评测 -->
+    <view class="assess-row">
+      <view
+        class="record-btn {{isRecording ? 'recording' : ''}}"
+        bindtouchstart="startRecord"
+        bindtouchend="stopRecord"
+      >
+        <text class="record-icon">🎤</text>
+        <text class="record-label">{{isRecording ? '松开评测' : '按住跟读'}}</text>
+      </view>
+      <view wx:if="{{evaluationResult}}" class="eval-result" bindtap="clearScore">
+        <text class="eval-score {{evaluationResult.score >= 80 ? 'good' : evaluationResult.score >= 60 ? 'ok' : 'poor'}}">
+          {{evaluationResult.score}}分
+        </text>
+        <text class="eval-tip">{{evaluationResult.score >= 90 ? '完美！' : evaluationResult.score >= 80 ? '不错' : evaluationResult.score >= 60 ? '加油' : '多练习'}}</text>
+      </view>
+    </view>
+
+  </view>
+
+</view>

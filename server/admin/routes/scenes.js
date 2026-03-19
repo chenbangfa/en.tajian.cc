@@ -105,10 +105,11 @@ router.post('/', async (req, res) => {
 
         // Insert Objects
         if (objects && Array.isArray(objects)) {
-            for (const obj of objects) {
+            for (let i = 0; i < objects.length; i++) {
+                const obj = objects[i];
                 await query(
-                    'INSERT INTO scene_objects (scene_id, custom_label, position_x, position_y, label_width, label_height) VALUES (?, ?, ?, ?, ?, ?)',
-                    [sceneId, obj.custom_label, obj.position_x, obj.position_y, obj.label_width, obj.label_height]
+                    'INSERT INTO scene_objects (scene_id, custom_label, position_x, position_y, label_width, label_height, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                    [sceneId, obj.custom_label, obj.position_x, obj.position_y, obj.label_width, obj.label_height, i]
                 );
             }
         }
@@ -130,15 +131,36 @@ router.put('/:id', async (req, res) => {
             [name, name_en, category_id, difficulty_level, image_url, id]
         );
 
-        // Replace Objects (Delete all and re-insert for simplicity)
-        await query('DELETE FROM scene_objects WHERE scene_id = ?', [id]);
-
         if (objects && Array.isArray(objects)) {
-            for (const obj of objects) {
+            // Collect IDs of existing objects that should be kept
+            const keepIds = objects.filter(o => o.id).map(o => o.id);
+
+            // Delete objects that are no longer in the list
+            if (keepIds.length > 0) {
                 await query(
-                    'INSERT INTO scene_objects (scene_id, custom_label, position_x, position_y, label_width, label_height) VALUES (?, ?, ?, ?, ?, ?)',
-                    [id, obj.custom_label, obj.position_x, obj.position_y, obj.label_width, obj.label_height]
+                    `DELETE FROM scene_objects WHERE scene_id = ? AND id NOT IN (${keepIds.map(() => '?').join(',')})`,
+                    [id, ...keepIds]
                 );
+            } else {
+                await query('DELETE FROM scene_objects WHERE scene_id = ?', [id]);
+            }
+
+            // Update existing or insert new objects, preserving generated data
+            for (let i = 0; i < objects.length; i++) {
+                const obj = objects[i];
+                if (obj.id) {
+                    // Update existing object (only position/label/sort_order, preserve audio/phonetic/translation/word_id)
+                    await query(
+                        'UPDATE scene_objects SET custom_label=?, position_x=?, position_y=?, label_width=?, label_height=?, sort_order=? WHERE id=? AND scene_id=?',
+                        [obj.custom_label, obj.position_x, obj.position_y, obj.label_width, obj.label_height, i, obj.id, id]
+                    );
+                } else {
+                    // Insert new object
+                    await query(
+                        'INSERT INTO scene_objects (scene_id, custom_label, position_x, position_y, label_width, label_height, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                        [id, obj.custom_label, obj.position_x, obj.position_y, obj.label_width, obj.label_height, i]
+                    );
+                }
             }
         }
 

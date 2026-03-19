@@ -531,8 +531,9 @@
         const formData = new FormData(e.target);
         const data = Object.fromEntries(formData.entries());
 
-        // Append hotspots
+        // Append hotspots (include id to preserve existing data on save)
         const objects = hotspots.map(h => ({
+            id: Number.isInteger(h.id) && h.id > 0 ? h.id : undefined,
             custom_label: h.custom_label,
             position_x: h.rect.x,
             position_y: h.rect.y,
