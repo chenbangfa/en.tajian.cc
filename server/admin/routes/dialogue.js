@@ -202,6 +202,27 @@ router.delete('/lines/:id', async (req, res) => {
     }
 });
 
+// ===== 单条台词 TTS 生成 =====
+
+router.post('/lines/:id/tts', async (req, res) => {
+    try {
+        const [line] = await query('SELECT id, role, line_en FROM dialogue_lines WHERE id = ?', [req.params.id]);
+        if (!line) return res.status(404).json({ success: false, message: '台词不存在' });
+
+        const voice = line.role === 'guide' ? 'female' : 'male';
+        const result = await voiceService.textToSpeech(line.line_en, voice, 1.0);
+        if (result.success && result.audioUrl) {
+            await query('UPDATE dialogue_lines SET audio_url = ? WHERE id = ?', [result.audioUrl, line.id]);
+            const baseUrl = process.env.BASE_URL || 'https://en.tajian.cc';
+            const fullUrl = result.audioUrl.startsWith('http') ? result.audioUrl : baseUrl + result.audioUrl;
+            return res.json({ success: true, audio_url: fullUrl });
+        }
+        res.status(500).json({ success: false, message: result.error || '生成失败' });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
 // ===== TTS 生成（guide 女声 + user 男声）=====
 
 router.post('/scenes/:id/tts', async (req, res) => {
