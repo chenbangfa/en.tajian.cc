@@ -1,6 +1,5 @@
 const api = require('../../../services/api');
 const recorderManager = wx.getRecorderManager();
-const innerAudioContext = wx.createInnerAudioContext();
 
 Page({
     data: {
@@ -10,10 +9,20 @@ Page({
         currentWord: null,
         currentIndex: -1,
         isRecording: false,
-        evaluationResult: null,
+        recordingTime: 0,
+        isAssessing: false,
+        assessResult: null,
+        isPlayingUserAudio: false,
         imageWrapperWidth: 375,
         imageWrapperHeight: 500,
     },
+
+    _audioCtx: null,
+    _userAudioCtx: null,
+    _lastRecordingPath: null,
+    _recordTimer: null,
+    _assessingLock: false,
+    _suppressNextStop: false,
 
     onLoad(options) {
         const sysInfo = wx.getSystemInfoSync();
@@ -24,15 +33,58 @@ Page({
             this.loadScene(options.id);
         }
 
-        recorderManager.onStop((res) => {
-            if (this.data.isRecording) {
-                this.uploadAndEvaluate(res.tempFilePath);
-            }
-        });
+        this._bindRecorder();
+    },
+
+    onHide() {
+        if (this.data.isRecording) {
+            this._suppressNextStop = true;
+            try { recorderManager.stop(); } catch (e) {}
+            if (this._recordTimer) { clearInterval(this._recordTimer); this._recordTimer = null; }
+            this.setData({ isRecording: false, recordingTime: 0 });
+        }
     },
 
     onUnload() {
-        innerAudioContext.stop();
+        this._stopAudio();
+        this._stopUserAudio();
+        if (this._recordTimer) { clearInterval(this._recordTimer); this._recordTimer = null; }
+        this._suppressNextStop = true;
+        try { recorderManager.stop(); } catch (e) {}
+    },
+
+    _bindRecorder() {
+        if (typeof recorderManager.offStop === 'function') recorderManager.offStop();
+        if (typeof recorderManager.offError === 'function') recorderManager.offError();
+        recorderManager.onStop((res) => {
+            if (this._assessingLock) return;
+            if (this._suppressNextStop) { this._suppressNextStop = false; return; }
+            if (this._recordTimer) { clearInterval(this._recordTimer); this._recordTimer = null; }
+            this.setData({ isRecording: false, recordingTime: 0 });
+            this.submitAssessment(res.tempFilePath);
+        });
+        recorderManager.onError((err) => {
+            if (this._suppressNextStop) return;
+            console.error('录音错误:', err);
+            if (this._recordTimer) { clearInterval(this._recordTimer); this._recordTimer = null; }
+            this.setData({ isRecording: false, recordingTime: 0 });
+            wx.showToast({ title: '录音失败，请重试', icon: 'none' });
+        });
+    },
+
+    _stopAudio() {
+        if (this._audioCtx) {
+            try { this._audioCtx.stop(); this._audioCtx.destroy(); } catch (e) {}
+            this._audioCtx = null;
+        }
+    },
+
+    _stopUserAudio() {
+        if (this._userAudioCtx) {
+            try { this._userAudioCtx.stop(); this._userAudioCtx.destroy(); } catch (e) {}
+            this._userAudioCtx = null;
+        }
+        this.setData({ isPlayingUserAudio: false });
     },
 
     onImageLoad(e) {
@@ -46,8 +98,6 @@ Page({
         try {
             const res = await api.get(`/scenes/${id}`);
             if (res.success) {
-                // Sort hotspots by area descending (large first = bottom layer, small last = top layer)
-                // so smaller hotspots are clickable on top of larger overlapping ones
                 const objects = res.data.objects || [];
                 const sorted = objects.map((item, idx) => ({
                     ...item,
@@ -55,14 +105,14 @@ Page({
                 })).sort((a, b) => {
                     const areaA = (a.label_width || 10) * (a.label_height || 5);
                     const areaB = (b.label_width || 10) * (b.label_height || 5);
-                    return areaB - areaA; // large first (bottom), small last (top)
+                    return areaB - areaA;
                 });
                 this.setData({
                     scene: res.data,
                     sortedHotspots: sorted,
                     currentWord: null,
                     currentIndex: -1,
-                    evaluationResult: null
+                    assessResult: null
                 });
                 wx.setNavigationBarTitle({ title: res.data.name });
             }
@@ -81,90 +131,141 @@ Page({
         this.setData({
             currentWord: item,
             currentIndex: index,
-            evaluationResult: null
+            assessResult: null
         });
-        this.playCurrentAudio();
-    },
-
-    // 上一个词条
-    prevWord() {
-        const { currentIndex, scene } = this.data;
-        if (!scene || currentIndex <= 0) return;
-        const idx = currentIndex - 1;
-        const obj = scene.objects[idx];
-        this.setData({ currentWord: obj, currentIndex: idx, evaluationResult: null });
-        this.playCurrentAudio();
-    },
-
-    // 下一个词条
-    nextWord() {
-        const { currentIndex, scene } = this.data;
-        if (!scene || currentIndex >= scene.objects.length - 1) return;
-        const idx = currentIndex + 1;
-        const obj = scene.objects[idx];
-        this.setData({ currentWord: obj, currentIndex: idx, evaluationResult: null });
-        this.playCurrentAudio();
+        this.playAudio();
     },
 
     // 播放当前单词音频
-    playCurrentAudio() {
+    playAudio(e) {
+        if (this.data.isRecording) return;
         if (!this.data.currentWord) return;
         const item = this.data.currentWord;
-        const audioUrl = item.audio_url_female || item.audio_url_male || item.word_audio_url;
-        const displayText = item.word || item.custom_label;
+        const voice = e ? e.currentTarget.dataset.voice : 'female';
+        const audioUrl = voice === 'male'
+            ? (item.audio_url_male || item.audio_url_female || item.word_audio_url)
+            : (item.audio_url_female || item.audio_url_male || item.word_audio_url);
 
         if (audioUrl) {
-            innerAudioContext.src = audioUrl;
-            innerAudioContext.play();
-        } else {
-            wx.showToast({ title: displayText, icon: 'none' });
+            this._stopAudio();
+            this._audioCtx = wx.createInnerAudioContext();
+            this._audioCtx.src = audioUrl;
+            this._audioCtx.onError(() => {});
+            this._audioCtx.play();
         }
     },
 
-    // 开始录音
-    startRecord() {
-        if (!this.data.currentWord) return;
-        this.setData({ isRecording: true });
-        recorderManager.start({
-            format: 'wav',
-            sampleRate: 16000,
-            numberOfChannels: 1,
-            duration: 10000
+    // 录音评测
+    toggleRecord() {
+        if (this.data.isAssessing) return;
+        if (!this.data.currentWord) {
+            wx.showToast({ title: '请先点击图片中的物品', icon: 'none' });
+            return;
+        }
+        if (this.data.isRecording) {
+            recorderManager.stop();
+        } else {
+            this._checkRecordPermission();
+        }
+    },
+
+    _checkRecordPermission() {
+        wx.getSetting({
+            success: (res) => {
+                const auth = res.authSetting['scope.record'];
+                if (auth === true) {
+                    this._startRecord();
+                } else if (auth === false) {
+                    wx.showModal({
+                        title: '需要录音权限',
+                        content: '请在设置中开启麦克风权限',
+                        confirmText: '去设置',
+                        success: (r) => { if (r.confirm) wx.openSetting(); }
+                    });
+                } else {
+                    wx.authorize({
+                        scope: 'scope.record',
+                        success: () => this._startRecord(),
+                        fail: () => wx.showToast({ title: '需要录音权限', icon: 'none' })
+                    });
+                }
+            }
         });
-        wx.vibrateShort();
     },
 
-    // 停止录音
-    stopRecord() {
-        if (!this.data.isRecording) return;
-        this.setData({ isRecording: false });
-        recorderManager.stop();
+    _startRecord() {
+        this._stopAudio();
+        this._stopUserAudio();
+        this._suppressNextStop = true;
+        try { recorderManager.stop(); } catch (e) {}
+        this.setData({ isRecording: true, recordingTime: 0, assessResult: null });
+        this._assessingLock = false;
+        this._suppressNextStop = false;
+        recorderManager.start({ format: 'wav', sampleRate: 16000, numberOfChannels: 1 });
+        this._recordTimer = setInterval(() => {
+            this.setData({ recordingTime: this.data.recordingTime + 1 });
+        }, 1000);
+    },
+
+    async submitAssessment(audioPath) {
+        if (!audioPath || this._assessingLock) return;
+        this._assessingLock = true;
+        this._lastRecordingPath = audioPath;
+        this.setData({ isAssessing: true });
         wx.showLoading({ title: '评测中...' });
-    },
 
-    // 上传并评测
-    async uploadAndEvaluate(filePath) {
         try {
-            const res = await api.upload('/scenes/evaluate', filePath, {
-                word: this.data.currentWord.word,
-                text: this.data.currentWord.word
-            }, 'audio');
+            const word = this.data.currentWord;
+            if (!word) return;
+            const text = word.word || word.custom_label;
+
+            const res = await api.upload('/voice/assess', audioPath, {
+                reference_text: text,
+                content_type: 'word',
+                source: 'scene',
+                source_id: this.data.id
+            });
 
             if (res.success) {
-                this.setData({ evaluationResult: res.data });
+                this.setData({ assessResult: res.data });
             } else {
-                wx.showToast({ title: '评测失败', icon: 'none' });
+                wx.showToast({ title: res.message || '评测失败', icon: 'none' });
             }
         } catch (error) {
-            console.error('评测请求错误', error);
-            wx.showToast({ title: '网络异常', icon: 'none' });
+            console.error('评测错误:', error);
+            wx.showToast({ title: '评测失败，请重试', icon: 'none' });
         } finally {
+            this.setData({ isAssessing: false });
             wx.hideLoading();
+            this._assessingLock = false;
         }
     },
 
-    clearScore() {
-        this.setData({ evaluationResult: null });
+    retryRecord() {
+        this._stopUserAudio();
+        this.setData({ assessResult: null });
+    },
+
+    closeAssessPanel() {
+        this._stopUserAudio();
+        this.setData({ assessResult: null });
+    },
+
+    playUserAudio() {
+        const path = this._lastRecordingPath;
+        if (!path) return;
+        if (this.data.isPlayingUserAudio) {
+            this._stopUserAudio();
+            return;
+        }
+        this._stopAudio();
+        this._stopUserAudio();
+        this._userAudioCtx = wx.createInnerAudioContext();
+        this._userAudioCtx.src = path;
+        this._userAudioCtx.onPlay(() => this.setData({ isPlayingUserAudio: true }));
+        this._userAudioCtx.onEnded(() => this.setData({ isPlayingUserAudio: false }));
+        this._userAudioCtx.onError(() => this.setData({ isPlayingUserAudio: false }));
+        this._userAudioCtx.play();
     },
 
     onPrev() {

@@ -35,61 +35,97 @@
     <text class="hint-count">共 {{scene.objects.length}} 个词条</text>
   </view>
 
-  <!-- 词条详情面板 -->
-  <view wx:if="{{currentWord}}" class="word-panel">
+  <!-- 词条面板 -->
+  <view wx:if="{{currentWord}}" class="word-panel {{assessResult ? 'has-assess' : ''}}">
 
-    <!-- 导航行 -->
-    <view class="nav-row">
-      <view class="nav-btn {{currentIndex === 0 ? 'disabled' : ''}}" bindtap="prevWord">‹</view>
-      <text class="nav-pos">{{currentIndex + 1}} / {{scene.objects.length}}</text>
-      <view class="nav-btn {{currentIndex === scene.objects.length - 1 ? 'disabled' : ''}}" bindtap="nextWord">›</view>
-    </view>
-
-    <!-- 词条内容 -->
-    <view class="word-content">
-      <text class="word-en">{{currentWord.word || currentWord.custom_label}}</text>
-      <text wx:if="{{currentWord.phonetic}}" class="word-phonetic">/{{currentWord.phonetic}}/</text>
-      <text class="word-zh">{{currentWord.translation || ''}}</text>
-    </view>
-
-    <!-- 播放控制 -->
-    <view class="controls-row">
-      <!-- 上一场景 -->
-      <view class="ctrl-btn {{!scene.prev_id ? 'disabled' : ''}}" bindtap="onPrev">
-        <text class="ctrl-icon">⏮</text>
-        <text class="ctrl-label">上一页</text>
+    <!-- 词条内容 + 操作区（水平布局） -->
+    <view class="word-row">
+      <!-- 左侧：单词信息 -->
+      <view class="word-info">
+        <view class="word-title-row">
+          <text class="word-en">{{currentWord.word || currentWord.custom_label}}</text>
+        </view>
+        <text wx:if="{{currentWord.phonetic}}" class="word-phonetic">/{{currentWord.phonetic}}/</text>
+        <text class="word-zh">{{currentWord.translation || ''}}</text>
+        <!-- 播放按钮 -->
+        <view class="voice-actions">
+          <view class="v-btn female {{isRecording ? 'disabled' : ''}}" bindtap="playAudio" data-voice="female">
+            <image class="v-icon" src="/assets/icons/icon-female.svg"></image>
+            <text>女声</text>
+          </view>
+          <view class="v-btn male {{isRecording ? 'disabled' : ''}}" bindtap="playAudio" data-voice="male">
+            <image class="v-icon" src="/assets/icons/icon-male.svg"></image>
+            <text>男声</text>
+          </view>
+        </view>
       </view>
 
-      <!-- 播放 -->
-      <view class="play-btn" bindtap="playCurrentAudio">
-        <text class="play-icon">▶</text>
-      </view>
-
-      <!-- 下一场景 -->
-      <view class="ctrl-btn {{!scene.next_id ? 'disabled' : ''}}" bindtap="onNext">
-        <text class="ctrl-icon">⏭</text>
-        <text class="ctrl-label">下一页</text>
-      </view>
-    </view>
-
-    <!-- 评测 -->
-    <view class="assess-row">
-      <view
-        class="record-btn {{isRecording ? 'recording' : ''}}"
-        bindtouchstart="startRecord"
-        bindtouchend="stopRecord"
-      >
-        <text class="record-icon">🎤</text>
-        <text class="record-label">{{isRecording ? '松开评测' : '按住跟读'}}</text>
-      </view>
-      <view wx:if="{{evaluationResult}}" class="eval-result" bindtap="clearScore">
-        <text class="eval-score {{evaluationResult.score >= 80 ? 'good' : evaluationResult.score >= 60 ? 'ok' : 'poor'}}">
-          {{evaluationResult.score}}分
-        </text>
-        <text class="eval-tip">{{evaluationResult.score >= 90 ? '完美！' : evaluationResult.score >= 80 ? '不错' : evaluationResult.score >= 60 ? '加油' : '多练习'}}</text>
+      <!-- 右侧：录音按钮 -->
+      <view class="record-area">
+        <view
+          class="record-btn {{isRecording ? 'recording' : ''}} {{isAssessing ? 'assessing' : ''}}"
+          bindtap="toggleRecord"
+        >
+          <image class="record-icon {{isAssessing ? 'spin' : ''}}" src="/assets/icons/{{isAssessing ? 'icon-refresh.svg' : (isRecording ? 'icon-stop.svg' : 'icon-mic.svg')}}"></image>
+          <text class="record-time" wx:if="{{isRecording}}">{{recordingTime}}s</text>
+        </view>
+        <text class="record-label">{{isAssessing ? '评测中' : (isRecording ? '点击停止' : '点击跟读')}}</text>
       </view>
     </view>
+  </view>
 
+  <!-- 场景翻页导航（固定底部） -->
+  <view wx:if="{{scene}}" class="scene-nav-bar">
+    <view class="scene-nav-btn {{!scene.prev_id ? 'disabled' : ''}}" bindtap="onPrev">
+      <text class="nav-arrow">‹</text>
+      <text>上一页</text>
+    </view>
+    <text class="scene-nav-page">{{scene.name || ''}}</text>
+    <view class="scene-nav-btn {{!scene.next_id ? 'disabled' : ''}}" bindtap="onNext">
+      <text>下一页</text>
+      <text class="nav-arrow">›</text>
+    </view>
+  </view>
+
+  <!-- 评测结果面板（固定底部弹出） -->
+  <view class="assess-panel" wx:if="{{assessResult}}">
+    <view class="assess-panel-body {{assessResult.overall_score >= 80 ? 'passed' : 'failed'}}">
+      <!-- 分数区 -->
+      <view class="assess-score-wrap">
+        <view class="assess-close-btn" bindtap="closeAssessPanel">✕</view>
+        <view class="assess-verdict-badge {{assessResult.overall_score >= 80 ? 'passed' : 'failed'}}">
+          {{assessResult.overall_score >= 80 ? '✓ 不错' : '✗ 加油'}}
+        </view>
+        <text class="assess-big-score">{{assessResult.overall_score}}<text class="assess-score-unit">分</text></text>
+        <!-- 播放用户发音 -->
+        <view class="user-audio-btn {{isPlayingUserAudio ? 'playing' : ''}}" bindtap="playUserAudio">
+          <image class="icon-sound" src="/assets/icons/icon-sound.svg"></image>
+          <text class="user-audio-label">{{isPlayingUserAudio ? '播放中...' : '我的发音'}}</text>
+        </view>
+      </view>
+      <!-- 三项明细 -->
+      <view class="assess-detail-row">
+        <view class="r-item">
+          <text class="r-val">{{assessResult.pronunciation_score || '-'}}</text>
+          <text class="r-lbl">发音</text>
+        </view>
+        <view class="r-divider"></view>
+        <view class="r-item">
+          <text class="r-val">{{assessResult.fluency_score || '-'}}</text>
+          <text class="r-lbl">流利</text>
+        </view>
+        <view class="r-divider"></view>
+        <view class="r-item">
+          <text class="r-val">{{assessResult.integrity_score || '-'}}</text>
+          <text class="r-lbl">完整</text>
+        </view>
+      </view>
+      <!-- 操作按钮 -->
+      <view class="result-actions">
+        <view class="result-btn-retry" bindtap="retryRecord">重新评测</view>
+        <view class="result-btn-close" bindtap="closeAssessPanel">继续学习</view>
+      </view>
+    </view>
   </view>
 
 </view>
