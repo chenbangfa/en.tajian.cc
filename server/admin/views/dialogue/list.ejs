@@ -1,0 +1,74 @@
+<div class="flex items-center justify-between mb-6">
+  <h1 class="text-2xl font-bold text-gray-800">对话场景管理</h1>
+  <a href="/dialogue/edit"
+    class="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl transition-colors">
+    <i class="fas fa-plus"></i><span>新建场景</span>
+  </a>
+</div>
+
+<div id="sceneList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+  <div class="col-span-full text-center text-gray-400 py-12">
+    <i class="fas fa-spinner fa-spin text-3xl mb-3"></i>
+    <p>加载中...</p>
+  </div>
+</div>
+
+<script>
+  async function loadScenes() {
+    try {
+      const res = await fetch(`${API_BASE}/dialogue/scenes`);
+      const data = await res.json();
+      const list = document.getElementById('sceneList');
+
+      if (!data.success || !data.data.length) {
+        list.innerHTML = `<div class="col-span-full text-center text-gray-400 py-12">
+          <i class="fas fa-comments text-4xl mb-3 opacity-30"></i>
+          <p>暂无对话场景</p>
+        </div>`;
+        return;
+      }
+
+      list.innerHTML = data.data.map(s => `
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-all">
+          ${s.cover_image
+            ? `<img src="${s.cover_image}" class="w-full h-32 object-cover">`
+            : `<div class="w-full h-32 bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center text-4xl">💬</div>`
+          }
+          <div class="p-4">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-sm font-bold text-gray-800">${s.title}</span>
+              ${s.is_vip ? '<span class="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">VIP</span>' : ''}
+            </div>
+            <p class="text-xs text-gray-500 mb-3">${s.title_en || ''} · ${s.line_count || 0} 句 · 难度 ${s.difficulty}</p>
+            <div class="flex space-x-2">
+              <a href="/dialogue/edit/${s.id}"
+                class="flex-1 text-center py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-sm transition-colors">
+                <i class="fas fa-edit mr-1"></i>编辑
+              </a>
+              <button onclick="deleteScene(${s.id})"
+                class="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-sm transition-colors">
+                <i class="fas fa-trash"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    } catch (e) {
+      showToast('加载失败', 'error');
+    }
+  }
+
+  async function deleteScene(id) {
+    if (!confirm('删除这个场景及其所有台词？')) return;
+    try {
+      const res = await fetch(`${API_BASE}/dialogue/scenes/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) { showToast('已删除'); loadScenes(); }
+      else showToast(data.message || '删除失败', 'error');
+    } catch (e) {
+      showToast('删除失败', 'error');
+    }
+  }
+
+  loadScenes();
+</script>

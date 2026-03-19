@@ -1,0 +1,445 @@
+<div class="grid grid-cols-12 gap-6">
+
+  <!-- Left: Scene Settings -->
+  <div class="col-span-4 bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col">
+    <div class="p-5 border-b border-gray-100">
+      <h2 class="font-bold text-lg text-gray-800">
+        <a href="/dialogue" class="text-gray-400 hover:text-gray-600 mr-2"><i class="fas fa-arrow-left"></i></a>
+        场景设置
+      </h2>
+    </div>
+
+    <form id="sceneForm" class="p-5 flex-1 overflow-y-auto space-y-4">
+      <input type="hidden" id="sceneId" value="<%= typeof scene !== 'undefined' && scene ? scene.id : '' %>">
+
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">场景标题（中文）</label>
+        <input type="text" id="f_title" required
+          value="<%= typeof scene !== 'undefined' && scene ? scene.title : '' %>"
+          class="w-full px-4 py-2 border border-gray-200 rounded-xl outline-none focus:border-blue-500">
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">场景标题（英文）</label>
+        <input type="text" id="f_title_en"
+          value="<%= typeof scene !== 'undefined' && scene ? (scene.title_en || '') : '' %>"
+          class="w-full px-4 py-2 border border-gray-200 rounded-xl outline-none focus:border-blue-500">
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">情境描述（中文）</label>
+        <textarea id="f_description" rows="2"
+          class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm outline-none focus:border-blue-500"><%= typeof scene !== 'undefined' && scene ? (scene.description || '') : '' %></textarea>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">对方角色</label>
+          <input type="text" id="f_guide_role" placeholder="服务员"
+            value="<%= typeof scene !== 'undefined' && scene ? (scene.guide_role || '') : '' %>"
+            class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm outline-none focus:border-blue-500">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">我的角色</label>
+          <input type="text" id="f_user_role" placeholder="顾客"
+            value="<%= typeof scene !== 'undefined' && scene ? (scene.user_role || '') : '' %>"
+            class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm outline-none focus:border-blue-500">
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">难度</label>
+          <select id="f_difficulty"
+            class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm outline-none focus:border-blue-500 bg-white">
+            <option value="1" <%= (typeof scene !== 'undefined' && scene && scene.difficulty == 1) ? 'selected' : '' %>>1 - 入门</option>
+            <option value="2" <%= (typeof scene !== 'undefined' && scene && scene.difficulty == 2) ? 'selected' : '' %>>2 - 进阶</option>
+            <option value="3" <%= (typeof scene !== 'undefined' && scene && scene.difficulty == 3) ? 'selected' : '' %>>3 - 挑战</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">VIP</label>
+          <select id="f_is_vip"
+            class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm outline-none focus:border-blue-500 bg-white">
+            <option value="0" <%= (typeof scene === 'undefined' || !scene || !scene.is_vip) ? 'selected' : '' %>>免费</option>
+            <option value="1" <%= (typeof scene !== 'undefined' && scene && scene.is_vip) ? 'selected' : '' %>>VIP专属</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- 封面图片 -->
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1.5">封面图片</label>
+        <div class="flex bg-gray-100 p-1 rounded-xl mb-3 text-sm font-medium">
+          <button type="button" onclick="switchCoverTab('upload')" id="tab-upload"
+            class="flex-1 py-1.5 rounded-lg bg-white shadow-sm text-gray-800 transition-all">本地上传</button>
+          <button type="button" onclick="switchCoverTab('ai')" id="tab-ai"
+            class="flex-1 py-1.5 rounded-lg text-gray-500 hover:text-gray-800 transition-all">AI生成</button>
+        </div>
+
+        <!-- 上传面板 -->
+        <div id="panel-upload" class="block">
+          <div class="border-2 border-dashed border-gray-200 rounded-xl p-4 text-center hover:border-blue-300 transition-colors cursor-pointer"
+            onclick="document.getElementById('coverFileInput').click()">
+            <input type="file" id="coverFileInput" accept="image/*" class="hidden" onchange="handleCoverUpload(this)">
+            <i class="fas fa-cloud-upload-alt text-2xl text-gray-300 mb-1"></i>
+            <p class="text-xs text-gray-500">点击上传封面 (JPG/PNG)</p>
+          </div>
+        </div>
+
+        <!-- AI 面板 -->
+        <div id="panel-ai" class="hidden space-y-2">
+          <textarea id="aiCoverPrompt" rows="2"
+            class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm outline-none focus:border-blue-500"
+            placeholder="描述场景封面，例如：A coffee shop with a barista serving coffee..."></textarea>
+          <button type="button" onclick="generateCoverImage()"
+            class="w-full py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors">
+            <i class="fas fa-magic mr-1"></i> AI 生成封面
+          </button>
+        </div>
+
+        <!-- 封面预览 -->
+        <div id="coverPreview" class="mt-2 <%= (typeof scene !== 'undefined' && scene && scene.cover_image) ? 'block' : 'hidden' %>">
+          <img id="coverImg" src="<%= (typeof scene !== 'undefined' && scene && scene.cover_image) ? scene.cover_image : '' %>"
+            class="w-full h-32 object-cover rounded-xl border border-gray-200">
+        </div>
+        <input type="hidden" id="f_cover_image"
+          value="<%= (typeof scene !== 'undefined' && scene && scene.cover_image) ? scene.cover_image : '' %>">
+      </div>
+
+      <div class="pt-3 border-t border-gray-100">
+        <button type="submit"
+          class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all">
+          <i class="fas fa-save mr-1"></i> 保存设置
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Right: Dialogue Lines Editor -->
+  <div class="col-span-8 bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col" style="min-height: calc(100vh - 160px)">
+    <div class="p-5 border-b border-gray-100 flex items-center justify-between">
+      <h3 class="font-bold text-gray-800">对话台词
+        <span id="lineCount" class="text-xs bg-gray-100 px-2 py-0.5 rounded-full ml-1 text-gray-500">0 句</span>
+      </h3>
+      <div class="flex space-x-2">
+        <button onclick="generateAllTTS()" id="ttsBtn"
+          class="flex items-center space-x-1.5 bg-green-500 hover:bg-green-600 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
+          <i class="fas fa-headphones"></i>
+          <span>生成全部音频</span>
+        </button>
+        <button onclick="addLine('guide')"
+          class="flex items-center space-x-1.5 bg-indigo-500 hover:bg-indigo-600 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
+          <i class="fas fa-plus"></i><span>对方台词</span>
+        </button>
+        <button onclick="addLine('user')"
+          class="flex items-center space-x-1.5 bg-orange-500 hover:bg-orange-600 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
+          <i class="fas fa-plus"></i><span>我的台词</span>
+        </button>
+      </div>
+    </div>
+
+    <div id="linesContainer" class="flex-1 overflow-y-auto p-5 space-y-3">
+      <div id="emptyLines" class="flex flex-col items-center justify-center py-20 text-gray-400">
+        <i class="fas fa-comments text-4xl mb-3 opacity-30"></i>
+        <p>暂无台词，点击上方按钮添加</p>
+        <p class="text-xs mt-1">对方台词用女声，我的台词用男声</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .line-card { transition: all 0.2s; }
+  .line-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+  .guide-card { border-left: 4px solid #6366f1; }
+  .user-card { border-left: 4px solid #f97316; }
+</style>
+
+<script>
+  const sceneId = document.getElementById('sceneId').value;
+  let lines = []; // { id?, role, line_en, line_cn, audio_url?, _dirty }
+
+  // ===== Cover Image =====
+
+  function switchCoverTab(tab) {
+    document.getElementById('tab-upload').className = tab === 'upload'
+      ? 'flex-1 py-1.5 rounded-lg bg-white shadow-sm text-gray-800 transition-all'
+      : 'flex-1 py-1.5 rounded-lg text-gray-500 hover:text-gray-800 transition-all';
+    document.getElementById('tab-ai').className = tab === 'ai'
+      ? 'flex-1 py-1.5 rounded-lg bg-white shadow-sm text-gray-800 transition-all'
+      : 'flex-1 py-1.5 rounded-lg text-gray-500 hover:text-gray-800 transition-all';
+    document.getElementById('panel-upload').className = tab === 'upload' ? 'block' : 'hidden';
+    document.getElementById('panel-ai').className = tab === 'ai' ? 'block space-y-2' : 'hidden';
+  }
+
+  function updateCoverPreview(url) {
+    document.getElementById('f_cover_image').value = url;
+    document.getElementById('coverImg').src = url;
+    document.getElementById('coverPreview').classList.remove('hidden');
+  }
+
+  async function handleCoverUpload(input) {
+    if (!input.files || !input.files[0]) return;
+    const formData = new FormData();
+    formData.append('image', input.files[0]);
+    try {
+      showToast('上传中...', 'info');
+      const res = await fetch(`${API_BASE}/dialogue/upload-cover`, { method: 'POST', body: formData });
+      const data = await res.json();
+      if (data.success) { updateCoverPreview(data.url); showToast('上传成功'); }
+      else showToast(data.message || '上传失败', 'error');
+    } catch (e) { showToast('上传出错', 'error'); }
+  }
+
+  async function generateCoverImage() {
+    const prompt = document.getElementById('aiCoverPrompt').value.trim();
+    if (!prompt) return showToast('请输入描述', 'error');
+    try {
+      showToast('AI 生成中，请稍候...', 'info');
+      const res = await fetch(`${API_BASE}/dialogue/generate-cover`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt })
+      });
+      const data = await res.json();
+      if (data.success) { updateCoverPreview(data.imageUrl); showToast('生成成功'); }
+      else showToast(data.message || '生成失败', 'error');
+    } catch (e) { showToast('生成出错', 'error'); }
+  }
+
+  // ===== Lines =====
+
+  function renderLines() {
+    const container = document.getElementById('linesContainer');
+    const empty = document.getElementById('emptyLines');
+    document.getElementById('lineCount').textContent = lines.length + ' 句';
+
+    if (lines.length === 0) {
+      empty.classList.remove('hidden');
+      // Remove all line cards
+      container.querySelectorAll('.line-card').forEach(el => el.remove());
+      return;
+    }
+    empty.classList.add('hidden');
+
+    // Re-render all
+    container.querySelectorAll('.line-card').forEach(el => el.remove());
+
+    lines.forEach((line, i) => {
+      const card = document.createElement('div');
+      const roleLabel = line.role === 'guide' ? '对方（女声）' : '我（男声）';
+      const roleColor = line.role === 'guide' ? 'text-indigo-600' : 'text-orange-500';
+      const cardClass = line.role === 'guide' ? 'guide-card' : 'user-card';
+      const audioHtml = line.audio_url
+        ? `<button onclick="playAudio('${line.audio_url}')" class="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded hover:bg-blue-200"><i class="fas fa-volume-up mr-1"></i>试听</button>`
+        : `<span class="text-xs text-gray-400">无音频</span>`;
+
+      card.className = `line-card bg-gray-50 border border-gray-200 rounded-xl p-4 ${cardClass}`;
+      card.dataset.index = i;
+      card.innerHTML = `
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center space-x-2">
+            <span class="text-xs font-bold ${roleColor}">${roleLabel}</span>
+            <span class="text-xs text-gray-400">#${i + 1}</span>
+            ${audioHtml}
+          </div>
+          <div class="flex space-x-1">
+            <button onclick="moveLine(${i}, -1)" class="text-gray-400 hover:text-gray-600 px-1" ${i === 0 ? 'disabled' : ''}>↑</button>
+            <button onclick="moveLine(${i}, 1)" class="text-gray-400 hover:text-gray-600 px-1" ${i === lines.length - 1 ? 'disabled' : ''}>↓</button>
+            <button onclick="removeLine(${i})" class="text-red-400 hover:text-red-600 px-1"><i class="fas fa-trash text-xs"></i></button>
+          </div>
+        </div>
+        <div class="space-y-2">
+          <input type="text" placeholder="英文台词 *" value="${escHtml(line.line_en)}"
+            oninput="updateLine(${i}, 'line_en', this.value)"
+            class="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm outline-none focus:border-blue-500 bg-white font-medium">
+          <input type="text" placeholder="中文翻译（可选）" value="${escHtml(line.line_cn || '')}"
+            oninput="updateLine(${i}, 'line_cn', this.value)"
+            class="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm outline-none focus:border-blue-500 bg-white text-gray-500">
+        </div>
+      `;
+      container.appendChild(card);
+    });
+  }
+
+  function escHtml(s) {
+    return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function addLine(role) {
+    if (!sceneId) {
+      showToast('请先保存场景设置，再添加台词', 'error');
+      return;
+    }
+    lines.push({ role, line_en: '', line_cn: '', audio_url: null, _dirty: true });
+    renderLines();
+    // Scroll to bottom
+    const container = document.getElementById('linesContainer');
+    container.scrollTop = container.scrollHeight;
+    // Focus last input
+    setTimeout(() => {
+      const inputs = container.querySelectorAll('.line-card:last-child input');
+      if (inputs.length) inputs[0].focus();
+    }, 50);
+  }
+
+  function updateLine(i, field, val) {
+    lines[i][field] = val;
+    lines[i]._dirty = true;
+  }
+
+  function moveLine(i, dir) {
+    const j = i + dir;
+    if (j < 0 || j >= lines.length) return;
+    [lines[i], lines[j]] = [lines[j], lines[i]];
+    renderLines();
+  }
+
+  function removeLine(i) {
+    const line = lines[i];
+    if (line.id && !confirm('删除这条台词？')) return;
+    if (line.id) {
+      fetch(`${API_BASE}/dialogue/lines/${line.id}`, { method: 'DELETE' }).catch(() => {});
+    }
+    lines.splice(i, 1);
+    renderLines();
+  }
+
+  let currentAudio = null;
+  function playAudio(url) {
+    if (currentAudio) currentAudio.pause();
+    currentAudio = new Audio(url);
+    currentAudio.play();
+  }
+
+  // ===== Save Lines =====
+
+  async function saveLines() {
+    const dirtyLines = lines.filter(l => l._dirty && l.line_en.trim());
+    if (dirtyLines.length === 0) return;
+
+    for (let i = 0; i < lines.length; i++) {
+      const l = lines[i];
+      if (!l._dirty || !l.line_en.trim()) continue;
+      try {
+        if (l.id) {
+          await fetch(`${API_BASE}/dialogue/lines/${l.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ line_en: l.line_en, line_cn: l.line_cn, sort_order: i })
+          });
+        } else {
+          const res = await fetch(`${API_BASE}/dialogue/scenes/${sceneId}/lines`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ role: l.role, line_en: l.line_en, line_cn: l.line_cn, sort_order: i })
+          });
+          const data = await res.json();
+          if (data.success) { lines[i].id = data.id; }
+        }
+        lines[i]._dirty = false;
+      } catch (e) {
+        console.error('保存台词失败:', e);
+      }
+    }
+  }
+
+  // ===== Generate TTS =====
+
+  async function generateAllTTS() {
+    if (!sceneId) return showToast('请先保存场景', 'error');
+    await saveLines();
+
+    const btn = document.getElementById('ttsBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> 生成中...';
+
+    try {
+      const res = await fetch(`${API_BASE}/dialogue/scenes/${sceneId}/tts`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        showToast(`音频生成完成：${data.generated} 条`);
+        await loadLines();
+      } else {
+        showToast(data.message || '生成失败', 'error');
+      }
+    } catch (e) {
+      showToast('生成失败', 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-headphones mr-1"></i> 生成全部音频';
+    }
+  }
+
+  // ===== Load Lines =====
+
+  async function loadLines() {
+    if (!sceneId) return;
+    try {
+      const res = await fetch(`${API_BASE}/dialogue/scenes/${sceneId}/lines`);
+      const data = await res.json();
+      if (data.success) {
+        lines = data.data.map(l => ({ ...l, _dirty: false }));
+        renderLines();
+      }
+    } catch (e) {
+      console.error('加载台词失败:', e);
+    }
+  }
+
+  // ===== Save Scene Form =====
+
+  document.getElementById('sceneForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const payload = {
+      title: document.getElementById('f_title').value.trim(),
+      title_en: document.getElementById('f_title_en').value.trim(),
+      description: document.getElementById('f_description').value.trim(),
+      guide_role: document.getElementById('f_guide_role').value.trim() || '服务员',
+      user_role: document.getElementById('f_user_role').value.trim() || '顾客',
+      difficulty: parseInt(document.getElementById('f_difficulty').value),
+      is_vip: parseInt(document.getElementById('f_is_vip').value),
+      cover_image: document.getElementById('f_cover_image').value
+    };
+
+    if (!payload.title) return showToast('请输入场景标题', 'error');
+
+    const method = sceneId ? 'PUT' : 'POST';
+    const url = sceneId ? `${API_BASE}/dialogue/scenes/${sceneId}` : `${API_BASE}/dialogue/scenes`;
+
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const result = await res.json();
+      if (result.success) {
+        showToast('保存成功');
+        if (!sceneId && result.id) {
+          // Redirect to edit page with new id
+          setTimeout(() => location.href = `/dialogue/edit/${result.id}`, 800);
+        }
+      } else {
+        showToast(result.message || '保存失败', 'error');
+      }
+    } catch (err) {
+      showToast('保存失败', 'error');
+    }
+  });
+
+  // ===== Save Lines on blur (auto-save) =====
+
+  document.getElementById('linesContainer').addEventListener('focusout', async (e) => {
+    if (e.target.tagName === 'INPUT' && sceneId) {
+      await saveLines();
+    }
+  });
+
+  // ===== Init =====
+
+  (async function init() {
+    await loadLines();
+  })();
+</script>

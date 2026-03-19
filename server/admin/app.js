@@ -95,6 +95,20 @@ app.get('/scenes/edit/:id', requireAuth, async (req, res) => {
     }
 });
 
+// 对话场景管理页面
+app.get('/dialogue', requireAuth, (req, res) => res.render('dialogue/list', { page: 'dialogue', title: '对话场景', user: req.session.adminUser }));
+app.get('/dialogue/edit', requireAuth, (req, res) => res.render('dialogue/edit', { page: 'dialogue', title: '新建对话场景', user: req.session.adminUser, scene: null }));
+app.get('/dialogue/edit/:id', requireAuth, async (req, res) => {
+    try {
+        const { query } = require('../src/config/database');
+        const [scene] = await query('SELECT * FROM dialogue_scenes WHERE id = ?', [req.params.id]);
+        if (!scene) return res.redirect('/dialogue');
+        res.render('dialogue/edit', { page: 'dialogue', title: '编辑对话场景', user: req.session.adminUser, scene });
+    } catch (e) {
+        res.redirect('/dialogue');
+    }
+});
+
 // 受保护的API路由
 app.use('/api/admin/categories', requireAuth, require('./routes/categories'));
 app.use('/api/admin/words', requireAuth, require('./routes/words'));
@@ -106,6 +120,7 @@ app.use('/api/admin/batch', requireAuth, require('./routes/batch'));
 app.use('/api/admin/prompts', requireAuth, require('./routes/prompts'));
 app.use('/api/admin/stats', requireAuth, require('./routes/stats'));
 app.use('/api/admin/checkin-curriculum', requireAuth, require('./routes/checkin_curriculum'));
+app.use('/api/admin/dialogue', requireAuth, require('./routes/dialogue'));
 
 // 健康检查 (不需要认证)
 app.get('/api/admin/health', (req, res) => {
