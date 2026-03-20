@@ -255,6 +255,13 @@ router.get('/garden', authMiddleware, async (req, res) => {
             [userId]
         );
 
+        // 今日签到状态
+        const [checkinRow] = await query(
+            `SELECT id FROM flower_transactions
+             WHERE user_id = ? AND source_type = 'garden_checkin' AND DATE(created_at) = ?`,
+            [userId, today]
+        );
+
         res.json({
             success: true,
             data: {
@@ -265,6 +272,7 @@ router.get('/garden', authMiddleware, async (req, res) => {
                 balance,
                 todayFlowers: todayStats.flowers,
                 todayGrowth: todayStats.growth,
+                todayCheckedIn: !!checkinRow,
                 flowerName: settings ? settings.flower_name : '小红花',
                 flowerIcon: settings ? settings.flower_icon : '🌸'
             }
@@ -378,6 +386,46 @@ router.get('/garden/stages', authMiddleware, async (req, res) => {
         res.json({ success: true, data: stages });
     } catch (e) {
         res.status(500).json({ success: false, message: '加载失败' });
+    }
+});
+
+// 花园签到（每天1次，固定+1花朵+1成长值）
+router.post('/garden/checkin', authMiddleware, async (req, res) => {
+    try {
+        const userId = req.user.id;
+
+        // 检查是否有伙伴
+        const [pet] = await query('SELECT id FROM user_pet WHERE user_id = ?', [userId]);
+        if (!pet) return res.json({ success: false, message: '请先选择伙伴' });
+
+        // 检查今天是否已签到
+        const today = new Date().toISOString().slice(0, 10);
+        const [existing] = await query(
+            `SELECT id FROM flower_transactions
+             WHERE user_id = ? AND source_type = 'garden_checkin' AND DATE(created_at) = ?`,
+            [userId, today]
+        );
+        if (existing) return res.json({ success: false, message: '今天已经签到过了' });
+
+        // 发放 +1 花朵
+        const [lastTx] = await query(
+            'SELECT balance_after FROM flower_transactions WHERE user_id = ? ORDER BY id DESC LIMIT 1',
+            [userId]
+        );
+        const newBalance = (lastTx ? lastTx.balance_after : 0) + 1;
+        await query(
+            `INSERT INTO flower_transactions (user_id, amount, growth_amount, balance_after, source_type, description)
+             VALUES (?, 1, 1, ?, 'garden_checkin', '花园签到')`,
+            [userId, newBalance]
+        );
+
+        // 发放 +1 成长值
+        const levelUpInfo = await rewardService._updatePetGrowth(userId, 1);
+
+        res.json({ success: true, data: { flowers: 1, growth: 1, balance: newBalance, ...levelUpInfo } });
+    } catch (e) {
+        console.error('[Reward] garden checkin error:', e);
+        res.status(500).json({ success: false, message: '签到失败' });
     }
 });
 
@@ -626,14 +674,14 @@ router.get('/parent/rules', authMiddleware, parentAuth, async (req, res) => {
     }
 });
 
-// 更新规则
+// 更新规则（成长值固定为1，家长只能设置花朵数量）
 router.put('/parent/rules/:id', authMiddleware, parentAuth, async (req, res) => {
     try {
-        const { flowers, growth, threshold, enabled } = req.body;
+        const { flowers, threshold, enabled } = req.body;
         await query(
-            `UPDATE reward_rules SET flowers = ?, growth = ?, threshold = ?, enabled = ?
+            `UPDATE reward_rules SET flowers = ?, growth = 1, threshold = ?, enabled = ?
              WHERE id = ? AND user_id = ?`,
-            [flowers, growth, threshold, enabled ? 1 : 0, req.params.id, req.user.id]
+            [flowers, threshold, enabled ? 1 : 0, req.params.id, req.user.id]
         );
         res.json({ success: true });
     } catch (e) {
@@ -746,14 +794,14 @@ router.put('/parent/exchanges/:id', authMiddleware, parentAuth, async (req, res)
     }
 });
 
-// 手动赠花
+// 手动赠花（只赠花朵，不赠成长值，保护养成节奏）
 router.post('/parent/gift', authMiddleware, parentAuth, async (req, res) => {
     try {
-        const { flowers, growth, description } = req.body;
+        const { flowers, description } = req.body;
         const result = await rewardService.giftFlowers(
             req.user.id,
             parseInt(flowers) || 1,
-            parseInt(growth) || 1,
+            0,
             description || '家长奖励'
         );
         res.json({ success: true, data: result });
