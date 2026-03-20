@@ -122,6 +122,8 @@ app.use('/api/admin/prompts', requireAuth, require('./routes/prompts'));
 app.use('/api/admin/stats', requireAuth, require('./routes/stats'));
 app.use('/api/admin/checkin-curriculum', requireAuth, require('./routes/checkin_curriculum'));
 app.use('/api/admin/dialogue', requireAuth, require('./routes/dialogue'));
+app.use('/picture-books/categories', requireAuth, require('./routes/picturebook_categories'));
+app.use('/picture-books', requireAuth, require('./routes/picturebooks'));
 
 // 健康检查 (不需要认证)
 app.get('/api/admin/health', (req, res) => {

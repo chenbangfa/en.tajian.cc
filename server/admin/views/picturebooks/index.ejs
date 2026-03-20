@@ -1,0 +1,147 @@
+<div class="space-y-6">
+    <!-- Header -->
+    <div class="flex justify-between items-center bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+        <div>
+            <h2 class="text-2xl font-bold bg-gradient-to-r from-green-700 to-emerald-600 bg-clip-text text-transparent">
+                绘本管理</h2>
+            <p class="text-gray-500 mt-1">创建和管理绘本故事内容</p>
+        </div>
+        <a href="/picture-books/edit/new"
+            class="flex items-center space-x-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white px-6 py-3 rounded-xl shadow-lg shadow-green-200 transition-all duration-300 hover:-translate-y-0.5">
+            <i class="fas fa-plus"></i>
+            <span>新建绘本</span>
+        </a>
+    </div>
+
+    <!-- Filters -->
+    <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center space-x-4">
+        <div class="flex items-center space-x-2 text-gray-600">
+            <i class="fas fa-filter"></i>
+            <span>筛选:</span>
+        </div>
+        <select id="categoryFilter" onchange="loadBooks()"
+            class="px-4 py-2 border border-gray-200 rounded-lg outline-none focus:border-green-500 bg-gray-50">
+            <option value="">全部分类</option>
+        </select>
+        <div class="relative flex-1 max-w-md">
+            <input type="text" id="searchInput" onkeyup="if(event.key==='Enter') loadBooks()" placeholder="搜索绘本标题..."
+                class="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg outline-none focus:border-green-500 bg-gray-50">
+            <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+        </div>
+    </div>
+
+    <!-- Book Grid -->
+    <div id="bookGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div class="col-span-full text-center py-12 text-gray-500">
+            <i class="fas fa-spinner fa-spin text-3xl mb-4 text-green-500"></i>
+            <p>加载绘本中...</p>
+        </div>
+    </div>
+</div>
+
+<script>
+async function loadCategories() {
+    try {
+        const res = await fetch('/picture-books/categories/api/list');
+        const result = await res.json();
+        if (result.success) {
+            const select = document.getElementById('categoryFilter');
+            result.data.forEach(cat => {
+                if (cat.is_active) {
+                    select.innerHTML += `<option value="${cat.id}">${cat.icon || ''} ${cat.name}</option>`;
+                }
+            });
+        }
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+async function loadBooks() {
+    const categoryId = document.getElementById('categoryFilter').value;
+    const keyword = document.getElementById('searchInput').value;
+
+    let url = '/picture-books/api/list?';
+    if (categoryId) url += `category_id=${categoryId}&`;
+    if (keyword) url += `keyword=${encodeURIComponent(keyword)}&`;
+
+    try {
+        const res = await fetch(url);
+        const result = await res.json();
+        renderBooks(result.data || []);
+    } catch (err) {
+        showToast('加载失败', 'error');
+    }
+}
+
+function renderBooks(books) {
+    const container = document.getElementById('bookGrid');
+    if (books.length === 0) {
+        container.innerHTML = `<div class="col-span-full text-center py-12 text-gray-400 bg-white rounded-2xl border border-gray-100 border-dashed">
+            <i class="fas fa-book-open text-3xl mb-3 opacity-50"></i>
+            <p>暂无绘本数据</p>
+        </div>`;
+        return;
+    }
+
+    container.innerHTML = books.map(book => `
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden group hover:shadow-lg transition-all duration-300">
+            <!-- Cover -->
+            <div class="relative h-48 bg-gradient-to-br from-green-50 to-emerald-50 overflow-hidden">
+                ${book.cover_url
+                    ? `<img src="${book.cover_url}" class="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500" alt="${book.title}">`
+                    : `<div class="w-full h-full flex items-center justify-center text-6xl opacity-30">📖</div>`
+                }
+                <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-between p-4">
+                    <span class="text-white text-xs font-medium bg-black/30 px-2 py-1 rounded backdrop-blur-sm">
+                        ${'★'.repeat(book.difficulty_level)}${'☆'.repeat(5 - book.difficulty_level)}
+                    </span>
+                    <span class="text-white text-xs font-medium bg-black/30 px-2 py-1 rounded backdrop-blur-sm">
+                        ${book.page_count} 页
+                    </span>
+                </div>
+                ${!book.is_active ? '<div class="absolute top-2 right-2 bg-red-500 text-white text-xs px-2 py-1 rounded-full">已下架</div>' : ''}
+                ${!book.is_free ? '<div class="absolute top-2 left-2 bg-yellow-500 text-white text-xs px-2 py-1 rounded-full">VIP</div>' : ''}
+            </div>
+
+            <!-- Content -->
+            <div class="p-4">
+                <h3 class="font-bold text-gray-800 text-lg mb-1 truncate">${book.title}</h3>
+                <p class="text-sm text-gray-500 mb-2 truncate">${book.title_en || ''}</p>
+                <div class="flex items-center justify-between mt-4">
+                    <span class="text-xs text-gray-400 bg-gray-50 px-2 py-1 rounded">
+                        <i class="fas fa-folder mr-1"></i> ${book.category_name || '未分类'}
+                    </span>
+                    <div class="flex space-x-2">
+                        <a href="/picture-books/edit/${book.id}" class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="编辑">
+                            <i class="fas fa-edit"></i>
+                        </a>
+                        <button onclick="deleteBook(${book.id})" class="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="删除">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+async function deleteBook(id) {
+    if (!confirm('确定要删除该绘本吗？所有页面和热点数据将一并删除！')) return;
+    try {
+        const res = await fetch(`/picture-books/api/${id}`, { method: 'DELETE' });
+        const result = await res.json();
+        if (result.success) {
+            showToast('删除成功');
+            loadBooks();
+        } else {
+            showToast('删除失败', 'error');
+        }
+    } catch (e) {
+        showToast('请求错误', 'error');
+    }
+}
+
+loadCategories();
+loadBooks();
+</script>

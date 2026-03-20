@@ -1,0 +1,571 @@
+<div class="grid grid-cols-12 gap-6 h-[calc(100vh-140px)]">
+    <!-- Left Column: Book Info -->
+    <div class="col-span-3 bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-full">
+        <div class="p-5 border-b border-gray-100">
+            <h2 class="font-bold text-lg text-gray-800">
+                <a href="/picture-books" class="text-gray-400 hover:text-gray-600 mr-2"><i class="fas fa-arrow-left"></i></a>
+                绘本设置
+            </h2>
+        </div>
+
+        <form id="bookForm" class="p-5 flex-1 overflow-y-auto space-y-4">
+            <input type="hidden" name="id" id="bookId" value="<%= book ? book.id : '' %>">
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">绘本标题</label>
+                <input type="text" name="title" required value="<%= book ? book.title : '' %>"
+                    class="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none text-sm">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">英文标题</label>
+                <input type="text" name="title_en" value="<%= book ? (book.title_en || '') : '' %>"
+                    class="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none text-sm">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">简介</label>
+                <textarea name="description" rows="2"
+                    class="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none text-sm"><%= book ? (book.description || '') : '' %></textarea>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">所属分类</label>
+                <select name="category_id" id="categorySelect"
+                    class="w-full px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none text-sm bg-white">
+                    <option value="0">选择分类</option>
+                </select>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">难度 (1-5)</label>
+                    <input type="number" name="difficulty_level" min="1" max="5"
+                        value="<%= book ? book.difficulty_level : 1 %>"
+                        class="w-full px-3 py-2 border border-gray-200 rounded-xl outline-none text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">年龄段</label>
+                    <input type="text" name="age_group" value="<%= book ? (book.age_group || '') : '' %>" placeholder="3-6"
+                        class="w-full px-3 py-2 border border-gray-200 rounded-xl outline-none text-sm">
+                </div>
+            </div>
+
+            <div class="flex items-center space-x-4 text-sm">
+                <label class="flex items-center space-x-1">
+                    <input type="checkbox" name="is_free" <%= book ? (book.is_free ? 'checked' : '') : 'checked' %> class="rounded text-green-600">
+                    <span>免费</span>
+                </label>
+                <label class="flex items-center space-x-1">
+                    <input type="checkbox" name="is_active" <%= book ? (book.is_active ? 'checked' : '') : 'checked' %> class="rounded text-green-600">
+                    <span>上架</span>
+                </label>
+            </div>
+
+            <!-- Cover -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">封面图</label>
+                <div class="flex bg-gray-100 p-1 rounded-lg mb-2 text-xs font-medium">
+                    <button type="button" onclick="switchCoverTab('upload')" id="coverTab-upload"
+                        class="flex-1 py-1 rounded-md bg-white shadow-sm text-gray-800">上传</button>
+                    <button type="button" onclick="switchCoverTab('ai')" id="coverTab-ai"
+                        class="flex-1 py-1 rounded-md text-gray-500">AI生成</button>
+                </div>
+
+                <div id="coverPanel-upload">
+                    <div class="border-2 border-dashed border-gray-200 rounded-xl p-3 text-center hover:border-green-300 cursor-pointer"
+                        onclick="document.getElementById('coverInput').click()">
+                        <input type="file" id="coverInput" accept="image/*" class="hidden" onchange="handleCoverUpload(this)">
+                        <div id="coverPreview" class="<%= book && book.cover_url ? '' : 'hidden' %>">
+                            <img id="coverImg" src="<%= book ? (book.cover_url || '') : '' %>" class="w-full h-32 object-cover rounded-lg mb-1">
+                        </div>
+                        <div id="coverPlaceholder" class="<%= book && book.cover_url ? 'hidden' : '' %>">
+                            <i class="fas fa-cloud-upload-alt text-xl text-gray-300 mb-1"></i>
+                            <p class="text-xs text-gray-500">点击上传封面</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="coverPanel-ai" class="hidden space-y-2">
+                    <textarea id="coverAiPrompt" rows="2"
+                        class="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs outline-none focus:border-green-500"
+                        placeholder="描述封面，如：A cute red dog running on green grass, children's book illustration style"></textarea>
+                    <button type="button" onclick="generateCover()"
+                        class="w-full py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-medium">
+                        <i class="fas fa-magic mr-1"></i> AI生成封面
+                    </button>
+                </div>
+
+                <input type="hidden" name="cover_url" id="coverUrl" value="<%= book ? (book.cover_url || '') : '' %>">
+            </div>
+
+            <div class="pt-3 border-t border-gray-100">
+                <button type="submit"
+                    class="w-full py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl shadow-lg shadow-green-200 font-bold text-sm">
+                    保存绘本信息
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Center Column: Page Preview & Edit -->
+    <div class="col-span-6 bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-full">
+        <div class="p-4 border-b border-gray-100 flex items-center justify-between">
+            <span class="font-bold text-gray-700">
+                <i class="fas fa-file-image mr-1 text-green-500"></i>
+                页面编辑 <span id="currentPageLabel" class="text-gray-400 text-sm ml-1"></span>
+            </span>
+            <div class="flex items-center space-x-2">
+                <button onclick="generatePageTTS('female')" class="text-xs bg-pink-500 hover:bg-pink-600 text-white px-3 py-1.5 rounded-lg">
+                    <i class="fas fa-volume-up mr-1"></i>女声TTS
+                </button>
+                <button onclick="generatePageTTS('male')" class="text-xs bg-blue-500 hover:bg-blue-600 text-white px-3 py-1.5 rounded-lg">
+                    <i class="fas fa-volume-up mr-1"></i>男声TTS
+                </button>
+            </div>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-6" id="pageEditorArea">
+            <div id="noPageState" class="flex flex-col items-center justify-center h-full text-gray-400">
+                <i class="fas fa-book-open text-5xl mb-4 opacity-30"></i>
+                <p id="noPageText">请先保存绘本信息，然后添加页面</p>
+            </div>
+
+            <div id="pageEditor" class="hidden space-y-4">
+                <!-- Page Image -->
+                <div class="relative bg-gray-50 rounded-xl overflow-hidden border border-gray-200">
+                    <div id="pageImageContainer" class="flex items-center justify-center min-h-[250px]">
+                        <div id="pageImagePlaceholder" class="text-center text-gray-400 py-8">
+                            <i class="fas fa-image text-4xl mb-2 opacity-30"></i>
+                            <p class="text-sm">点击上传页面插图</p>
+                        </div>
+                        <img id="pageImage" src="" class="hidden max-w-full max-h-[400px] object-contain">
+                    </div>
+                    <button onclick="document.getElementById('pageImageInput').click()"
+                        class="absolute top-2 right-2 bg-white/80 hover:bg-white text-gray-600 px-3 py-1.5 rounded-lg text-xs shadow-sm border border-gray-200">
+                        <i class="fas fa-camera mr-1"></i>上传图片
+                    </button>
+                    <input type="file" id="pageImageInput" accept="image/*" class="hidden" onchange="handlePageImageUpload(this)">
+                </div>
+
+                <!-- Text Fields -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        <i class="fas fa-language mr-1 text-blue-500"></i>英文文本
+                    </label>
+                    <textarea id="pageTextEn" rows="3"
+                        class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm outline-none focus:border-green-500"
+                        placeholder="The big red dog ran across the field." onchange="saveCurrentPageText()"></textarea>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        <i class="fas fa-globe-asia mr-1 text-green-500"></i>中文翻译
+                    </label>
+                    <textarea id="pageTextCn" rows="2"
+                        class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm outline-none focus:border-green-500"
+                        placeholder="大红狗跑过了田野。" onchange="saveCurrentPageText()"></textarea>
+                </div>
+
+                <!-- Audio Preview -->
+                <div class="flex items-center space-x-3 bg-gray-50 rounded-xl p-3">
+                    <span class="text-xs text-gray-500">音频:</span>
+                    <button id="btnPlayFemale" onclick="playPageAudio('female')" class="hidden text-xs bg-pink-100 text-pink-700 px-3 py-1 rounded-lg hover:bg-pink-200">
+                        <i class="fas fa-play mr-1"></i>女声
+                    </button>
+                    <button id="btnPlayMale" onclick="playPageAudio('male')" class="hidden text-xs bg-blue-100 text-blue-700 px-3 py-1 rounded-lg hover:bg-blue-200">
+                        <i class="fas fa-play mr-1"></i>男声
+                    </button>
+                    <span id="noAudioLabel" class="text-xs text-gray-400">暂无音频，请点击上方TTS按钮生成</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Column: Page List -->
+    <div class="col-span-3 bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-full">
+        <div class="p-5 border-b border-gray-100">
+            <div class="flex justify-between items-center mb-3">
+                <h3 class="font-bold text-gray-800">
+                    页面列表 <span id="pageCount" class="text-xs bg-gray-100 px-2 py-0.5 rounded-full ml-1 text-gray-500">0</span>
+                </h3>
+            </div>
+            <button onclick="addPage()" id="btnAddPage"
+                class="w-full py-2 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white rounded-lg text-sm font-medium shadow-sm disabled:opacity-50"
+                <%= book ? '' : 'disabled' %>>
+                <i class="fas fa-plus mr-1"></i> 添加页面
+            </button>
+        </div>
+
+        <div id="pageList" class="flex-1 overflow-y-auto p-4 space-y-2">
+            <!-- Pages injected here -->
+        </div>
+    </div>
+</div>
+
+<script>
+const bookId = document.getElementById('bookId').value;
+const initialCategoryId = "<%= book ? book.category_id : '' %>";
+let pages = [];
+let currentPageIndex = -1;
+let currentAudio = null;
+
+// ===== Cover handling =====
+
+function switchCoverTab(tab) {
+    document.getElementById('coverTab-upload').className = tab === 'upload' ? 'flex-1 py-1 rounded-md bg-white shadow-sm text-gray-800' : 'flex-1 py-1 rounded-md text-gray-500';
+    document.getElementById('coverTab-ai').className = tab === 'ai' ? 'flex-1 py-1 rounded-md bg-white shadow-sm text-gray-800' : 'flex-1 py-1 rounded-md text-gray-500';
+    document.getElementById('coverPanel-upload').className = tab === 'upload' ? '' : 'hidden';
+    document.getElementById('coverPanel-ai').className = tab === 'ai' ? 'space-y-2' : 'hidden';
+}
+
+async function handleCoverUpload(input) {
+    if (!input.files || !input.files[0]) return;
+    const formData = new FormData();
+    formData.append('image', input.files[0]);
+    try {
+        showToast('上传中...', 'info');
+        const res = await fetch('/picture-books/api/upload-cover', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (data.success) {
+            document.getElementById('coverUrl').value = data.url;
+            document.getElementById('coverImg').src = data.url;
+            document.getElementById('coverPreview').classList.remove('hidden');
+            document.getElementById('coverPlaceholder').classList.add('hidden');
+            showToast('上传成功');
+        } else {
+            showToast(data.message, 'error');
+        }
+    } catch (e) {
+        showToast('上传出错', 'error');
+    }
+}
+
+async function generateCover() {
+    const prompt = document.getElementById('coverAiPrompt').value;
+    if (!prompt) return showToast('请输入描述', 'error');
+    if (!bookId) return showToast('请先保存绘本', 'error');
+
+    try {
+        showToast('AI生成中，请耐心等待...', 'info');
+        const res = await fetch(`/picture-books/api/${bookId}/generate-cover`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt })
+        });
+        const data = await res.json();
+        if (data.success) {
+            document.getElementById('coverUrl').value = data.imageUrl;
+            document.getElementById('coverImg').src = data.imageUrl;
+            document.getElementById('coverPreview').classList.remove('hidden');
+            document.getElementById('coverPlaceholder').classList.add('hidden');
+            showToast('生成成功');
+        } else {
+            showToast(data.message, 'error');
+        }
+    } catch (e) {
+        showToast('生成出错', 'error');
+    }
+}
+
+// ===== Book form submit =====
+
+document.getElementById('bookForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    const data = Object.fromEntries(formData.entries());
+    data.is_free = e.target.querySelector('input[name="is_free"]').checked ? 1 : 0;
+    data.is_active = e.target.querySelector('input[name="is_active"]').checked ? 1 : 0;
+    data.difficulty_level = parseInt(data.difficulty_level) || 1;
+    data.category_id = parseInt(data.category_id) || 0;
+
+    const id = data.id;
+    delete data.id;
+
+    const method = id ? 'PUT' : 'POST';
+    const url = id ? `/picture-books/api/${id}` : '/picture-books/api/create';
+
+    try {
+        const res = await fetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        const result = await res.json();
+        if (result.success) {
+            showToast('保存成功');
+            if (!id) {
+                // Redirect to edit page with new ID
+                setTimeout(() => location.href = `/picture-books/edit/${result.id}`, 500);
+            }
+        } else {
+            showToast(result.message, 'error');
+        }
+    } catch (err) {
+        showToast('保存失败', 'error');
+    }
+});
+
+// ===== Page Management =====
+
+async function loadPages() {
+    if (!bookId) return;
+    try {
+        const res = await fetch(`/picture-books/api/${bookId}/pages`);
+        const data = await res.json();
+        if (data.success) {
+            pages = data.data;
+            renderPageList();
+            if (pages.length > 0 && currentPageIndex < 0) {
+                selectPage(0);
+            } else if (currentPageIndex >= 0 && currentPageIndex < pages.length) {
+                selectPage(currentPageIndex);
+            } else if (pages.length > 0) {
+                selectPage(0);
+            } else {
+                showNoPage();
+            }
+        }
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+function renderPageList() {
+    const list = document.getElementById('pageList');
+    document.getElementById('pageCount').textContent = pages.length;
+
+    if (pages.length === 0) {
+        list.innerHTML = '<div class="text-center py-8 text-gray-400 text-sm">暂无页面</div>';
+        return;
+    }
+
+    list.innerHTML = pages.map((p, i) => `
+        <div onclick="selectPage(${i})" class="cursor-pointer rounded-xl border-2 p-3 transition-all ${i === currentPageIndex ? 'border-green-500 bg-green-50' : 'border-gray-200 hover:border-green-300'}">
+            <div class="flex items-center justify-between mb-1">
+                <span class="text-xs font-bold text-gray-600">第 ${p.page_number} 页</span>
+                <button onclick="event.stopPropagation(); deletePage(${p.id}, ${i})" class="text-gray-400 hover:text-red-500 text-xs p-1">
+                    <i class="fas fa-trash-alt"></i>
+                </button>
+            </div>
+            ${p.image_url
+                ? `<img src="${p.image_url}" class="w-full h-20 object-cover rounded-lg mb-1">`
+                : `<div class="w-full h-20 bg-gray-100 rounded-lg mb-1 flex items-center justify-center text-gray-300"><i class="fas fa-image text-xl"></i></div>`
+            }
+            <p class="text-xs text-gray-600 truncate">${p.text_en || '<span class="text-gray-400 italic">无文本</span>'}</p>
+            <div class="flex items-center space-x-1 mt-1">
+                ${p.audio_url ? '<span class="w-1.5 h-1.5 rounded-full bg-pink-400" title="有女声音频"></span>' : ''}
+                ${p.audio_url_male ? '<span class="w-1.5 h-1.5 rounded-full bg-blue-400" title="有男声音频"></span>' : ''}
+            </div>
+        </div>
+    `).join('');
+}
+
+function showNoPage() {
+    document.getElementById('pageEditor').classList.add('hidden');
+    document.getElementById('noPageState').classList.remove('hidden');
+    document.getElementById('noPageText').textContent = bookId ? '请点击右侧"添加页面"按钮' : '请先保存绘本信息，然后添加页面';
+    currentPageIndex = -1;
+}
+
+function selectPage(index) {
+    if (index < 0 || index >= pages.length) return;
+    currentPageIndex = index;
+    const page = pages[index];
+
+    document.getElementById('noPageState').classList.add('hidden');
+    document.getElementById('pageEditor').classList.remove('hidden');
+    document.getElementById('currentPageLabel').textContent = `第 ${page.page_number} / ${pages.length} 页`;
+
+    // Image
+    if (page.image_url) {
+        document.getElementById('pageImage').src = page.image_url;
+        document.getElementById('pageImage').classList.remove('hidden');
+        document.getElementById('pageImagePlaceholder').classList.add('hidden');
+    } else {
+        document.getElementById('pageImage').classList.add('hidden');
+        document.getElementById('pageImagePlaceholder').classList.remove('hidden');
+    }
+
+    // Text
+    document.getElementById('pageTextEn').value = page.text_en || '';
+    document.getElementById('pageTextCn').value = page.text_cn || '';
+
+    // Audio buttons
+    document.getElementById('btnPlayFemale').classList.toggle('hidden', !page.audio_url);
+    document.getElementById('btnPlayMale').classList.toggle('hidden', !page.audio_url_male);
+    document.getElementById('noAudioLabel').classList.toggle('hidden', !!(page.audio_url || page.audio_url_male));
+
+    renderPageList();
+}
+
+async function addPage() {
+    if (!bookId) return showToast('请先保存绘本', 'error');
+    try {
+        const res = await fetch(`/picture-books/api/${bookId}/pages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        const data = await res.json();
+        if (data.success) {
+            showToast('页面已添加');
+            currentPageIndex = pages.length; // select the new page
+            await loadPages();
+        } else {
+            showToast(data.message, 'error');
+        }
+    } catch (e) {
+        showToast('添加失败', 'error');
+    }
+}
+
+async function deletePage(pageId, index) {
+    if (!confirm('确定删除此页面？')) return;
+    try {
+        const res = await fetch(`/picture-books/api/${bookId}/pages/${pageId}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (data.success) {
+            showToast('已删除');
+            if (currentPageIndex >= pages.length - 1) currentPageIndex = Math.max(0, pages.length - 2);
+            await loadPages();
+            if (pages.length === 0) showNoPage();
+        }
+    } catch (e) {
+        showToast('删除失败', 'error');
+    }
+}
+
+// ===== Page Content Save =====
+
+let saveTimer = null;
+async function saveCurrentPageText() {
+    if (currentPageIndex < 0) return;
+    const page = pages[currentPageIndex];
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(async () => {
+        try {
+            await fetch(`/picture-books/api/${bookId}/pages/${page.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    text_en: document.getElementById('pageTextEn').value,
+                    text_cn: document.getElementById('pageTextCn').value
+                })
+            });
+            // Update local data
+            page.text_en = document.getElementById('pageTextEn').value;
+            page.text_cn = document.getElementById('pageTextCn').value;
+            renderPageList();
+        } catch (e) {
+            console.error('保存失败:', e);
+        }
+    }, 500);
+}
+
+// ===== Page Image Upload =====
+
+async function handlePageImageUpload(input) {
+    if (!input.files || !input.files[0] || currentPageIndex < 0) return;
+    const page = pages[currentPageIndex];
+    const formData = new FormData();
+    formData.append('image', input.files[0]);
+
+    try {
+        showToast('上传中...', 'info');
+        const res = await fetch('/picture-books/api/upload-image', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (data.success) {
+            // Update page image_url
+            await fetch(`/picture-books/api/${bookId}/pages/${page.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image_url: data.url })
+            });
+            page.image_url = data.url;
+            document.getElementById('pageImage').src = data.url;
+            document.getElementById('pageImage').classList.remove('hidden');
+            document.getElementById('pageImagePlaceholder').classList.add('hidden');
+            renderPageList();
+            showToast('上传成功');
+        } else {
+            showToast(data.message, 'error');
+        }
+    } catch (e) {
+        showToast('上传出错', 'error');
+    }
+    input.value = '';
+}
+
+// ===== TTS =====
+
+async function generatePageTTS(voice) {
+    if (currentPageIndex < 0) return;
+    const page = pages[currentPageIndex];
+    // Save text first
+    const textEn = document.getElementById('pageTextEn').value;
+    if (!textEn) return showToast('请先输入英文文本', 'error');
+
+    try {
+        // Ensure text is saved
+        await fetch(`/picture-books/api/${bookId}/pages/${page.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text_en: textEn })
+        });
+
+        showToast(`正在生成${voice === 'female' ? '女' : '男'}声音频...`, 'info');
+        const res = await fetch(`/picture-books/api/${bookId}/pages/${page.id}/tts`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ voice })
+        });
+        const data = await res.json();
+        if (data.success) {
+            if (voice === 'female') {
+                page.audio_url = data.audio_url;
+            } else {
+                page.audio_url_male = data.audio_url;
+            }
+            selectPage(currentPageIndex);
+            showToast('生成成功');
+        } else {
+            showToast(data.message || '生成失败', 'error');
+        }
+    } catch (e) {
+        showToast('生成出错: ' + e.message, 'error');
+    }
+}
+
+function playPageAudio(voice) {
+    if (currentPageIndex < 0) return;
+    const page = pages[currentPageIndex];
+    const url = voice === 'female' ? page.audio_url : page.audio_url_male;
+    if (!url) return;
+
+    if (currentAudio) currentAudio.pause();
+    currentAudio = new Audio(url);
+    currentAudio.play();
+}
+
+// ===== Init =====
+
+(async function init() {
+    // Load categories
+    try {
+        const res = await fetch('/picture-books/categories/api/list');
+        const catData = await res.json();
+        if (catData.success) {
+            const select = document.getElementById('categorySelect');
+            catData.data.forEach(c => {
+                if (c.is_active) {
+                    select.innerHTML += `<option value="${c.id}" ${c.id == initialCategoryId ? 'selected' : ''}>${c.icon || ''} ${c.name}</option>`;
+                }
+            });
+        }
+    } catch (e) {
+        console.error(e);
+    }
+
+    // Load pages
+    if (bookId) {
+        loadPages();
+    }
+})();
+</script>
