@@ -487,14 +487,21 @@ router.post('/parent/setup', authMiddleware, async (req, res) => {
             return res.json({ success: false, message: '密码至少4位' });
         }
 
-        const [existing] = await query('SELECT id FROM parent_settings WHERE user_id = ?', [userId]);
-        if (existing) return res.json({ success: false, message: '已设置密码，请使用验证接口' });
+        const [existing] = await query('SELECT id, manage_password FROM parent_settings WHERE user_id = ?', [userId]);
+        if (existing && existing.manage_password) {
+            return res.json({ success: false, message: '已设置密码，请使用验证接口' });
+        }
 
         const hash = await bcrypt.hash(password, 10);
-        await query(
-            'INSERT INTO parent_settings (user_id, manage_password) VALUES (?, ?)',
-            [userId, hash]
-        );
+        if (existing) {
+            // 密码被重置过，更新而非插入
+            await query('UPDATE parent_settings SET manage_password = ? WHERE user_id = ?', [hash, userId]);
+        } else {
+            await query(
+                'INSERT INTO parent_settings (user_id, manage_password) VALUES (?, ?)',
+                [userId, hash]
+            );
+        }
 
         const token = jwt.sign({ userId, type: 'parent' }, PARENT_SECRET, { expiresIn: '30m' });
         res.json({ success: true, data: { token } });
@@ -526,10 +533,26 @@ router.post('/parent/verify', authMiddleware, async (req, res) => {
 // 检查是否已设置密码
 router.get('/parent/check', authMiddleware, async (req, res) => {
     try {
-        const [settings] = await query('SELECT id FROM parent_settings WHERE user_id = ?', [req.user.id]);
-        res.json({ success: true, data: { hasPassword: !!settings } });
+        const [settings] = await query('SELECT id, manage_password FROM parent_settings WHERE user_id = ?', [req.user.id]);
+        res.json({ success: true, data: { hasPassword: !!(settings && settings.manage_password) } });
     } catch (e) {
         res.status(500).json({ success: false, message: '检查失败' });
+    }
+});
+
+// 重置密码（忘记密码时使用，只需用户登录态，不需要parent-token）
+router.post('/parent/reset', authMiddleware, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const [settings] = await query('SELECT id FROM parent_settings WHERE user_id = ?', [userId]);
+        if (!settings) return res.json({ success: false, message: '未设置过密码' });
+
+        // 只清除密码，保留其他设置（花名、图标等）
+        await query('UPDATE parent_settings SET manage_password = NULL WHERE user_id = ?', [userId]);
+        res.json({ success: true });
+    } catch (e) {
+        console.error('[Reward] parent reset error:', e);
+        res.status(500).json({ success: false, message: '重置失败' });
     }
 });
 
