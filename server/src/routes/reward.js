@@ -321,6 +321,32 @@ router.post('/garden/pet', authMiddleware, async (req, res) => {
     }
 });
 
+// 更换伙伴（成长值归零）
+router.post('/garden/pet/change', authMiddleware, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { pet_type, pet_name } = req.body;
+
+        const [typeRow] = await query('SELECT type_key FROM pet_types WHERE type_key = ? AND is_active = 1', [pet_type]);
+        if (!typeRow) return res.json({ success: false, message: '无效的伙伴类型' });
+
+        const [existing] = await query('SELECT * FROM user_pet WHERE user_id = ?', [userId]);
+        if (!existing) return res.json({ success: false, message: '还没有伙伴，请先选择' });
+
+        const today = new Date().toISOString().slice(0, 10);
+        await query(
+            `UPDATE user_pet SET pet_type = ?, pet_name = ?, growth_points = 0, growth_stage = 1,
+             health_status = 'healthy', last_activity_date = ? WHERE user_id = ?`,
+            [pet_type, pet_name || '', today, userId]
+        );
+
+        res.json({ success: true });
+    } catch (e) {
+        console.error('[Reward] change pet error:', e);
+        res.status(500).json({ success: false, message: '更换失败' });
+    }
+});
+
 // 获取所有可选伙伴类型
 router.get('/garden/types', authMiddleware, async (req, res) => {
     try {
