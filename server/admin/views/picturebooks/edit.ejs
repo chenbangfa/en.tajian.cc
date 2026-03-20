@@ -194,28 +194,14 @@
                     <span id="noAudioLabel" class="text-xs text-gray-400">点击顶部TTS按钮生成</span>
                 </div>
 
-                <!-- Hotspot List -->
-                <div class="border border-gray-200 rounded-xl overflow-hidden">
-                    <div class="bg-gray-50 px-4 py-2 border-b border-gray-200 flex items-center justify-between">
-                        <span class="text-xs font-bold text-gray-700">
-                            <i class="fas fa-crosshairs mr-1 text-orange-500"></i>
-                            点读热点 <span id="hotspotCount" class="text-gray-400 ml-1">0</span>
-                        </span>
-                        <div class="flex items-center space-x-2">
-                            <button onclick="batchGenerateHotspots()" class="text-xs bg-purple-500 hover:bg-purple-600 text-white px-2.5 py-1 rounded-lg">
-                                <i class="fas fa-magic mr-1"></i>批量生成
-                            </button>
-                            <button onclick="addHotspotManual()" class="text-xs bg-green-500 hover:bg-green-600 text-white px-2.5 py-1 rounded-lg">
-                                <i class="fas fa-plus mr-1"></i>手动添加
-                            </button>
-                            <button onclick="clearAllHotspots()" class="text-xs text-red-400 hover:text-red-600 px-1">
-                                <i class="fas fa-trash-alt"></i>
-                            </button>
-                        </div>
-                    </div>
-                    <div id="hotspotList" class="max-h-[240px] overflow-y-auto divide-y divide-gray-100">
-                        <div class="text-center py-4 text-gray-400 text-xs">暂无热点，请点击「OCR识别」或「手动添加」</div>
-                    </div>
+                <!-- Hotspot count indicator -->
+                <div id="hotspotBar" class="hidden flex items-center justify-between bg-orange-50 rounded-xl px-3 py-2">
+                    <span class="text-xs text-orange-700">
+                        <i class="fas fa-crosshairs mr-1"></i>已识别 <span id="hotspotCount">0</span> 个点读热点
+                    </span>
+                    <button onclick="clearAllHotspots()" class="text-xs text-red-400 hover:text-red-600">
+                        <i class="fas fa-trash-alt mr-1"></i>清空
+                    </button>
                 </div>
             </div>
         </div>
@@ -246,29 +232,9 @@
 .hotspot-box {
     position: absolute;
     border: 2px solid #f59e0b;
-    background-color: rgba(245, 158, 11, 0.15);
-    cursor: pointer;
-    transition: all 0.2s;
+    background-color: rgba(245, 158, 11, 0.12);
     border-radius: 3px;
-}
-.hotspot-box:hover {
-    background-color: rgba(245, 158, 11, 0.35);
-    z-index: 10;
-}
-.hotspot-box.active {
-    border-color: #ef4444;
-    background-color: rgba(239, 68, 68, 0.25);
-    z-index: 20;
-}
-.hotspot-box .hotspot-label {
-    position: absolute;
-    bottom: -18px;
-    left: 0;
-    font-size: 10px;
-    color: #f59e0b;
-    white-space: nowrap;
-    text-shadow: 0 0 3px white, 0 0 3px white;
-    font-weight: bold;
+    pointer-events: none;
 }
 </style>
 
@@ -279,7 +245,6 @@ let pages = [];
 let currentPageIndex = -1;
 let currentAudio = null;
 let hotspots = [];  // 当前页面的热点
-let activeHotspotIndex = -1;
 
 // ===== Cover handling =====
 
@@ -469,7 +434,6 @@ function selectPage(index) {
 
     // Load hotspots for this page
     hotspots = [];
-    activeHotspotIndex = -1;
     loadHotspots();
 
     renderPageList();
@@ -486,7 +450,6 @@ async function loadHotspots() {
         if (data.success) {
             hotspots = data.data;
             renderHotspotOverlay();
-            renderHotspotList();
         }
     } catch (e) {
         console.error('加载热点失败:', e);
@@ -497,129 +460,25 @@ function renderHotspotOverlay() {
     const layer = document.getElementById('hotspotLayer');
     layer.innerHTML = '';
 
-    hotspots.forEach((h, i) => {
+    hotspots.forEach(h => {
         if (h.position_x == null || h.position_y == null) return;
         const div = document.createElement('div');
-        div.className = 'hotspot-box' + (i === activeHotspotIndex ? ' active' : '');
+        div.className = 'hotspot-box';
         div.style.left = h.position_x + '%';
         div.style.top = h.position_y + '%';
         div.style.width = (h.width || 8) + '%';
         div.style.height = (h.height || 5) + '%';
-        div.onclick = (e) => { e.stopPropagation(); setActiveHotspot(i); };
-
-        const label = document.createElement('span');
-        label.className = 'hotspot-label';
-        label.textContent = h.text_en;
-        div.appendChild(label);
-
+        div.title = h.text_en || '';
         layer.appendChild(div);
     });
 
+    // 更新热点计数提示条
+    const bar = document.getElementById('hotspotBar');
     document.getElementById('hotspotCount').textContent = hotspots.length;
-}
-
-function renderHotspotList() {
-    const container = document.getElementById('hotspotList');
-    document.getElementById('hotspotCount').textContent = hotspots.length;
-
-    if (hotspots.length === 0) {
-        container.innerHTML = '<div class="text-center py-4 text-gray-400 text-xs">暂无热点，请点击「OCR识别」或「手动添加」</div>';
-        return;
-    }
-
-    container.innerHTML = hotspots.map((h, i) => `
-        <div class="flex items-center px-3 py-2 hover:bg-gray-50 ${i === activeHotspotIndex ? 'bg-orange-50' : ''}" onclick="setActiveHotspot(${i})">
-            <div class="flex-1 min-w-0">
-                <div class="flex items-center space-x-2">
-                    <input type="text" value="${(h.text_en || '').replace(/"/g, '&quot;')}" onchange="updateHotspotText(${i}, this.value); event.stopPropagation();" onclick="event.stopPropagation();"
-                        class="text-sm font-medium text-gray-800 bg-transparent border-b border-transparent hover:border-gray-300 focus:border-green-500 outline-none flex-1 min-w-0 px-0 py-0.5">
-                    ${h.phonetic ? `<span class="text-xs text-gray-400 whitespace-nowrap">/${h.phonetic}/</span>` : ''}
-                </div>
-                <div class="flex items-center space-x-2 mt-0.5">
-                    ${h.translation ? `<span class="text-xs text-gray-500">${h.translation}</span>` : '<span class="text-xs text-gray-300">未翻译</span>'}
-                </div>
-            </div>
-            <div class="flex items-center space-x-1 ml-2 shrink-0">
-                ${h.audio_url_female ? `
-                    <button onclick="event.stopPropagation(); playHotspotAudio('${h.audio_url_female}')" class="text-xs text-pink-600 hover:bg-pink-50 p-1 rounded" title="女声">
-                        <i class="fas fa-volume-up"></i>
-                    </button>` : ''}
-                ${h.audio_url_male ? `
-                    <button onclick="event.stopPropagation(); playHotspotAudio('${h.audio_url_male}')" class="text-xs text-blue-600 hover:bg-blue-50 p-1 rounded" title="男声">
-                        <i class="fas fa-volume-up"></i>
-                    </button>` : ''}
-                <button onclick="event.stopPropagation(); generateSingleHotspot(${h.id}, ${i})" class="text-xs bg-purple-100 text-purple-700 hover:bg-purple-200 px-2 py-1 rounded" title="生成翻译+音频">
-                    <i class="fas fa-magic"></i>
-                </button>
-                <button onclick="event.stopPropagation(); deleteHotspot(${h.id}, ${i})" class="text-xs text-red-400 hover:text-red-600 p-1 rounded">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-        </div>
-    `).join('');
-}
-
-function setActiveHotspot(index) {
-    activeHotspotIndex = index;
-    renderHotspotOverlay();
-    renderHotspotList();
-}
-
-function playHotspotAudio(url) {
-    if (currentAudio) currentAudio.pause();
-    currentAudio = new Audio(url);
-    currentAudio.play();
-}
-
-async function updateHotspotText(index, newText) {
-    const h = hotspots[index];
-    h.text_en = newText;
-    if (h.id) {
-        try {
-            await fetch(`/picture-books/api/hotspots/${h.id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text_en: newText })
-            });
-        } catch (e) {
-            console.error('更新热点失败:', e);
-        }
-    }
-    renderHotspotOverlay();
-}
-
-async function deleteHotspot(hotspotId, index) {
-    if (!confirm('删除此热点？')) return;
-    try {
-        await fetch(`/picture-books/api/hotspots/${hotspotId}`, { method: 'DELETE' });
-        hotspots.splice(index, 1);
-        if (activeHotspotIndex >= hotspots.length) activeHotspotIndex = -1;
-        renderHotspotOverlay();
-        renderHotspotList();
-    } catch (e) {
-        showToast('删除失败', 'error');
-    }
-}
-
-async function addHotspotManual() {
-    if (currentPageIndex < 0) return;
-    const page = pages[currentPageIndex];
-    const text = prompt('输入英文单词/短语:');
-    if (!text) return;
-
-    try {
-        const res = await fetch(`/picture-books/api/${bookId}/pages/${page.id}/hotspots`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text_en: text, position_x: 10, position_y: 10, width: 15, height: 6 })
-        });
-        const data = await res.json();
-        if (data.success) {
-            await loadHotspots();
-            showToast('已添加');
-        }
-    } catch (e) {
-        showToast('添加失败', 'error');
+    if (hotspots.length > 0) {
+        bar.classList.remove('hidden');
+    } else {
+        bar.classList.add('hidden');
     }
 }
 
@@ -628,14 +487,10 @@ async function clearAllHotspots() {
     if (!confirm(`确定清空全部 ${hotspots.length} 个热点？`)) return;
 
     for (const h of hotspots) {
-        try {
-            await fetch(`/picture-books/api/hotspots/${h.id}`, { method: 'DELETE' });
-        } catch (e) {}
+        try { await fetch(`/picture-books/api/hotspots/${h.id}`, { method: 'DELETE' }); } catch (e) {}
     }
     hotspots = [];
-    activeHotspotIndex = -1;
     renderHotspotOverlay();
-    renderHotspotList();
     showToast('已清空');
 }
 
@@ -680,78 +535,6 @@ async function runOCR() {
     } catch (e) {
         showToast('OCR请求失败: ' + e.message, 'error');
     }
-}
-
-// ===== 单个热点生成（翻译+音标+TTS）=====
-
-async function generateSingleHotspot(hotspotId, index) {
-    // 先保存可能的文本变更
-    const h = hotspots[index];
-    if (h.text_en) {
-        await fetch(`/picture-books/api/hotspots/${hotspotId}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text_en: h.text_en })
-        });
-    }
-
-    try {
-        showToast('正在生成翻译和音频...', 'info');
-        const res = await fetch(`/picture-books/api/hotspots/${hotspotId}/generate`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
-        });
-        const data = await res.json();
-        if (data.success) {
-            hotspots[index].phonetic = data.data.phonetic;
-            hotspots[index].translation = data.data.translation;
-            hotspots[index].audio_url_female = data.data.audio_url_female;
-            hotspots[index].audio_url_male = data.data.audio_url_male;
-            renderHotspotList();
-            showToast('生成成功');
-        } else {
-            showToast(data.message || '生成失败', 'error');
-        }
-    } catch (e) {
-        showToast('生成出错: ' + e.message, 'error');
-    }
-}
-
-// ===== 批量生成所有热点 =====
-
-async function batchGenerateHotspots() {
-    if (hotspots.length === 0) return showToast('暂无热点', 'error');
-    if (!confirm(`将批量生成 ${hotspots.length} 个热点的翻译和音频，是否继续？`)) return;
-
-    let success = 0, fail = 0;
-    showToast(`开始批量生成 ${hotspots.length} 个热点...`, 'info');
-
-    for (let i = 0; i < hotspots.length; i++) {
-        const h = hotspots[i];
-        if (!h.id) continue;
-
-        try {
-            const res = await fetch(`/picture-books/api/hotspots/${h.id}/generate`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            });
-            const data = await res.json();
-            if (data.success) {
-                hotspots[i].phonetic = data.data.phonetic;
-                hotspots[i].translation = data.data.translation;
-                hotspots[i].audio_url_female = data.data.audio_url_female;
-                hotspots[i].audio_url_male = data.data.audio_url_male;
-                success++;
-            } else {
-                fail++;
-            }
-        } catch (e) {
-            fail++;
-        }
-        renderHotspotList();
-    }
-
-    showToast(`批量生成完成: 成功 ${success}, 失败 ${fail}`);
 }
 
 async function addPage() {
