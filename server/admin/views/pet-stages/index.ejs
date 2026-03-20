@@ -4,33 +4,25 @@
         <div>
             <h2 class="text-2xl font-bold bg-gradient-to-r from-green-700 to-emerald-500 bg-clip-text text-transparent">
                 成长阶段管理</h2>
-            <p class="text-gray-500 mt-1">管理伙伴类型的成长阶段，上传图片和动画</p>
+            <p class="text-gray-500 mt-1">管理伙伴类型和成长阶段，上传图片和动画</p>
         </div>
-        <button onclick="showAddModal()"
-            class="flex items-center space-x-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white px-6 py-3 rounded-xl shadow-lg shadow-green-200 transition-all duration-300 hover:-translate-y-0.5">
-            <i class="fas fa-plus"></i>
-            <span>新增阶段</span>
-        </button>
+        <div class="flex space-x-3">
+            <button onclick="showAddTypeModal()"
+                class="flex items-center space-x-2 border-2 border-green-500 text-green-600 hover:bg-green-50 px-5 py-2.5 rounded-xl transition-all">
+                <i class="fas fa-paw"></i>
+                <span>管理类型</span>
+            </button>
+            <button onclick="showAddModal()"
+                class="flex items-center space-x-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white px-6 py-3 rounded-xl shadow-lg shadow-green-200 transition-all duration-300 hover:-translate-y-0.5">
+                <i class="fas fa-plus"></i>
+                <span>新增阶段</span>
+            </button>
+        </div>
     </div>
 
-    <!-- 伙伴类型 Tab -->
-    <div class="flex space-x-2 bg-white p-2 rounded-xl shadow-sm border border-gray-100">
-        <button onclick="switchType('flower')" id="tab-flower"
-            class="tab-btn active flex-1 py-3 rounded-lg text-center font-medium transition-all">
-            🌸 花
-        </button>
-        <button onclick="switchType('tree')" id="tab-tree"
-            class="tab-btn flex-1 py-3 rounded-lg text-center font-medium transition-all">
-            🌳 树
-        </button>
-        <button onclick="switchType('cat')" id="tab-cat"
-            class="tab-btn flex-1 py-3 rounded-lg text-center font-medium transition-all">
-            🐱 猫
-        </button>
-        <button onclick="switchType('dog')" id="tab-dog"
-            class="tab-btn flex-1 py-3 rounded-lg text-center font-medium transition-all">
-            🐕 狗
-        </button>
+    <!-- 伙伴类型 Tab（动态渲染） -->
+    <div id="typeTabs" class="flex flex-wrap gap-2 bg-white p-2 rounded-xl shadow-sm border border-gray-100">
+        <div class="text-gray-400 p-3">加载中...</div>
     </div>
 
     <!-- 阶段卡片网格 -->
@@ -39,7 +31,7 @@
     </div>
 </div>
 
-<!-- 编辑弹窗 -->
+<!-- 阶段编辑弹窗 -->
 <div id="editModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
     <div class="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
         <div class="p-6 border-b border-gray-100">
@@ -50,10 +42,7 @@
             <div>
                 <label class="block text-sm font-medium text-gray-600 mb-1">伙伴类型</label>
                 <select id="editPetType" class="w-full px-4 py-2 border rounded-lg bg-gray-50">
-                    <option value="flower">🌸 花</option>
-                    <option value="tree">🌳 树</option>
-                    <option value="cat">🐱 猫</option>
-                    <option value="dog">🐕 狗</option>
+                    <!-- 动态填充 -->
                 </select>
             </div>
             <div class="grid grid-cols-2 gap-4">
@@ -117,6 +106,33 @@
     </div>
 </div>
 
+<!-- 类型管理弹窗 -->
+<div id="typeModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
+        <div class="p-6 border-b border-gray-100 flex justify-between items-center">
+            <h3 class="text-lg font-bold text-gray-800">伙伴类型管理</h3>
+            <button onclick="closeTypeModal()" class="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+        </div>
+        <div class="p-6">
+            <!-- 已有类型列表 -->
+            <div id="typeList" class="space-y-3 mb-6"></div>
+
+            <!-- 新增类型表单 -->
+            <div class="border-t pt-4">
+                <h4 class="text-sm font-bold text-gray-600 mb-3">添加新类型</h4>
+                <div class="grid grid-cols-12 gap-3">
+                    <input type="text" id="newTypeKey" placeholder="标识(英文)" class="col-span-3 px-3 py-2 border rounded-lg bg-gray-50 text-sm">
+                    <input type="text" id="newTypeName" placeholder="显示名称" class="col-span-3 px-3 py-2 border rounded-lg bg-gray-50 text-sm">
+                    <input type="text" id="newTypeIcon" placeholder="图标emoji" class="col-span-2 px-3 py-2 border rounded-lg bg-gray-50 text-sm text-center">
+                    <input type="number" id="newTypeSort" placeholder="排序" value="0" class="col-span-2 px-3 py-2 border rounded-lg bg-gray-50 text-sm">
+                    <button onclick="addType()" class="col-span-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700">添加</button>
+                </div>
+                <p class="text-xs text-gray-400 mt-2">标识仅支持英文字母和下划线，创建后不可修改。如：panda, tiger, giraffe</p>
+            </div>
+        </div>
+    </div>
+</div>
+
 <style>
     .tab-btn { color: #9CA3AF; background: transparent; }
     .tab-btn.active { color: #fff; background: linear-gradient(135deg, #10B981, #059669); box-shadow: 0 4px 12px rgba(16,185,129,0.3); }
@@ -124,14 +140,159 @@
 </style>
 
 <script>
-    let currentType = 'flower';
+    let currentType = '';
+    let petTypes = [];
+
+    // ── 类型管理 ──
+
+    async function loadTypes() {
+        try {
+            const res = await fetch(`${API_BASE}/pet-stages/api/types`);
+            const result = await res.json();
+            petTypes = result.data || [];
+            renderTabs();
+            fillTypeSelect();
+            // 默认选中第一个
+            if (petTypes.length > 0 && !currentType) {
+                currentType = petTypes[0].type_key;
+            }
+            if (currentType) {
+                switchType(currentType);
+            }
+        } catch (e) {
+            showToast('加载类型失败', 'error');
+        }
+    }
+
+    function renderTabs() {
+        const container = document.getElementById('typeTabs');
+        if (petTypes.length === 0) {
+            container.innerHTML = '<div class="text-gray-400 p-3">暂无类型，请先添加</div>';
+            return;
+        }
+        container.innerHTML = petTypes.map(t => `
+            <button onclick="switchType('${t.type_key}')" id="tab-${t.type_key}"
+                class="tab-btn ${currentType === t.type_key ? 'active' : ''} px-5 py-3 rounded-lg text-center font-medium transition-all">
+                ${t.icon || ''} ${t.name}
+            </button>
+        `).join('');
+    }
+
+    function fillTypeSelect() {
+        const sel = document.getElementById('editPetType');
+        sel.innerHTML = petTypes.map(t =>
+            `<option value="${t.type_key}">${t.icon || ''} ${t.name}</option>`
+        ).join('');
+    }
 
     function switchType(type) {
         currentType = type;
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        document.getElementById('tab-' + type).classList.add('active');
+        const tab = document.getElementById('tab-' + type);
+        if (tab) tab.classList.add('active');
         loadStages();
     }
+
+    function showAddTypeModal() {
+        renderTypeList();
+        document.getElementById('typeModal').classList.remove('hidden');
+    }
+
+    function closeTypeModal() {
+        document.getElementById('typeModal').classList.add('hidden');
+        loadTypes(); // 刷新
+    }
+
+    function renderTypeList() {
+        const container = document.getElementById('typeList');
+        if (petTypes.length === 0) {
+            container.innerHTML = '<p class="text-gray-400 text-sm">暂无类型</p>';
+            return;
+        }
+        container.innerHTML = petTypes.map(t => `
+            <div class="flex items-center gap-3 bg-gray-50 rounded-lg p-3">
+                <span class="text-2xl">${t.icon || '❓'}</span>
+                <div class="flex-1">
+                    <span class="font-medium text-gray-800">${t.name}</span>
+                    <span class="text-xs text-gray-400 ml-2">${t.type_key}</span>
+                </div>
+                <input type="text" value="${t.name}" class="w-20 px-2 py-1 border rounded text-sm" id="tn-${t.id}">
+                <input type="text" value="${t.icon || ''}" class="w-12 px-2 py-1 border rounded text-sm text-center" id="ti-${t.id}">
+                <input type="number" value="${t.sort_order || 0}" class="w-14 px-2 py-1 border rounded text-sm" id="ts-${t.id}">
+                <button onclick="updateType(${t.id})" class="text-blue-600 hover:text-blue-800 text-sm"><i class="fas fa-save"></i></button>
+                <button onclick="deleteType(${t.id}, '${t.name}')" class="text-red-500 hover:text-red-700 text-sm"><i class="fas fa-trash-alt"></i></button>
+            </div>
+        `).join('');
+    }
+
+    async function addType() {
+        const type_key = document.getElementById('newTypeKey').value.trim();
+        const name = document.getElementById('newTypeName').value.trim();
+        const icon = document.getElementById('newTypeIcon').value.trim();
+        const sort_order = parseInt(document.getElementById('newTypeSort').value) || 0;
+
+        if (!type_key || !name) { showToast('请填写标识和名称', 'error'); return; }
+
+        try {
+            const res = await fetch(`${API_BASE}/pet-stages/api/types`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type_key, name, icon, sort_order })
+            });
+            const result = await res.json();
+            if (result.success) {
+                showToast('添加成功');
+                document.getElementById('newTypeKey').value = '';
+                document.getElementById('newTypeName').value = '';
+                document.getElementById('newTypeIcon').value = '';
+                // 刷新类型列表
+                await loadTypes();
+                renderTypeList();
+            } else {
+                showToast(result.message || '添加失败', 'error');
+            }
+        } catch (e) {
+            showToast('添加失败', 'error');
+        }
+    }
+
+    async function updateType(id) {
+        const name = document.getElementById('tn-' + id).value;
+        const icon = document.getElementById('ti-' + id).value;
+        const sort_order = parseInt(document.getElementById('ts-' + id).value) || 0;
+
+        try {
+            await fetch(`${API_BASE}/pet-stages/api/types/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, icon, sort_order, is_active: 1 })
+            });
+            showToast('已保存');
+            await loadTypes();
+            renderTypeList();
+        } catch (e) {
+            showToast('保存失败', 'error');
+        }
+    }
+
+    async function deleteType(id, name) {
+        if (!confirm(`确定删除「${name}」类型吗？该类型下的所有阶段数据不会被删除。`)) return;
+        try {
+            const res = await fetch(`${API_BASE}/pet-stages/api/types/${id}`, { method: 'DELETE' });
+            const result = await res.json();
+            if (result.success) {
+                showToast('已删除');
+                await loadTypes();
+                renderTypeList();
+            } else {
+                showToast(result.message || '删除失败', 'error');
+            }
+        } catch (e) {
+            showToast('删除失败', 'error');
+        }
+    }
+
+    // ── 阶段管理 ──
 
     async function loadStages() {
         try {
@@ -143,23 +304,28 @@
         }
     }
 
+    function getTypeIcon(typeKey) {
+        const t = petTypes.find(x => x.type_key === typeKey);
+        return t ? (t.icon || '❓') : '❓';
+    }
+
     function renderStages(stages) {
         const grid = document.getElementById('stageGrid');
         if (stages.length === 0) {
             grid.innerHTML = `<div class="col-span-full text-center py-12 text-gray-400 bg-white rounded-2xl border border-dashed">
                 <i class="fas fa-seedling text-3xl mb-3 opacity-50"></i>
-                <p>暂无阶段数据</p>
+                <p>暂无阶段数据，点击"新增阶段"添加</p>
             </div>`;
             return;
         }
 
+        const icon = getTypeIcon(currentType);
         grid.innerHTML = stages.map(s => `
             <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden group hover:shadow-lg transition-all">
-                <!-- 图片区 -->
                 <div class="relative h-48 bg-gradient-to-br from-green-50 to-emerald-50 flex items-center justify-center overflow-hidden">
                     ${s.image_url
                         ? `<img src="${s.image_url}" class="max-h-full max-w-full object-contain">`
-                        : `<div class="text-6xl opacity-30">${currentType === 'flower' ? '🌸' : currentType === 'tree' ? '🌳' : currentType === 'cat' ? '🐱' : '🐕'}</div>`
+                        : `<div class="text-6xl opacity-30">${icon}</div>`
                     }
                     <div class="absolute top-3 left-3 flex gap-2">
                         <span class="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded">阶段 ${s.stage}</span>
@@ -174,7 +340,6 @@
                         </button>
                     </div>
                 </div>
-                <!-- 信息区 -->
                 <div class="p-4">
                     <h3 class="font-bold text-gray-800 text-lg">${s.stage_name}</h3>
                     <p class="text-sm text-gray-500 mt-1">${s.description || ''}</p>
@@ -277,14 +442,12 @@
             let stageId = id;
 
             if (id) {
-                // 编辑
                 await fetch(`${API_BASE}/pet-stages/api/${id}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)
                 });
             } else {
-                // 新增
                 const res = await fetch(`${API_BASE}/pet-stages/api/create`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -335,5 +498,5 @@
     }
 
     // Init
-    loadStages();
+    loadTypes();
 </script>

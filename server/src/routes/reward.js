@@ -52,6 +52,31 @@ const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
             UNIQUE KEY uk_user (user_id)
         )`);
 
+        await query(`CREATE TABLE IF NOT EXISTS pet_types (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            type_key VARCHAR(30) NOT NULL UNIQUE,
+            name VARCHAR(50) NOT NULL,
+            icon VARCHAR(10) DEFAULT '',
+            sort_order INT DEFAULT 0,
+            is_active TINYINT(1) DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        )`);
+
+        // 预置默认伙伴类型
+        const defaultTypes = [
+            ['flower', '花', '🌸', 1],
+            ['tree', '树', '🌳', 2],
+            ['cat', '猫', '🐱', 3],
+            ['dog', '狗', '🐕', 4]
+        ];
+        for (const t of defaultTypes) {
+            await query(
+                'INSERT IGNORE INTO pet_types (type_key, name, icon, sort_order) VALUES (?, ?, ?, ?)',
+                t
+            );
+        }
+
         await query(`CREATE TABLE IF NOT EXISTS pet_growth_stages (
             id INT AUTO_INCREMENT PRIMARY KEY,
             pet_type VARCHAR(20) NOT NULL,
@@ -142,14 +167,14 @@ const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
                 ['tree', 5, '开花', 1000, '大树开花了，真美！', '繁花满枝的大树'],
                 ['tree', 6, '硕果', 2000, '硕果累累，丰收啦！', '果实挂满枝头'],
                 // cat
-                ['cat', 1, '猫蛋', 0, '一颗神秘的蛋出现了！', '圆滚滚的小蛋'],
+                ['cat', 1, '小奶猫', 0, '一只小奶猫来到了你身边！', '软萌可爱的小奶猫'],
                 ['cat', 2, '小猫', 50, '小猫咪出生啦！', '软萌的小奶猫'],
                 ['cat', 3, '少年猫', 200, '小猫在快乐成长！', '活泼好动的少年猫'],
                 ['cat', 4, '成年猫', 500, '已经是优雅的大猫了！', '优雅自信的成年猫'],
                 ['cat', 5, '国王猫', 1000, '猫咪戴上了皇冠！', '威风凛凛的国王猫'],
                 ['cat', 6, '传说猫', 2000, '传说中的神猫降临！', '拥有神秘力量的传说猫'],
                 // dog
-                ['dog', 1, '狗蛋', 0, '一颗可爱的蛋！', '摇摇晃晃的小蛋'],
+                ['dog', 1, '小奶狗', 0, '一只小奶狗来到了你身边！', '摇尾巴的小奶狗'],
                 ['dog', 2, '小狗', 50, '汪汪！小狗出生了！', '摇尾巴的小奶狗'],
                 ['dog', 3, '少年狗', 200, '小狗越来越强壮！', '充满活力的少年狗'],
                 ['dog', 4, '成年狗', 500, '忠诚可靠的好伙伴！', '帅气的成年狗'],
@@ -256,7 +281,9 @@ router.post('/garden/pet', authMiddleware, async (req, res) => {
         const userId = req.user.id;
         const { pet_type, pet_name } = req.body;
 
-        if (!['flower', 'tree', 'cat', 'dog'].includes(pet_type)) {
+        // 动态校验伙伴类型
+        const [typeRow] = await query('SELECT type_key FROM pet_types WHERE type_key = ? AND is_active = 1', [pet_type]);
+        if (!typeRow) {
             return res.json({ success: false, message: '无效的伙伴类型' });
         }
 
@@ -291,6 +318,26 @@ router.post('/garden/pet', authMiddleware, async (req, res) => {
     } catch (e) {
         console.error('[Reward] create pet error:', e);
         res.status(500).json({ success: false, message: '创建失败' });
+    }
+});
+
+// 获取所有可选伙伴类型
+router.get('/garden/types', authMiddleware, async (req, res) => {
+    try {
+        const types = await query(
+            'SELECT type_key, name, icon FROM pet_types WHERE is_active = 1 ORDER BY sort_order ASC'
+        );
+        // 为每个类型附加 stage 1 的图片
+        for (const t of types) {
+            const [stage1] = await query(
+                'SELECT image_url FROM pet_growth_stages WHERE pet_type = ? AND stage = 1',
+                [t.type_key]
+            );
+            t.image_url = stage1 ? stage1.image_url : null;
+        }
+        res.json({ success: true, data: types });
+    } catch (e) {
+        res.status(500).json({ success: false, message: '加载失败' });
     }
 });
 

@@ -18,6 +18,73 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
 
+// ══════════════════════════════
+//  伙伴类型管理
+// ══════════════════════════════
+
+// 获取所有伙伴类型（从 pet_types 表）
+router.get('/api/types', async (req, res) => {
+    try {
+        const types = await query('SELECT * FROM pet_types ORDER BY sort_order ASC, id ASC');
+        res.json({ success: true, data: types });
+    } catch (e) {
+        res.status(500).json({ success: false, message: '加载失败' });
+    }
+});
+
+// 新增伙伴类型
+router.post('/api/types', async (req, res) => {
+    try {
+        const { type_key, name, icon, sort_order } = req.body;
+        if (!type_key || !name) return res.json({ success: false, message: '请填写标识和名称' });
+
+        const result = await query(
+            'INSERT INTO pet_types (type_key, name, icon, sort_order) VALUES (?, ?, ?, ?)',
+            [type_key.toLowerCase().replace(/[^a-z0-9_]/g, ''), name, icon || '', sort_order || 0]
+        );
+        res.json({ success: true, data: { id: result.insertId } });
+    } catch (e) {
+        if (e.code === 'ER_DUP_ENTRY') return res.json({ success: false, message: '该标识已存在' });
+        res.status(500).json({ success: false, message: '创建失败' });
+    }
+});
+
+// 编辑伙伴类型
+router.put('/api/types/:id', async (req, res) => {
+    try {
+        const { name, icon, sort_order, is_active } = req.body;
+        await query(
+            'UPDATE pet_types SET name = ?, icon = ?, sort_order = ?, is_active = ? WHERE id = ?',
+            [name, icon || '', sort_order || 0, is_active !== undefined ? (is_active ? 1 : 0) : 1, req.params.id]
+        );
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ success: false, message: '更新失败' });
+    }
+});
+
+// 删除伙伴类型
+router.delete('/api/types/:id', async (req, res) => {
+    try {
+        // 检查是否有用户在使用
+        const [typeRow] = await query('SELECT type_key FROM pet_types WHERE id = ?', [req.params.id]);
+        if (typeRow) {
+            const [used] = await query('SELECT COUNT(*) as cnt FROM user_pet WHERE pet_type = ?', [typeRow.type_key]);
+            if (used && used.cnt > 0) {
+                return res.json({ success: false, message: `有 ${used.cnt} 个用户正在使用该类型，无法删除` });
+            }
+        }
+        await query('DELETE FROM pet_types WHERE id = ?', [req.params.id]);
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ success: false, message: '删除失败' });
+    }
+});
+
+// ══════════════════════════════
+//  成长阶段管理
+// ══════════════════════════════
+
 // 列表（按 pet_type 分组）
 router.get('/api/list', async (req, res) => {
     try {
@@ -31,16 +98,6 @@ router.get('/api/list', async (req, res) => {
         sql += ' ORDER BY pet_type, stage ASC';
         const stages = await query(sql, params);
         res.json({ success: true, data: stages });
-    } catch (e) {
-        res.status(500).json({ success: false, message: '加载失败' });
-    }
-});
-
-// 获取所有伙伴类型
-router.get('/api/types', async (req, res) => {
-    try {
-        const types = await query('SELECT DISTINCT pet_type FROM pet_growth_stages ORDER BY pet_type');
-        res.json({ success: true, data: types.map(t => t.pet_type) });
     } catch (e) {
         res.status(500).json({ success: false, message: '加载失败' });
     }
