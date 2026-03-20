@@ -1,6 +1,8 @@
 const express = require('express');
 const { query } = require('../config/database');
 const { authMiddleware, optionalAuth } = require('../middlewares/auth');
+const voiceService = require('../services/voice.service');
+const rewardService = require('../services/reward.service');
 
 const router = express.Router();
 
@@ -124,6 +126,146 @@ router.get('/', async (req, res) => {
         const books = await query(sql, params);
         res.json({ success: true, data: books });
     } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// 获取绘本详情（含所有页面+热点）
+router.get('/:id', async (req, res) => {
+    try {
+        const bookId = parseInt(req.params.id);
+        const [book] = await query(
+            'SELECT id, title, title_en, cover_url, description, category_id, difficulty_level, age_group, page_count, is_free FROM picture_books WHERE id = ? AND is_active = 1',
+            [bookId]
+        );
+        if (!book) return res.status(404).json({ success: false, message: '绘本不存在' });
+
+        const pages = await query(
+            'SELECT id, page_number, image_url, text_en, text_cn, audio_url, audio_url_male FROM picture_book_pages WHERE book_id = ? ORDER BY page_number ASC',
+            [bookId]
+        );
+
+        const hotspots = await query(
+            'SELECT id, page_id, text_en, translation, phonetic, position_x, position_y, width, height, audio_url_female, audio_url_male, sort_order FROM picture_book_hotspots WHERE book_id = ? ORDER BY sort_order ASC',
+            [bookId]
+        );
+
+        // 将热点嵌入对应页面
+        const hotspotMap = {};
+        for (const h of hotspots) {
+            if (!hotspotMap[h.page_id]) hotspotMap[h.page_id] = [];
+            hotspotMap[h.page_id].push(h);
+        }
+        const pagesWithHotspots = pages.map(p => ({
+            ...p,
+            hotspots: hotspotMap[p.id] || []
+        }));
+
+        // 增加阅读次数
+        await query('UPDATE picture_books SET read_count = read_count + 1 WHERE id = ?', [bookId]);
+
+        res.json({ success: true, data: { book, pages: pagesWithHotspots } });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// 保存阅读进度
+router.post('/:id/progress', authMiddleware, async (req, res) => {
+    try {
+        const bookId = parseInt(req.params.id);
+        const userId = req.user.id;
+        const { current_page, is_completed } = req.body;
+
+        await query(
+            `INSERT INTO picture_book_progress (user_id, book_id, current_page, is_completed)
+             VALUES (?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE
+                current_page = VALUES(current_page),
+                is_completed = VALUES(is_completed),
+                read_count = read_count + IF(VALUES(is_completed) = 1, 1, 0)`,
+            [userId, bookId, current_page || 1, is_completed ? 1 : 0]
+        );
+
+        // ── 成长花园：绘本阅读完成奖励 ──
+        if (is_completed) {
+            try {
+                await rewardService.checkAndReward(userId, 'book_complete', {});
+            } catch (e) {
+                console.error('[Reward] 绘本奖励发放失败:', e.message);
+            }
+        }
+
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// 为热点生成TTS
+router.post('/hotspots/:id/tts', authMiddleware, async (req, res) => {
+    try {
+        const hotspotId = parseInt(req.params.id);
+        const [hotspot] = await query(
+            'SELECT id, text_en, audio_url_female, audio_url_male FROM picture_book_hotspots WHERE id = ?',
+            [hotspotId]
+        );
+        if (!hotspot) return res.status(404).json({ success: false, message: '热点不存在' });
+
+        // 已有音频直接返回
+        if (hotspot.audio_url_female && hotspot.audio_url_male) {
+            return res.json({
+                success: true,
+                data: { audio_url_female: hotspot.audio_url_female, audio_url_male: hotspot.audio_url_male }
+            });
+        }
+
+        const text = hotspot.text_en;
+
+        // 先查 words 表复用已有音频
+        const [wordRow] = await query(
+            'SELECT audio_url_male, audio_url_female FROM words WHERE LOWER(word) = LOWER(?) AND audio_url_female IS NOT NULL LIMIT 1',
+            [text]
+        );
+
+        let audioFemale = hotspot.audio_url_female;
+        let audioMale = hotspot.audio_url_male;
+
+        if (wordRow && wordRow.audio_url_female) {
+            audioFemale = audioFemale || wordRow.audio_url_female;
+            audioMale = audioMale || wordRow.audio_url_male;
+        }
+
+        // 缺失的音频用 voiceService 生成
+        const tasks = [];
+        if (!audioFemale) {
+            tasks.push(
+                voiceService.textToSpeech(text, 'female').then(r => {
+                    if (r.success) audioFemale = r.audioUrl;
+                })
+            );
+        }
+        if (!audioMale) {
+            tasks.push(
+                voiceService.textToSpeech(text, 'male').then(r => {
+                    if (r.success) audioMale = r.audioUrl;
+                })
+            );
+        }
+        if (tasks.length > 0) await Promise.all(tasks);
+
+        // 更新数据库
+        await query(
+            'UPDATE picture_book_hotspots SET audio_url_female = ?, audio_url_male = ? WHERE id = ?',
+            [audioFemale, audioMale, hotspotId]
+        );
+
+        res.json({
+            success: true,
+            data: { audio_url_female: audioFemale, audio_url_male: audioMale }
+        });
+    } catch (e) {
+        console.error('[PictureBooks] TTS生成失败:', e);
         res.status(500).json({ success: false, message: e.message });
     }
 });

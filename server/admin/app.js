@@ -78,6 +78,7 @@ app.get('/prompts', requireAuth, (req, res) => res.render('prompts', { page: 'pr
 app.get('/batch/import', requireAuth, (req, res) => res.render('batch/import', { page: 'batch-import', title: '批量导入', user: req.session.adminUser }));
 app.get('/batch/generate', requireAuth, (req, res) => res.render('batch/generate', { page: 'batch-generate', title: '批量生成', user: req.session.adminUser }));
 app.get('/checkin/curriculum', requireAuth, (req, res) => res.render('checkin/curriculum', { page: 'checkin-curriculum', title: '打卡课程', user: req.session.adminUser }));
+app.get('/pet-stages', requireAuth, (req, res) => res.render('pet-stages/index', { page: 'pet-stages', title: '成长阶段', user: req.session.adminUser }));
 
 // 场景管理页面
 app.get('/scenes', requireAuth, (req, res) => res.render('scenes/index', { page: 'scenes-list', title: '场景列表', user: req.session.adminUser }));
@@ -124,6 +125,7 @@ app.use('/api/admin/checkin-curriculum', requireAuth, require('./routes/checkin_
 app.use('/api/admin/dialogue', requireAuth, require('./routes/dialogue'));
 app.use('/picture-books/categories', requireAuth, require('./routes/picturebook_categories'));
 app.use('/picture-books', requireAuth, require('./routes/picturebooks'));
+app.use('/api/admin/pet-stages', requireAuth, require('./routes/pet_stages'));
 
 // 健康检查 (不需要认证)
 app.get('/api/admin/health', (req, res) => {

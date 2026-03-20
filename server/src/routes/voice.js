@@ -7,6 +7,7 @@ const { authMiddleware, requirePoints } = require('../middlewares/auth');
 const { query } = require('../config/database');
 const voiceService = require('../services/voice.service');
 const cosService = require('../services/cos.service');
+const rewardService = require('../services/reward.service');
 
 const router = express.Router();
 
@@ -150,7 +151,7 @@ const handleUpload = (req, res, next) => {
 
 router.post('/assess', authMiddleware, requirePoints(3), handleUpload, async (req, res) => {
     try {
-        const { reference_text, content_type = 'sentence' } = req.body;
+        const { reference_text, content_type = 'sentence', source = 'checkin', source_id, sentence_index } = req.body;
 
         if (!req.file) {
             return res.status(400).json({
@@ -194,11 +195,14 @@ router.post('/assess', authMiddleware, requirePoints(3), handleUpload, async (re
         // 保存评测记录
         const insertResult = await query(`
       INSERT INTO voice_assessments
-      (user_id, content_type, reference_text, audio_url, overall_score, pronunciation_score, fluency_score, integrity_score, detail_result)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (user_id, content_type, source, source_id, sentence_index, reference_text, audio_url, overall_score, pronunciation_score, fluency_score, integrity_score, detail_result)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
             req.user.id,
             content_type,
+            source || 'checkin',
+            source_id ? parseInt(source_id) : null,
+            sentence_index !== undefined && sentence_index !== null ? parseInt(sentence_index) : null,
             reference_text,
             recordingUrl,
             result.overallScore,
@@ -224,6 +228,13 @@ router.post('/assess', authMiddleware, requirePoints(3), handleUpload, async (re
             [req.user.id, -req.pointsToDeduct, 'consume', '语音评测']
         );
 
+        // ── 成长花园：高分评测奖励 ──
+        try {
+            await rewardService.checkAndReward(req.user.id, 'high_score', { score: result.overallScore });
+        } catch (e) {
+            console.error('[Reward] 评测奖励发放失败:', e.message);
+        }
+
         res.json({
             success: true,
             data: {
@@ -245,7 +256,7 @@ router.post('/assess', authMiddleware, requirePoints(3), handleUpload, async (re
 });
 
 // 构建筛选 WHERE 子句（共用逻辑）
-function buildFilterWhere(userId, { min_score, max_score, date } = {}) {
+function buildFilterWhere(userId, { min_score, max_score, date, month, source } = {}) {
     let where = 'WHERE user_id = ?';
     const params = [userId];
     if (min_score) {
@@ -259,17 +270,25 @@ function buildFilterWhere(userId, { min_score, max_score, date } = {}) {
     if (date) {
         where += ' AND DATE(created_at) = ?';
         params.push(date);
+    } else if (month) {
+        // month 格式 YYYY-MM，匹配整月
+        where += ' AND DATE_FORMAT(created_at, \'%Y-%m\') = ?';
+        params.push(month);
+    }
+    if (source && source !== 'all') {
+        where += ' AND source = ?';
+        params.push(source);
     }
     return { where, params };
 }
 
-// 获取评测历史（支持分数/日期筛选）
+// 获取评测历史（支持分数/日期/来源筛选）
 router.get('/history', authMiddleware, async (req, res) => {
     try {
-        const { page = 1, limit = 20, min_score, max_score, date } = req.query;
+        const { page = 1, limit = 20, min_score, max_score, date, source } = req.query;
         const offset = (parseInt(page) - 1) * parseInt(limit);
 
-        const { where, params } = buildFilterWhere(req.user.id, { min_score, max_score, date });
+        const { where, params } = buildFilterWhere(req.user.id, { min_score, max_score, date, source });
 
         const [records, countResult] = await Promise.all([
             query(
@@ -309,8 +328,8 @@ router.get('/history', authMiddleware, async (req, res) => {
 router.get('/stats', authMiddleware, async (req, res) => {
     try {
         const userId = req.user.id;
-        const { min_score, max_score, date } = req.query;
-        const { where, params } = buildFilterWhere(userId, { min_score, max_score, date });
+        const { min_score, max_score, date, month, source } = req.query;
+        const { where, params } = buildFilterWhere(userId, { min_score, max_score, date, month, source });
 
         // 根据筛选条件统计
         const [overall] = await query(
@@ -515,6 +534,241 @@ router.get('/share/:shareId', async (req, res) => {
     } catch (error) {
         console.error('查看分享记录错误:', error);
         res.status(500).json({ success: false, message: '获取分享记录失败' });
+    }
+});
+
+// 磨耳朵朗读分享 —— 创建分享记录
+router.post('/podcast-share', authMiddleware, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { content_id, content_title, sentences } = req.body;
+        if (!content_id) return res.status(400).json({ success: false, message: '缺少 content_id' });
+
+        // 从 DB 查询该用户对该文章每句的最高分 + 对应录音
+        const rows = await query(`
+            SELECT va.sentence_index, va.reference_text, va.overall_score AS best_score, va.audio_url
+            FROM voice_assessments va
+            INNER JOIN (
+                SELECT sentence_index, MAX(overall_score) AS max_score
+                FROM voice_assessments
+                WHERE user_id = ? AND source = 'podcast' AND source_id = ?
+                  AND sentence_index IS NOT NULL
+                GROUP BY sentence_index
+            ) t ON va.sentence_index = t.sentence_index AND va.overall_score = t.max_score
+            WHERE va.user_id = ? AND va.source = 'podcast' AND va.source_id = ?
+            GROUP BY va.sentence_index
+            ORDER BY va.sentence_index
+        `, [userId, content_id, userId, content_id]);
+
+        if (rows.length === 0) return res.status(400).json({ success: false, message: '暂无评测记录' });
+
+        // 合并 DB 数据与前端传入的 sentences（含 translation）
+        const sentenceMap = {};
+        (sentences || []).forEach(s => { sentenceMap[s.index] = s; });
+
+        const sentencesJson = rows.map(r => ({
+            index: r.sentence_index,
+            text: r.reference_text || (sentenceMap[r.sentence_index] || {}).text || '',
+            translation: (sentenceMap[r.sentence_index] || {}).translation || '',
+            score: Math.round(parseFloat(r.best_score) || 0),
+            audio_url: toAudioUrl(r.audio_url)
+        }));
+
+        const avgScore = Math.round(sentencesJson.reduce((s, r) => s + r.score, 0) / sentencesJson.length);
+        let mastery = 'needs_practice';
+        if (avgScore >= 85) mastery = 'excellent';
+        else if (avgScore >= 70) mastery = 'good';
+
+        // 获取用户信息
+        const [user] = await query('SELECT nickname, avatar_url FROM users WHERE id = ?', [userId]);
+
+        const shareId = crypto.randomBytes(12).toString('hex');
+        await query(`
+            CREATE TABLE IF NOT EXISTS podcast_assessment_shares (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                share_id VARCHAR(32) NOT NULL UNIQUE,
+                user_id INT NOT NULL,
+                nickname VARCHAR(100) DEFAULT NULL,
+                avatar_url VARCHAR(500) DEFAULT NULL,
+                content_id INT NOT NULL,
+                content_title VARCHAR(255) DEFAULT NULL,
+                avg_score DECIMAL(5,1) DEFAULT 0,
+                mastery VARCHAR(20) DEFAULT NULL,
+                sentences_json JSON DEFAULT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                KEY idx_share (share_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        `);
+
+        await query(`
+            INSERT INTO podcast_assessment_shares
+            (share_id, user_id, nickname, avatar_url, content_id, content_title, avg_score, mastery, sentences_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+            shareId, userId,
+            user ? user.nickname : null,
+            user ? user.avatar_url : null,
+            content_id,
+            content_title || '',
+            avgScore,
+            mastery,
+            JSON.stringify(sentencesJson)
+        ]);
+
+        res.json({ success: true, data: { share_id: shareId, avg_score: avgScore, mastery } });
+    } catch (error) {
+        console.error('创建磨耳朵分享错误:', error);
+        res.status(500).json({ success: false, message: '创建分享失败' });
+    }
+});
+
+// 磨耳朵朗读分享 —— 查看（公开）
+router.get('/podcast-share/:shareId', async (req, res) => {
+    try {
+        await query(`
+            CREATE TABLE IF NOT EXISTS podcast_assessment_shares (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                share_id VARCHAR(32) NOT NULL UNIQUE,
+                user_id INT NOT NULL,
+                nickname VARCHAR(100) DEFAULT NULL,
+                avatar_url VARCHAR(500) DEFAULT NULL,
+                content_id INT NOT NULL,
+                content_title VARCHAR(255) DEFAULT NULL,
+                avg_score DECIMAL(5,1) DEFAULT 0,
+                mastery VARCHAR(20) DEFAULT NULL,
+                sentences_json JSON DEFAULT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                KEY idx_share (share_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        `);
+
+        const [share] = await query(
+            'SELECT * FROM podcast_assessment_shares WHERE share_id = ?',
+            [req.params.shareId]
+        );
+        if (!share) return res.status(404).json({ success: false, message: '分享不存在' });
+
+        let sentences = [];
+        try { sentences = typeof share.sentences_json === 'string' ? JSON.parse(share.sentences_json) : (share.sentences_json || []); } catch (e) {}
+
+        res.json({
+            success: true,
+            data: {
+                share_id: share.share_id,
+                nickname: share.nickname || '学习达人',
+                avatar_url: share.avatar_url,
+                content_id: share.content_id,
+                content_title: share.content_title,
+                avg_score: parseFloat(share.avg_score) || 0,
+                mastery: share.mastery,
+                sentences,
+                created_at: share.created_at
+            }
+        });
+    } catch (error) {
+        console.error('获取磨耳朵分享错误:', error);
+        res.status(500).json({ success: false, message: '获取分享失败' });
+    }
+});
+
+// 批量获取磨耳朵掌握度（供列表页使用）
+// GET /voice/podcast-mastery?ids=1,2,3
+router.get('/podcast-mastery', authMiddleware, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const idsStr = req.query.ids || '';
+        const ids = idsStr.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n) && n > 0);
+        if (ids.length === 0) return res.json({ success: true, data: {} });
+
+        const placeholders = ids.map(() => '?').join(',');
+        const rows = await query(`
+            SELECT source_id,
+                   ROUND(AVG(best_score), 1) AS avg_score,
+                   SUM(attempts) AS total_attempts
+            FROM (
+                SELECT source_id, sentence_index,
+                       MAX(overall_score) AS best_score,
+                       COUNT(*) AS attempts
+                FROM voice_assessments
+                WHERE user_id = ? AND source = 'podcast' AND source_id IN (${placeholders})
+                  AND sentence_index IS NOT NULL
+                GROUP BY source_id, sentence_index
+            ) t
+            GROUP BY source_id
+        `, [userId, ...ids]);
+
+        const data = {};
+        rows.forEach(r => {
+            const avg = parseFloat(r.avg_score) || 0;
+            let mastery = 'assessed';
+            if (avg >= 85) mastery = 'excellent';
+            else if (avg >= 70) mastery = 'good';
+            else mastery = 'needs_practice';
+            data[r.source_id] = { avg_score: Math.round(avg), mastery };
+        });
+
+        res.json({ success: true, data });
+    } catch (error) {
+        console.error('批量掌握度查询错误:', error);
+        res.status(500).json({ success: false, message: '查询失败' });
+    }
+});
+
+// 磨耳朵文章评测汇总
+router.get('/podcast-summary/:contentId', authMiddleware, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const contentId = parseInt(req.params.contentId);
+        if (!contentId) return res.status(400).json({ success: false, message: '缺少 contentId' });
+
+        // 查询该用户对该文章所有句子的最高分记录
+        const rows = await query(`
+            SELECT sentence_index,
+                   MAX(overall_score) AS best_score,
+                   MAX(pronunciation_score) AS best_pronunciation,
+                   MAX(fluency_score) AS best_fluency,
+                   MAX(integrity_score) AS best_integrity,
+                   COUNT(*) AS attempts
+            FROM voice_assessments
+            WHERE user_id = ? AND source = 'podcast' AND source_id = ?
+              AND sentence_index IS NOT NULL
+            GROUP BY sentence_index
+            ORDER BY sentence_index
+        `, [userId, contentId]);
+
+        const sentences = rows.map(r => ({
+            index: r.sentence_index,
+            best_score: parseFloat(r.best_score) || 0,
+            best_pronunciation: parseFloat(r.best_pronunciation) || 0,
+            best_fluency: parseFloat(r.best_fluency) || 0,
+            best_integrity: parseFloat(r.best_integrity) || 0,
+            attempts: r.attempts
+        }));
+
+        const avgScore = sentences.length > 0
+            ? Math.round(sentences.reduce((s, r) => s + r.best_score, 0) / sentences.length)
+            : 0;
+
+        let mastery = 'none';
+        if (sentences.length > 0) {
+            if (avgScore >= 85) mastery = 'excellent';
+            else if (avgScore >= 70) mastery = 'good';
+            else mastery = 'needs_practice';
+        }
+
+        res.json({
+            success: true,
+            data: {
+                content_id: contentId,
+                assessed_count: sentences.length,
+                avg_score: avgScore,
+                mastery,
+                sentences
+            }
+        });
+    } catch (error) {
+        console.error('获取磨耳朵汇总错误:', error);
+        res.status(500).json({ success: false, message: '获取汇总失败' });
     }
 });
 

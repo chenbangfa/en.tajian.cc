@@ -6,6 +6,8 @@ const { query } = require('../config/database');
 const { authMiddleware, requirePoints } = require('../middlewares/auth');
 const voiceService = require('../services/voice.service');
 
+const rewardService = require('../services/reward.service');
+
 const router = express.Router();
 
 // ===== 配置 =====
@@ -585,6 +587,18 @@ router.post('/complete-task', authMiddleware, requirePoints(1), handleCheckinUpl
 
             // 检查里程碑
             newAchievements = await checkAchievements(userId);
+
+            // ── 成长花园：打卡完成奖励 ──
+            try {
+                const rewardResult = await rewardService.checkAndReward(userId, 'checkin_complete', {});
+                // 连续打卡奖励
+                const [ckStats] = await query('SELECT consecutive_days FROM checkin_stats WHERE user_id = ?', [userId]);
+                if (ckStats && ckStats.consecutive_days > 0) {
+                    await rewardService.checkAndReward(userId, 'streak_days', { streakDays: ckStats.consecutive_days });
+                }
+            } catch (e) {
+                console.error('[Reward] 打卡奖励发放失败:', e.message);
+            }
         }
 
         res.json({
@@ -818,14 +832,25 @@ router.post('/share', authMiddleware, async (req, res) => {
     try {
         const userId = req.user.id;
         const today = new Date().toISOString().split('T')[0];
+        // 支持传入指定日期（打卡记录页查看历史打卡）
+        const targetDate = req.body.date || today;
 
-        // 获取今日计划
+        // 如果该日期已有分享记录，直接复用
+        const [existing] = await query(
+            'SELECT share_id FROM checkin_shares WHERE user_id = ? AND task_date = ? ORDER BY created_at DESC LIMIT 1',
+            [userId, targetDate]
+        );
+        if (existing) {
+            return res.json({ success: true, data: { share_id: existing.share_id } });
+        }
+
+        // 获取指定日期计划
         const [plan] = await query(
             'SELECT * FROM daily_task_plans WHERE user_id = ? AND task_date = ?',
-            [userId, today]
+            [userId, targetDate]
         );
         if (!plan) {
-            return res.status(400).json({ success: false, message: '今天还没有任务计划' });
+            return res.status(400).json({ success: false, message: '该日期没有任务计划' });
         }
 
         // 获取完成的任务项
@@ -1576,7 +1601,7 @@ router.post('/v2/enroll', authMiddleware, async (req, res) => {
         const { course_id, daily_target = 10, resume = true } = req.body;
         if (!course_id) return res.status(400).json({ success: false, message: '请选择课程' });
 
-        const target = Math.min(500, Math.max(1, Number(daily_target)));
+        const target = Math.min(100, Math.max(1, Number(daily_target)));
         const [course] = await query('SELECT id, name, is_vip FROM checkin_courses WHERE id = ? AND is_active = 1', [course_id]);
         if (!course) return res.status(404).json({ success: false, message: '课程不存在' });
 
@@ -1855,6 +1880,18 @@ router.post('/v2/done', authMiddleware, async (req, res) => {
         const newAchievements = isComplete ? await checkAchievements(userId) : [];
         const [stats] = await query('SELECT consecutive_days FROM checkin_stats WHERE user_id = ?', [userId]);
 
+        // ── 成长花园：课程打卡完成奖励 ──
+        if (isComplete && !plan.is_completed) {
+            try {
+                await rewardService.checkAndReward(userId, 'checkin_complete', {});
+                if (stats && stats.consecutive_days > 0) {
+                    await rewardService.checkAndReward(userId, 'streak_days', { streakDays: stats.consecutive_days });
+                }
+            } catch (e) {
+                console.error('[Reward] 课程打卡奖励发放失败:', e.message);
+            }
+        }
+
         res.json({
             success: true,
             data: { doneCount: newDoneCount, dailyTarget: plan.word_target, isComplete, streakDays: stats ? stats.consecutive_days : 0, newAchievements }
@@ -1876,9 +1913,11 @@ router.post('/v2/settings', authMiddleware, async (req, res) => {
         const updates = [];
         const params = [];
 
+        let newDailyTarget;
         if (daily_target !== undefined) {
             updates.push('daily_word_target = ?');
-            params.push(Math.min(500, Math.max(1, Number(daily_target))));
+            newDailyTarget = Math.min(100, Math.max(1, Number(daily_target)));
+            params.push(newDailyTarget);
         }
         if (passing_score !== undefined) {
             const validScores = [60, 70, 80, 90];
@@ -1891,9 +1930,127 @@ router.post('/v2/settings', authMiddleware, async (req, res) => {
             await query(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`, params);
         }
 
+        // 同步更新今日已存在的计划，使新目标立即生效
+        if (newDailyTarget !== undefined) {
+            const today = new Date().toISOString().split('T')[0];
+            const [plan] = await query(
+                'SELECT id, word_completed FROM daily_task_plans WHERE user_id = ? AND task_date = ?',
+                [userId, today]
+            );
+            if (plan) {
+                await query(
+                    'UPDATE daily_task_plans SET word_target = ? WHERE id = ?',
+                    [newDailyTarget, plan.id]
+                );
+            }
+        }
+
         res.json({ success: true });
     } catch (e) {
         console.error('v2/settings error:', e);
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+/**
+ * GET /checkin/v2/stats-summary - 打卡记录页概览统计
+ */
+router.get('/v2/stats-summary', authMiddleware, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const [stats] = await query('SELECT consecutive_days, total_days, max_consecutive FROM checkin_stats WHERE user_id = ?', [userId]);
+        const [wordCount] = await query(
+            `SELECT COUNT(DISTINCT course_item_id) as total FROM daily_task_items
+             WHERE user_id = ? AND status = 'completed' AND course_item_id IS NOT NULL`,
+            [userId]
+        );
+        res.json({
+            success: true,
+            data: {
+                consecutive_days: (stats && stats.consecutive_days) || 0,
+                total_days: (stats && stats.total_days) || 0,
+                max_consecutive: (stats && stats.max_consecutive) || 0,
+                words_learned: (wordCount && wordCount.total) || 0
+            }
+        });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+/**
+ * GET /checkin/v2/calendar - 打卡日历（按月）
+ * query: month=YYYY-MM（默认当月）
+ */
+router.get('/v2/calendar', authMiddleware, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const now = new Date();
+        const month = req.query.month || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        const [year, mon] = month.split('-');
+        const startDate = `${year}-${mon}-01`;
+        const lastDay = new Date(parseInt(year), parseInt(mon), 0).getDate();
+        const endDate = `${year}-${mon}-${String(lastDay).padStart(2, '0')}`;
+
+        const days = await query(
+            `SELECT DATE_FORMAT(task_date, '%Y-%m-%d') as date, word_completed, avg_score
+             FROM daily_task_plans
+             WHERE user_id = ? AND is_completed = 1 AND task_date BETWEEN ? AND ?
+             ORDER BY task_date`,
+            [userId, startDate, endDate]
+        );
+        res.json({ success: true, data: { month, days } });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+/**
+ * GET /checkin/v2/history - 打卡历史列表（含课程名）
+ * query: page, limit, month=YYYY-MM, date=YYYY-MM-DD
+ */
+router.get('/v2/history', authMiddleware, async (req, res) => {
+    try {
+        const { page = 1, limit = 20, month, date } = req.query;
+        const offset = (parseInt(page) - 1) * parseInt(limit);
+        const userId = req.user.id;
+
+        let where = 'dtp.user_id = ? AND dtp.is_completed = 1';
+        const params = [userId];
+        if (date) {
+            where += ' AND dtp.task_date = ?';
+            params.push(date);
+        } else if (month) {
+            where += ' AND DATE_FORMAT(dtp.task_date, \'%Y-%m\') = ?';
+            params.push(month);
+        }
+
+        const [records, countResult] = await Promise.all([
+            query(
+                `SELECT DATE_FORMAT(dtp.task_date, '%Y-%m-%d') as task_date,
+                        dtp.word_completed, dtp.word_target, dtp.completed_at,
+                        cc.name as course_name,
+                        ROUND(AVG(CASE WHEN dti.score > 0 THEN dti.score ELSE NULL END), 0) as avg_score
+                 FROM daily_task_plans dtp
+                 LEFT JOIN checkin_courses cc ON dtp.course_id = cc.id
+                 LEFT JOIN daily_task_items dti ON dti.plan_id = dtp.id AND dti.status = 'completed'
+                 WHERE ${where}
+                 GROUP BY dtp.id, dtp.task_date, dtp.word_completed, dtp.word_target, dtp.completed_at, cc.name
+                 ORDER BY dtp.task_date DESC
+                 LIMIT ? OFFSET ?`,
+                [...params, parseInt(limit), offset]
+            ),
+            query(`SELECT COUNT(*) as total FROM daily_task_plans dtp WHERE ${where}`, params)
+        ]);
+
+        res.json({
+            success: true,
+            data: {
+                list: records,
+                pagination: { page: parseInt(page), limit: parseInt(limit), total: countResult[0].total }
+            }
+        });
+    } catch (e) {
         res.status(500).json({ success: false, message: e.message });
     }
 });

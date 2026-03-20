@@ -1,0 +1,339 @@
+<div class="space-y-6">
+    <!-- Header -->
+    <div class="flex justify-between items-center bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+        <div>
+            <h2 class="text-2xl font-bold bg-gradient-to-r from-green-700 to-emerald-500 bg-clip-text text-transparent">
+                成长阶段管理</h2>
+            <p class="text-gray-500 mt-1">管理伙伴类型的成长阶段，上传图片和动画</p>
+        </div>
+        <button onclick="showAddModal()"
+            class="flex items-center space-x-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white px-6 py-3 rounded-xl shadow-lg shadow-green-200 transition-all duration-300 hover:-translate-y-0.5">
+            <i class="fas fa-plus"></i>
+            <span>新增阶段</span>
+        </button>
+    </div>
+
+    <!-- 伙伴类型 Tab -->
+    <div class="flex space-x-2 bg-white p-2 rounded-xl shadow-sm border border-gray-100">
+        <button onclick="switchType('flower')" id="tab-flower"
+            class="tab-btn active flex-1 py-3 rounded-lg text-center font-medium transition-all">
+            🌸 花
+        </button>
+        <button onclick="switchType('tree')" id="tab-tree"
+            class="tab-btn flex-1 py-3 rounded-lg text-center font-medium transition-all">
+            🌳 树
+        </button>
+        <button onclick="switchType('cat')" id="tab-cat"
+            class="tab-btn flex-1 py-3 rounded-lg text-center font-medium transition-all">
+            🐱 猫
+        </button>
+        <button onclick="switchType('dog')" id="tab-dog"
+            class="tab-btn flex-1 py-3 rounded-lg text-center font-medium transition-all">
+            🐕 狗
+        </button>
+    </div>
+
+    <!-- 阶段卡片网格 -->
+    <div id="stageGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div class="col-span-full text-center py-12 text-gray-400">加载中...</div>
+    </div>
+</div>
+
+<!-- 编辑弹窗 -->
+<div id="editModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
+        <div class="p-6 border-b border-gray-100">
+            <h3 id="modalTitle" class="text-lg font-bold text-gray-800">编辑阶段</h3>
+        </div>
+        <div class="p-6 space-y-4">
+            <input type="hidden" id="editId">
+            <div>
+                <label class="block text-sm font-medium text-gray-600 mb-1">伙伴类型</label>
+                <select id="editPetType" class="w-full px-4 py-2 border rounded-lg bg-gray-50">
+                    <option value="flower">🌸 花</option>
+                    <option value="tree">🌳 树</option>
+                    <option value="cat">🐱 猫</option>
+                    <option value="dog">🐕 狗</option>
+                </select>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-600 mb-1">阶段编号</label>
+                    <input type="number" id="editStage" class="w-full px-4 py-2 border rounded-lg bg-gray-50" min="1">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-600 mb-1">所需成长值</label>
+                    <input type="number" id="editPoints" class="w-full px-4 py-2 border rounded-lg bg-gray-50" min="0">
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-600 mb-1">阶段名称</label>
+                <input type="text" id="editName" class="w-full px-4 py-2 border rounded-lg bg-gray-50" placeholder="如：种子、发芽...">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-600 mb-1">进化提示语</label>
+                <input type="text" id="editMessage" class="w-full px-4 py-2 border rounded-lg bg-gray-50" placeholder="如：你的努力开始生根发芽了！">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-600 mb-1">阶段描述</label>
+                <input type="text" id="editDesc" class="w-full px-4 py-2 border rounded-lg bg-gray-50" placeholder="简短描述">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-600 mb-1">动画类型</label>
+                <select id="editAnimType" class="w-full px-4 py-2 border rounded-lg bg-gray-50">
+                    <option value="image">静态图片</option>
+                    <option value="gif">GIF 动画</option>
+                    <option value="apng">APNG 动画</option>
+                    <option value="lottie">Lottie 动画</option>
+                </select>
+            </div>
+            <!-- 图片上传 -->
+            <div>
+                <label class="block text-sm font-medium text-gray-600 mb-1">阶段图片</label>
+                <div class="flex items-center gap-4">
+                    <img id="editImagePreview" class="w-24 h-24 object-contain rounded-lg border bg-gray-50 hidden" src="">
+                    <label class="cursor-pointer bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-lg text-sm text-gray-600 transition-colors">
+                        <i class="fas fa-cloud-upload-alt mr-1"></i> 上传图片
+                        <input type="file" id="editImageFile" accept="image/*" class="hidden" onchange="previewFile(this, 'editImagePreview')">
+                    </label>
+                </div>
+            </div>
+            <!-- 动画上传 -->
+            <div>
+                <label class="block text-sm font-medium text-gray-600 mb-1">动画文件（可选）</label>
+                <div class="flex items-center gap-4">
+                    <img id="editAnimPreview" class="w-24 h-24 object-contain rounded-lg border bg-gray-50 hidden" src="">
+                    <label class="cursor-pointer bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-lg text-sm text-gray-600 transition-colors">
+                        <i class="fas fa-film mr-1"></i> 上传动画
+                        <input type="file" id="editAnimFile" accept="image/*,.json" class="hidden" onchange="previewFile(this, 'editAnimPreview')">
+                    </label>
+                </div>
+            </div>
+        </div>
+        <div class="p-6 border-t border-gray-100 flex justify-end space-x-3">
+            <button onclick="closeModal()" class="px-6 py-2 rounded-lg border text-gray-600 hover:bg-gray-50">取消</button>
+            <button onclick="saveStage()" class="px-6 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700">保存</button>
+        </div>
+    </div>
+</div>
+
+<style>
+    .tab-btn { color: #9CA3AF; background: transparent; }
+    .tab-btn.active { color: #fff; background: linear-gradient(135deg, #10B981, #059669); box-shadow: 0 4px 12px rgba(16,185,129,0.3); }
+    .tab-btn:not(.active):hover { background: #F3F4F6; color: #374151; }
+</style>
+
+<script>
+    let currentType = 'flower';
+
+    function switchType(type) {
+        currentType = type;
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById('tab-' + type).classList.add('active');
+        loadStages();
+    }
+
+    async function loadStages() {
+        try {
+            const res = await fetch(`${API_BASE}/pet-stages/api/list?pet_type=${currentType}`);
+            const result = await res.json();
+            renderStages(result.data || []);
+        } catch (e) {
+            showToast('加载失败', 'error');
+        }
+    }
+
+    function renderStages(stages) {
+        const grid = document.getElementById('stageGrid');
+        if (stages.length === 0) {
+            grid.innerHTML = `<div class="col-span-full text-center py-12 text-gray-400 bg-white rounded-2xl border border-dashed">
+                <i class="fas fa-seedling text-3xl mb-3 opacity-50"></i>
+                <p>暂无阶段数据</p>
+            </div>`;
+            return;
+        }
+
+        grid.innerHTML = stages.map(s => `
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden group hover:shadow-lg transition-all">
+                <!-- 图片区 -->
+                <div class="relative h-48 bg-gradient-to-br from-green-50 to-emerald-50 flex items-center justify-center overflow-hidden">
+                    ${s.image_url
+                        ? `<img src="${s.image_url}" class="max-h-full max-w-full object-contain">`
+                        : `<div class="text-6xl opacity-30">${currentType === 'flower' ? '🌸' : currentType === 'tree' ? '🌳' : currentType === 'cat' ? '🐱' : '🐕'}</div>`
+                    }
+                    <div class="absolute top-3 left-3 flex gap-2">
+                        <span class="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded">阶段 ${s.stage}</span>
+                        <span class="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-1 rounded">${s.animation_type}</span>
+                    </div>
+                    <div class="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onclick="editStage(${s.id})" class="p-2 bg-white/90 rounded-lg text-blue-600 hover:bg-blue-50 shadow-sm">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button onclick="deleteStage(${s.id})" class="p-2 bg-white/90 rounded-lg text-red-500 hover:bg-red-50 shadow-sm">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                    </div>
+                </div>
+                <!-- 信息区 -->
+                <div class="p-4">
+                    <h3 class="font-bold text-gray-800 text-lg">${s.stage_name}</h3>
+                    <p class="text-sm text-gray-500 mt-1">${s.description || ''}</p>
+                    <div class="flex items-center justify-between mt-3">
+                        <span class="text-xs bg-amber-50 text-amber-700 px-2 py-1 rounded font-medium">
+                            <i class="fas fa-star mr-1"></i>${s.required_points} 成长值
+                        </span>
+                        ${s.animation_url ? '<span class="text-xs text-green-600"><i class="fas fa-check-circle mr-1"></i>有动画</span>' : '<span class="text-xs text-gray-400">无动画</span>'}
+                    </div>
+                    ${s.unlock_message ? `<p class="text-xs text-gray-400 mt-2 italic">"${s.unlock_message}"</p>` : ''}
+                </div>
+            </div>
+        `).join('');
+    }
+
+    let allStages = [];
+    async function loadAllForEdit() {
+        const res = await fetch(`${API_BASE}/pet-stages/api/list`);
+        const result = await res.json();
+        allStages = result.data || [];
+    }
+
+    function showAddModal() {
+        document.getElementById('editId').value = '';
+        document.getElementById('editPetType').value = currentType;
+        document.getElementById('editPetType').disabled = false;
+        document.getElementById('editStage').value = '';
+        document.getElementById('editStage').disabled = false;
+        document.getElementById('editPoints').value = '0';
+        document.getElementById('editName').value = '';
+        document.getElementById('editMessage').value = '';
+        document.getElementById('editDesc').value = '';
+        document.getElementById('editAnimType').value = 'image';
+        document.getElementById('editImagePreview').classList.add('hidden');
+        document.getElementById('editAnimPreview').classList.add('hidden');
+        document.getElementById('editImageFile').value = '';
+        document.getElementById('editAnimFile').value = '';
+        document.getElementById('modalTitle').textContent = '新增阶段';
+        document.getElementById('editModal').classList.remove('hidden');
+    }
+
+    async function editStage(id) {
+        await loadAllForEdit();
+        const s = allStages.find(x => x.id === id);
+        if (!s) return;
+        document.getElementById('editId').value = s.id;
+        document.getElementById('editPetType').value = s.pet_type;
+        document.getElementById('editPetType').disabled = true;
+        document.getElementById('editStage').value = s.stage;
+        document.getElementById('editStage').disabled = true;
+        document.getElementById('editPoints').value = s.required_points;
+        document.getElementById('editName').value = s.stage_name;
+        document.getElementById('editMessage').value = s.unlock_message || '';
+        document.getElementById('editDesc').value = s.description || '';
+        document.getElementById('editAnimType').value = s.animation_type || 'image';
+
+        const imgPrev = document.getElementById('editImagePreview');
+        if (s.image_url) { imgPrev.src = s.image_url; imgPrev.classList.remove('hidden'); }
+        else imgPrev.classList.add('hidden');
+
+        const animPrev = document.getElementById('editAnimPreview');
+        if (s.animation_url) { animPrev.src = s.animation_url; animPrev.classList.remove('hidden'); }
+        else animPrev.classList.add('hidden');
+
+        document.getElementById('editImageFile').value = '';
+        document.getElementById('editAnimFile').value = '';
+        document.getElementById('modalTitle').textContent = '编辑阶段';
+        document.getElementById('editModal').classList.remove('hidden');
+    }
+
+    function closeModal() {
+        document.getElementById('editModal').classList.add('hidden');
+    }
+
+    function previewFile(input, previewId) {
+        const preview = document.getElementById(previewId);
+        if (input.files && input.files[0]) {
+            const reader = new FileReader();
+            reader.onload = e => { preview.src = e.target.result; preview.classList.remove('hidden'); };
+            reader.readAsDataURL(input.files[0]);
+        }
+    }
+
+    async function saveStage() {
+        const id = document.getElementById('editId').value;
+        const data = {
+            pet_type: document.getElementById('editPetType').value,
+            stage: parseInt(document.getElementById('editStage').value),
+            stage_name: document.getElementById('editName').value,
+            required_points: parseInt(document.getElementById('editPoints').value) || 0,
+            unlock_message: document.getElementById('editMessage').value,
+            description: document.getElementById('editDesc').value,
+            animation_type: document.getElementById('editAnimType').value
+        };
+
+        if (!data.stage_name) { showToast('请输入阶段名称', 'error'); return; }
+        if (!data.stage) { showToast('请输入阶段编号', 'error'); return; }
+
+        try {
+            let stageId = id;
+
+            if (id) {
+                // 编辑
+                await fetch(`${API_BASE}/pet-stages/api/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+            } else {
+                // 新增
+                const res = await fetch(`${API_BASE}/pet-stages/api/create`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                const result = await res.json();
+                if (!result.success) { showToast(result.message || '创建失败', 'error'); return; }
+                stageId = result.data.id;
+            }
+
+            // 上传图片
+            const imageFile = document.getElementById('editImageFile').files[0];
+            if (imageFile && stageId) {
+                const fd = new FormData();
+                fd.append('file', imageFile);
+                fd.append('stage_id', stageId);
+                fd.append('field', 'image');
+                await fetch(`${API_BASE}/pet-stages/upload`, { method: 'POST', body: fd });
+            }
+
+            // 上传动画
+            const animFile = document.getElementById('editAnimFile').files[0];
+            if (animFile && stageId) {
+                const fd = new FormData();
+                fd.append('file', animFile);
+                fd.append('stage_id', stageId);
+                fd.append('field', 'animation');
+                await fetch(`${API_BASE}/pet-stages/upload`, { method: 'POST', body: fd });
+            }
+
+            showToast('保存成功');
+            closeModal();
+            loadStages();
+        } catch (e) {
+            showToast('保存失败', 'error');
+        }
+    }
+
+    async function deleteStage(id) {
+        if (!confirm('确定要删除该阶段吗？')) return;
+        try {
+            await fetch(`${API_BASE}/pet-stages/api/${id}`, { method: 'DELETE' });
+            showToast('删除成功');
+            loadStages();
+        } catch (e) {
+            showToast('删除失败', 'error');
+        }
+    }
+
+    // Init
+    loadStages();
+</script>
