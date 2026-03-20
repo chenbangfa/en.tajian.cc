@@ -228,9 +228,12 @@ router.post('/assess', authMiddleware, requirePoints(3), handleUpload, async (re
             [req.user.id, -req.pointsToDeduct, 'consume', '语音评测']
         );
 
-        // ── 成长花园：高分评测奖励 ──
+        // ── 成长花园：高分评测奖励（按单词去重，每个单词每天最多奖励1次）──
         try {
-            await rewardService.checkAndReward(req.user.id, 'high_score', { score: result.overallScore });
+            await rewardService.checkAndReward(req.user.id, 'high_score', {
+                score: result.overallScore,
+                sourceKey: reference_text.trim()
+            });
         } catch (e) {
             console.error('[Reward] 评测奖励发放失败:', e.message);
         }

@@ -23,13 +23,22 @@ class RewardService {
         }
 
         // 3. 防重复：同天同规则
+        //    若传入 sourceKey（如单词ID），则按 规则+sourceKey 去重（每个单词每天最多奖励1次）
+        //    否则按 规则 去重（每天最多奖励1次）
         const today = new Date().toISOString().slice(0, 10);
-        const [existing] = await query(
-            `SELECT id FROM flower_transactions
-             WHERE user_id = ? AND source_type = 'rule_reward' AND source_id = ?
-             AND DATE(created_at) = ?`,
-            [userId, rule.id, today]
-        );
+        let dedupSql, dedupParams;
+        if (context.sourceKey) {
+            dedupSql = `SELECT id FROM flower_transactions
+                        WHERE user_id = ? AND source_type = 'rule_reward' AND source_id = ?
+                        AND description LIKE ? AND DATE(created_at) = ?`;
+            dedupParams = [userId, rule.id, `%[${context.sourceKey}]%`, today];
+        } else {
+            dedupSql = `SELECT id FROM flower_transactions
+                        WHERE user_id = ? AND source_type = 'rule_reward' AND source_id = ?
+                        AND DATE(created_at) = ?`;
+            dedupParams = [userId, rule.id, today];
+        }
+        const [existing] = await query(dedupSql, dedupParams);
         if (existing) return { rewarded: false, reason: 'already_rewarded_today' };
 
         // 4. 获取当前余额
@@ -41,10 +50,12 @@ class RewardService {
         const newBalance = currentBalance + rule.flowers;
 
         // 5. 写流水
+        let desc = this._ruleDescription(ruleType, rule);
+        if (context.sourceKey) desc += ` [${context.sourceKey}]`;
         await query(
             `INSERT INTO flower_transactions (user_id, amount, growth_amount, balance_after, source_type, source_id, description)
              VALUES (?, ?, ?, ?, 'rule_reward', ?, ?)`,
-            [userId, rule.flowers, rule.growth, newBalance, rule.id, this._ruleDescription(ruleType, rule)]
+            [userId, rule.flowers, rule.growth, newBalance, rule.id, desc]
         );
 
         // 6. 更新伙伴成长值 + 健康
