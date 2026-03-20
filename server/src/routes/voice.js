@@ -149,7 +149,7 @@ const handleUpload = (req, res, next) => {
     });
 };
 
-router.post('/assess', authMiddleware, requirePoints(3), handleUpload, async (req, res) => {
+router.post('/assess', authMiddleware, requirePoints(5), handleUpload, async (req, res) => {
     try {
         const { reference_text, content_type = 'sentence', source = 'checkin', source_id, sentence_index } = req.body;
 
