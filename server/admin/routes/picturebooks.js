@@ -271,6 +271,198 @@ router.post('/api/upload-cover', upload.single('image'), async (req, res) => {
     res.json({ success: true, url: `/uploads/picturebooks/${req.file.filename}` });
 });
 
+// ===== API: 热点管理 =====
+
+router.get('/api/:id/pages/:pageId/hotspots', async (req, res) => {
+    try {
+        const hotspots = await query(
+            'SELECT * FROM picture_book_hotspots WHERE page_id = ? AND book_id = ? ORDER BY sort_order ASC',
+            [req.params.pageId, req.params.id]
+        );
+        const baseUrl = process.env.BASE_URL || 'https://en.tajian.cc';
+        const processed = hotspots.map(h => ({
+            ...h,
+            audio_url_female: h.audio_url_female ? (h.audio_url_female.startsWith('http') ? h.audio_url_female : baseUrl + h.audio_url_female) : null,
+            audio_url_male: h.audio_url_male ? (h.audio_url_male.startsWith('http') ? h.audio_url_male : baseUrl + h.audio_url_male) : null
+        }));
+        res.json({ success: true, data: processed });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+router.post('/api/:id/pages/:pageId/hotspots', async (req, res) => {
+    try {
+        const { text_en, translation, position_x, position_y, width, height } = req.body;
+        if (!text_en) return res.status(400).json({ success: false, message: '文本不能为空' });
+
+        const [maxSort] = await query('SELECT COALESCE(MAX(sort_order), 0) as max_sort FROM picture_book_hotspots WHERE page_id = ?', [req.params.pageId]);
+        const result = await query(
+            'INSERT INTO picture_book_hotspots (page_id, book_id, text_en, translation, position_x, position_y, width, height, sort_order) VALUES (?,?,?,?,?,?,?,?,?)',
+            [req.params.pageId, req.params.id, text_en, translation || null, position_x || null, position_y || null, width || null, height || null, maxSort.max_sort + 1]
+        );
+        res.json({ success: true, id: result.insertId });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+router.put('/api/hotspots/:hotspotId', async (req, res) => {
+    try {
+        const { text_en, translation, phonetic, position_x, position_y, width, height } = req.body;
+        const fields = [];
+        const params = [];
+
+        if (text_en !== undefined) { fields.push('text_en=?'); params.push(text_en); }
+        if (translation !== undefined) { fields.push('translation=?'); params.push(translation); }
+        if (phonetic !== undefined) { fields.push('phonetic=?'); params.push(phonetic); }
+        if (position_x !== undefined) { fields.push('position_x=?'); params.push(position_x); }
+        if (position_y !== undefined) { fields.push('position_y=?'); params.push(position_y); }
+        if (width !== undefined) { fields.push('width=?'); params.push(width); }
+        if (height !== undefined) { fields.push('height=?'); params.push(height); }
+
+        if (fields.length === 0) return res.json({ success: true });
+
+        params.push(req.params.hotspotId);
+        await query(`UPDATE picture_book_hotspots SET ${fields.join(',')} WHERE id=?`, params);
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+router.delete('/api/hotspots/:hotspotId', async (req, res) => {
+    try {
+        await query('DELETE FROM picture_book_hotspots WHERE id = ?', [req.params.hotspotId]);
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// 批量保存热点（OCR 识别后一次性写入）
+router.post('/api/:id/pages/:pageId/hotspots/batch', async (req, res) => {
+    try {
+        const { hotspots } = req.body;
+        if (!hotspots || !Array.isArray(hotspots)) return res.status(400).json({ success: false, message: '无效数据' });
+
+        const bookId = req.params.id;
+        const pageId = req.params.pageId;
+        const inserted = [];
+
+        for (let i = 0; i < hotspots.length; i++) {
+            const h = hotspots[i];
+            const result = await query(
+                'INSERT INTO picture_book_hotspots (page_id, book_id, text_en, position_x, position_y, width, height, sort_order) VALUES (?,?,?,?,?,?,?,?)',
+                [pageId, bookId, h.text_en || h.text, h.position_x, h.position_y, h.width, h.height, i + 1]
+            );
+            inserted.push({ id: result.insertId, text_en: h.text_en || h.text });
+        }
+
+        res.json({ success: true, data: inserted, count: inserted.length });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// OCR 识别页面图片
+router.post('/api/:id/pages/:pageId/ocr', async (req, res) => {
+    try {
+        const [page] = await query('SELECT * FROM picture_book_pages WHERE id = ? AND book_id = ?', [req.params.pageId, req.params.id]);
+        if (!page) return res.status(404).json({ success: false, message: '页面不存在' });
+        if (!page.image_url) return res.status(400).json({ success: false, message: '页面无图片' });
+
+        const { engine = 'youdao' } = req.body;
+
+        // 处理相对路径
+        let imagePath = page.image_url;
+        if (imagePath.startsWith('/')) {
+            imagePath = path.join(__dirname, '../../', imagePath);
+        }
+
+        const result = await aiService.recognizeImageText(imagePath, engine);
+        if (result.success) {
+            // OCR 返回 { text, rect: {x,y,w,h} } 格式，转为热点格式
+            const hotspots = (result.words || []).map(w => ({
+                text_en: w.text,
+                position_x: w.rect.x,
+                position_y: w.rect.y,
+                width: w.rect.w,
+                height: w.rect.h
+            }));
+            res.json({ success: true, hotspots, raw_count: hotspots.length });
+        } else {
+            res.status(500).json({ success: false, message: result.error || '识别失败' });
+        }
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// 生成单个热点的翻译+音标+TTS
+router.post('/api/hotspots/:hotspotId/generate', async (req, res) => {
+    try {
+        const [hotspot] = await query('SELECT * FROM picture_book_hotspots WHERE id = ?', [req.params.hotspotId]);
+        if (!hotspot) return res.status(404).json({ success: false, message: '热点不存在' });
+
+        const text = hotspot.text_en;
+        if (!text) return res.status(400).json({ success: false, message: '热点无文本' });
+
+        // 1. 检查是否匹配已有单词
+        const [existingWord] = await query('SELECT * FROM words WHERE word = ? LIMIT 1', [text.toLowerCase().trim()]);
+
+        let phonetic = '', translation = '', audioMale = '', audioFemale = '';
+
+        if (existingWord) {
+            phonetic = existingWord.phonetic || '';
+            translation = existingWord.translation || '';
+            audioMale = existingWord.audio_url_male || '';
+            audioFemale = existingWord.audio_url_female || '';
+            await query('UPDATE picture_book_hotspots SET word_id = ? WHERE id = ?', [existingWord.id, hotspot.id]);
+            console.log(`[PB-Generate] 关联已有单词: ${text} -> word_id=${existingWord.id}`);
+        } else {
+            console.log(`[PB-Generate] 生成新数据: ${text}`);
+
+            const phoneticResult = await aiService.getPhonetic(text);
+            if (phoneticResult.success) phonetic = phoneticResult.phonetic;
+
+            const translateResult = await aiService.translateText(text);
+            if (translateResult.success) translation = translateResult.translation;
+
+            try {
+                const femaleResult = await voiceService.textToSpeech(text, 'female');
+                if (femaleResult.success) audioFemale = femaleResult.audioUrl;
+
+                const maleResult = await voiceService.textToSpeech(text, 'male');
+                if (maleResult.success) audioMale = maleResult.audioUrl;
+            } catch (ttsError) {
+                console.error('[PB-Generate] TTS错误:', ttsError.message);
+            }
+        }
+
+        await query(
+            'UPDATE picture_book_hotspots SET phonetic=?, translation=?, audio_url_female=?, audio_url_male=? WHERE id=?',
+            [phonetic, translation, audioFemale, audioMale, hotspot.id]
+        );
+
+        const baseUrl = process.env.BASE_URL || 'https://en.tajian.cc';
+        res.json({
+            success: true,
+            data: {
+                id: hotspot.id,
+                phonetic,
+                translation,
+                audio_url_female: audioFemale ? (audioFemale.startsWith('http') ? audioFemale : baseUrl + audioFemale) : '',
+                audio_url_male: audioMale ? (audioMale.startsWith('http') ? audioMale : baseUrl + audioMale) : '',
+                word_id: existingWord?.id || null
+            }
+        });
+    } catch (e) {
+        console.error('[PB-Generate] 错误:', e);
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
 // ===== API: AI 生成封面 =====
 
 router.post('/api/:id/generate-cover', async (req, res) => {
