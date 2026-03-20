@@ -381,6 +381,19 @@ router.get('/garden/stages', authMiddleware, async (req, res) => {
     }
 });
 
+// 孩子端 — 查看奖励规则（只返回已启用的）
+router.get('/rules', authMiddleware, async (req, res) => {
+    try {
+        const rules = await query(
+            'SELECT rule_type, threshold, flowers, growth FROM reward_rules WHERE user_id = ? AND enabled = 1 ORDER BY id',
+            [req.user.id]
+        );
+        res.json({ success: true, data: rules });
+    } catch (e) {
+        res.status(500).json({ success: false, message: '加载失败' });
+    }
+});
+
 // 小红花流水
 router.get('/flowers', authMiddleware, async (req, res) => {
     try {
