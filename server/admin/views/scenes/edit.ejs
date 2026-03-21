@@ -256,13 +256,12 @@
     async function smartOCR() {
         const imageUrl = document.getElementById('image_url').value;
         const engine = document.getElementById('ocrEngine').value;
-        const debugLog = document.getElementById('debugLog');
 
         if (!imageUrl) return showToast('无图片', 'error');
 
         try {
             showToast('正在识别...', 'info');
-            debugLog.innerHTML = `[${new Date().toLocaleTimeString()}] Sending request to ${engine}...\n` + debugLog.innerHTML;
+            console.log(`[OCR] Sending request to ${engine}, image: ${imageUrl}`);
 
             const res = await fetch(`${API_BASE}/scenes/ocr`, {
                 method: 'POST',
@@ -270,9 +269,7 @@
                 body: JSON.stringify({ imageUrl, engine })
             });
             const data = await res.json();
-
-            // Log full response
-            debugLog.innerHTML = `[${new Date().toLocaleTimeString()}] Response:\n${JSON.stringify(data, null, 2)}\n\n` + debugLog.innerHTML;
+            console.log('[OCR] Response:', data);
 
             if (data.success) {
                 // Merge new hotspots
@@ -289,11 +286,9 @@
                 showToast(`识别成功，找到 ${data.words.length} 个文本`);
             } else {
                 showToast(data.message || data.error || '识别失败', 'error');
-                alert('识别失败 Details:\n' + JSON.stringify(data.error || data.message));
             }
         } catch (e) {
-            console.error(e);
-            debugLog.innerHTML = `[Error] ${e.message}\n` + debugLog.innerHTML;
+            console.error('[OCR] Error:', e);
             showToast('请求出错: ' + e.message, 'error');
         }
     }
