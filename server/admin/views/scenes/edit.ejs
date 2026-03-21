@@ -93,6 +93,14 @@
             <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">Editor Canvas</span>
 
             <div class="flex space-x-2">
+                <% if (typeof scene !== 'undefined' && scene) { %>
+                <button onclick="generateWxacode()"
+                    class="flex items-center space-x-1.5 bg-green-500 hover:bg-green-600 text-white text-xs px-3 py-1.5 rounded-lg transition-colors shadow-sm">
+                    <i class="fas fa-qrcode"></i>
+                    <span>小程序码</span>
+                </button>
+                <% } %>
+
                 <button onclick="smartOCR()"
                     class="flex items-center space-x-1.5 bg-yellow-500 hover:bg-yellow-600 text-white text-xs px-3 py-1.5 rounded-lg transition-colors shadow-sm">
                     <i class="fas fa-bolt"></i>
@@ -145,7 +153,20 @@
     </div>
 </div>
 
-
+<!-- 小程序码弹窗 -->
+<div id="wxacodeModal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center" onclick="this.classList.add('hidden');this.classList.remove('flex')">
+    <div class="bg-white rounded-2xl p-6 shadow-2xl text-center max-w-sm" onclick="event.stopPropagation()">
+        <h3 class="text-lg font-bold text-gray-800 mb-2">小程序码</h3>
+        <p class="text-sm text-gray-500 mb-4">扫码直达该场景点读页面</p>
+        <div id="wxacodeLoading" class="py-8 text-gray-400"><i class="fas fa-spinner fa-spin text-2xl"></i><br><span class="text-sm mt-2 inline-block">生成中...</span></div>
+        <img id="wxacodeImg" class="hidden mx-auto w-64 h-64 rounded-lg border" alt="小程序码">
+        <div id="wxacodeError" class="hidden text-red-500 text-sm py-4"></div>
+        <div class="mt-4 flex gap-3 justify-center">
+            <a id="wxacodeDownload" href="#" download class="hidden bg-green-500 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-600"><i class="fas fa-download mr-1"></i>下载</a>
+            <button onclick="document.getElementById('wxacodeModal').classList.add('hidden');document.getElementById('wxacodeModal').classList.remove('flex')" class="bg-gray-100 px-4 py-2 rounded-lg text-sm hover:bg-gray-200">关闭</button>
+        </div>
+    </div>
+</div>
 
 <style>
     .bg-dots {
@@ -251,6 +272,39 @@
 
     // Draw Logic (Simplified: Click to add box center, or drag support later)
     // Here we implement: Click on image -> Add default box at raw position -> user can modify text
+
+    // 小程序码
+    async function generateWxacode() {
+        if (!sceneId) return showToast('请先保存场景', 'error');
+        const modal = document.getElementById('wxacodeModal');
+        const loading = document.getElementById('wxacodeLoading');
+        const img = document.getElementById('wxacodeImg');
+        const errEl = document.getElementById('wxacodeError');
+        const dlBtn = document.getElementById('wxacodeDownload');
+
+        modal.classList.remove('hidden'); modal.classList.add('flex');
+        loading.classList.remove('hidden'); img.classList.add('hidden'); errEl.classList.add('hidden'); dlBtn.classList.add('hidden');
+
+        try {
+            const res = await fetch(`${API_BASE}/scenes/${sceneId}/wxacode`);
+            const data = await res.json();
+            loading.classList.add('hidden');
+
+            if (data.success) {
+                img.src = data.url + '?t=' + Date.now();
+                img.classList.remove('hidden');
+                dlBtn.href = data.url;
+                dlBtn.classList.remove('hidden');
+            } else {
+                errEl.textContent = data.message || '生成失败';
+                errEl.classList.remove('hidden');
+            }
+        } catch (e) {
+            loading.classList.add('hidden');
+            errEl.textContent = '请求失败: ' + e.message;
+            errEl.classList.remove('hidden');
+        }
+    }
 
     // OCR Logic
     async function smartOCR() {

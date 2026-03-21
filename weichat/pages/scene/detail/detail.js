@@ -28,9 +28,17 @@ Page({
         const sysInfo = wx.getSystemInfoSync();
         this.setData({ imageWrapperWidth: sysInfo.windowWidth });
 
-        if (options.id) {
-            this.setData({ id: options.id });
-            this.loadScene(options.id);
+        // 支持普通跳转 ?id=X 和小程序码扫码 scene=id%3DX
+        let sceneId = options.id;
+        if (!sceneId && options.scene) {
+            const params = decodeURIComponent(options.scene);
+            const match = params.match(/id=(\d+)/);
+            if (match) sceneId = match[1];
+        }
+
+        if (sceneId) {
+            this.setData({ id: sceneId });
+            this.loadScene(sceneId);
         }
 
         this._bindRecorder();

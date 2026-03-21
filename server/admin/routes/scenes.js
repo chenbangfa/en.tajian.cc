@@ -216,7 +216,55 @@ router.post('/ocr', async (req, res) => {
     }
 });
 
-// 7. 删除场景
+// 7. 生成小程序码
+router.get('/:id/wxacode', async (req, res) => {
+    try {
+        const sceneId = req.params.id;
+        const config = require('../../src/config');
+
+        // 获取 access_token
+        const tokenRes = await require('axios').get(
+            `https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=${config.wechat.appId}&secret=${config.wechat.secret}`
+        );
+        if (!tokenRes.data.access_token) {
+            return res.status(500).json({ success: false, message: '获取access_token失败', detail: tokenRes.data });
+        }
+
+        // 调用 wxacode.getUnlimited 生成小程序码
+        const wxRes = await require('axios').post(
+            `https://api.weixin.qq.com/wxa/getwxacodeunlimit?access_token=${tokenRes.data.access_token}`,
+            {
+                scene: `id=${sceneId}`,
+                page: 'pages/scene/detail/detail',
+                width: 430,
+                auto_color: false,
+                line_color: { r: 45, g: 52, b: 54 },
+                is_hyaline: false
+            },
+            { responseType: 'arraybuffer', timeout: 15000 }
+        );
+
+        // 微信返回图片二进制或 JSON 错误
+        const contentType = wxRes.headers['content-type'];
+        if (contentType && contentType.includes('image')) {
+            // 保存到本地
+            const filename = `wxacode_scene_${sceneId}.png`;
+            const savePath = path.join(__dirname, '../../uploads/wxacode');
+            if (!fs.existsSync(savePath)) fs.mkdirSync(savePath, { recursive: true });
+            const filePath = path.join(savePath, filename);
+            fs.writeFileSync(filePath, wxRes.data);
+            res.json({ success: true, url: `/uploads/wxacode/${filename}` });
+        } else {
+            const errData = JSON.parse(Buffer.from(wxRes.data).toString());
+            res.status(500).json({ success: false, message: errData.errmsg || '生成失败', errcode: errData.errcode });
+        }
+    } catch (e) {
+        console.error('生成小程序码失败:', e.message);
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// 8. 删除场景
 router.delete('/:id', async (req, res) => {
     try {
         await query('DELETE FROM scene_objects WHERE scene_id = ?', [req.params.id]);
