@@ -96,12 +96,38 @@ router.get('/:id', optionalAuth, async (req, res) => {
       ORDER BY so.sort_order ASC
     `, [id]);
 
-        // 获取上一页和下一页ID
-        const prevScene = await query('SELECT id FROM scenes WHERE id < ? AND is_active = 1 ORDER BY id DESC LIMIT 1', [id]);
-        const nextScene = await query('SELECT id FROM scenes WHERE id > ? AND is_active = 1 ORDER BY id ASC LIMIT 1', [id]);
-
-        scene.prev_id = prevScene.length > 0 ? prevScene[0].id : null;
-        scene.next_id = nextScene.length > 0 ? nextScene[0].id : null;
+        // 获取上一页和下一页ID（同分类优先，到头后跨分类）
+        const catId = scene.category_id;
+        // 同分类内找上一张/下一张
+        let [prev] = await query(
+            'SELECT id FROM scenes WHERE category_id = ? AND id < ? AND is_active = 1 ORDER BY id DESC LIMIT 1', [catId, id]
+        );
+        let [next] = await query(
+            'SELECT id FROM scenes WHERE category_id = ? AND id > ? AND is_active = 1 ORDER BY id ASC LIMIT 1', [catId, id]
+        );
+        // 同分类没有了，跨分类：找相邻分类的第一张/最后一张
+        if (!prev) {
+            // 上一个分类的最后一张
+            const [prevCross] = await query(
+                `SELECT s.id FROM scenes s
+                 WHERE s.is_active = 1 AND (
+                   s.category_id < ? OR (s.category_id = ? AND s.id < ?)
+                 ) ORDER BY s.category_id DESC, s.id DESC LIMIT 1`, [catId, catId, id]
+            );
+            prev = prevCross;
+        }
+        if (!next) {
+            // 下一个分类的第一张
+            const [nextCross] = await query(
+                `SELECT s.id FROM scenes s
+                 WHERE s.is_active = 1 AND (
+                   s.category_id > ? OR (s.category_id = ? AND s.id > ?)
+                 ) ORDER BY s.category_id ASC, s.id ASC LIMIT 1`, [catId, catId, id]
+            );
+            next = nextCross;
+        }
+        scene.prev_id = prev ? prev.id : null;
+        scene.next_id = next ? next.id : null;
 
         // Prepend base URL to paths
         const baseUrl = process.env.BASE_URL || 'https://en.tajian.cc';
