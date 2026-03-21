@@ -198,7 +198,7 @@ router.post('/generate-image', async (req, res) => {
 // 6. 智能识别 OCR
 router.post('/ocr', async (req, res) => {
     try {
-        const { imageUrl, engine = 'gemini' } = req.body;
+        const { imageUrl, engine = 'youdao' } = req.body;
 
         if (!imageUrl) return res.status(400).json({ success: false, message: '无图片地址' });
 
