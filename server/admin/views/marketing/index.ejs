@@ -26,6 +26,7 @@
         <select x-model="filter.source_type" @change="loadList()" class="border rounded-lg px-3 py-2 text-sm">
             <option value="">全部素材</option>
             <option value="scene">看图场景</option>
+            <option value="dialogue">对话场景</option>
             <option value="picturebook">绘本故事</option>
             <option value="podcast">磨耳朵</option>
             <option value="word">单词</option>
@@ -117,10 +118,14 @@
                 <div x-show="!editId" class="space-y-4">
                     <div class="font-semibold text-gray-700"><span class="bg-blue-600 text-white w-6 h-6 rounded-full inline-flex items-center justify-center text-xs mr-2">1</span>选择素材</div>
 
-                    <div class="grid grid-cols-4 gap-3">
+                    <div class="grid grid-cols-5 gap-3">
                         <button @click="form.source_type='scene'; searchSources()" class="border-2 rounded-lg p-3 text-center transition"
                             :class="form.source_type==='scene' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'">
                             <i class="fas fa-image text-2xl text-blue-500 mb-1"></i><br><span class="text-sm">看图场景</span>
+                        </button>
+                        <button @click="form.source_type='dialogue'; searchSources()" class="border-2 rounded-lg p-3 text-center transition"
+                            :class="form.source_type==='dialogue' ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-gray-300'">
+                            <i class="fas fa-comments text-2xl text-indigo-500 mb-1"></i><br><span class="text-sm">对话场景</span>
                         </button>
                         <button @click="form.source_type='picturebook'; searchSources()" class="border-2 rounded-lg p-3 text-center transition"
                             :class="form.source_type==='picturebook' ? 'border-green-500 bg-green-50' : 'border-gray-200 hover:border-gray-300'">
@@ -343,7 +348,7 @@ function marketingApp() {
         },
 
         sourceLabel(type) {
-            return { scene: '场景', picturebook: '绘本', podcast: '磨耳朵', word: '单词' }[type] || '-';
+            return { scene: '场景', dialogue: '对话', picturebook: '绘本', podcast: '磨耳朵', word: '单词' }[type] || '-';
         },
         statusLabel(s) {
             return { draft: '草稿', published: '已发布', archived: '已归档' }[s] || s;

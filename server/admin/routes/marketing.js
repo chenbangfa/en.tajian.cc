@@ -84,7 +84,7 @@ router.get('/api/sources', async (req, res) => {
         switch (type) {
             case 'scene':
                 results = await query(
-                    `SELECT id, name as title, name_en as subtitle, background_url as cover FROM scenes WHERE name LIKE ? OR name_en LIKE ? ORDER BY id DESC LIMIT 30`,
+                    `SELECT id, name as title, name_en as subtitle, image_url as cover FROM scenes WHERE name LIKE ? OR name_en LIKE ? ORDER BY id DESC LIMIT 30`,
                     [kw, kw]
                 );
                 break;
@@ -96,7 +96,13 @@ router.get('/api/sources', async (req, res) => {
                 break;
             case 'podcast':
                 results = await query(
-                    `SELECT id, title, title_en as subtitle, cover_url as cover FROM podcast_contents WHERE title LIKE ? OR title_en LIKE ? ORDER BY id DESC LIMIT 30`,
+                    `SELECT id, title, category as subtitle, NULL as cover FROM podcast_contents WHERE title LIKE ? ORDER BY id DESC LIMIT 30`,
+                    [kw]
+                );
+                break;
+            case 'dialogue':
+                results = await query(
+                    `SELECT id, title, title_en as subtitle, cover_image as cover FROM dialogue_scenes WHERE title LIKE ? OR title_en LIKE ? ORDER BY id DESC LIMIT 30`,
                     [kw, kw]
                 );
                 break;
@@ -142,6 +148,13 @@ router.get('/api/source-detail', async (req, res) => {
                 const [pod] = await query('SELECT * FROM podcast_contents WHERE id = ?', [id]);
                 if (!pod) break;
                 detail = pod;
+                break;
+            }
+            case 'dialogue': {
+                const [scene] = await query('SELECT * FROM dialogue_scenes WHERE id = ?', [id]);
+                if (!scene) break;
+                const lines = await query('SELECT role, line_en, line_cn FROM dialogue_lines WHERE scene_id = ? ORDER BY sort_order', [id]);
+                detail = { ...scene, lines };
                 break;
             }
             case 'word': {
@@ -191,7 +204,15 @@ router.post('/api/generate', async (req, res) => {
                 const [pod] = await query('SELECT * FROM podcast_contents WHERE id = ?', [source_id]);
                 if (!pod) return res.status(404).json({ success: false, message: '内容不存在' });
                 sourceTitle = pod.title;
-                sourceContext = `标题: ${pod.title} (${pod.title_en || ''})\n描述: ${pod.description || ''}\n歌词/内容: ${(pod.lyrics || '').substring(0, 500)}`;
+                sourceContext = `标题: ${pod.title}\n分类: ${pod.category || ''}\n内容: ${(pod.content_text || '').substring(0, 500)}\n翻译: ${(pod.translation || '').substring(0, 300)}`;
+                break;
+            }
+            case 'dialogue': {
+                const [scene] = await query('SELECT * FROM dialogue_scenes WHERE id = ?', [source_id]);
+                if (!scene) return res.status(404).json({ success: false, message: '对话场景不存在' });
+                const lines = await query('SELECT role, line_en, line_cn FROM dialogue_lines WHERE scene_id = ? ORDER BY sort_order', [source_id]);
+                sourceTitle = scene.title;
+                sourceContext = `对话场景: ${scene.title} (${scene.title_en || ''})\n场景描述: ${scene.description || ''}\n角色: ${scene.guide_role || ''} & ${scene.user_role || ''}\n对话内容:\n${lines.map(l => `${l.role}: ${l.line_en} (${l.line_cn || ''})`).join('\n')}`;
                 break;
             }
             case 'word': {
