@@ -613,6 +613,53 @@ Only return the JSON array, no other text.`
     }
 
     /**
+     * 通用文本生成 (Gemini 2.0 Flash)
+     * @param {string} prompt - 提示词
+     * @returns {Object} { success: boolean, text?: string, error?: string }
+     */
+    async callGeminiText(prompt) {
+        const doCall = async (baseUrl, apiKey) => {
+            const response = await axios.post(
+                `${baseUrl}/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+                {
+                    contents: [{ parts: [{ text: prompt }] }],
+                    generationConfig: { temperature: 0.7, maxOutputTokens: 4096 }
+                },
+                { headers: { 'Content-Type': 'application/json' }, timeout: 60000 }
+            );
+            const text = response.data.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (text) return { success: true, text };
+            return { success: false, error: 'Gemini 未返回文本' };
+        };
+
+        // 优先走代理
+        if (process.env.PROXY_BASE_URL) {
+            try {
+                const resp = await axios.post(
+                    `${process.env.PROXY_BASE_URL}/proxy/gemini-text`,
+                    { prompt },
+                    {
+                        headers: { 'Content-Type': 'application/json', 'X-Proxy-Key': process.env.PROXY_API_KEY || '' },
+                        timeout: 65000
+                    }
+                );
+                if (resp.data.success && resp.data.text) return { success: true, text: resp.data.text };
+                // 代理失败不阻塞，尝试直连
+                console.warn('[AIService] 代理文本生成失败，尝试直连');
+            } catch (e) {
+                console.warn('[AIService] 代理不可用，尝试直连:', e.message);
+            }
+        }
+
+        try {
+            return await doCall(this.baseUrl, this.apiKey);
+        } catch (error) {
+            console.error('[AIService] Gemini文本生成失败:', error.response?.data || error.message);
+            return { success: false, error: error.response?.data?.error?.message || error.message };
+        }
+    }
+
+    /**
      * 获取MIME类型
      */
     getMimeType(filePath) {

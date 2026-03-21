@@ -126,6 +126,7 @@ app.use('/api/admin/dialogue', requireAuth, require('./routes/dialogue'));
 app.use('/picture-books/categories', requireAuth, require('./routes/picturebook_categories'));
 app.use('/picture-books', requireAuth, require('./routes/picturebooks'));
 app.use('/api/admin/pet-stages', requireAuth, require('./routes/pet_stages'));
+app.use('/marketing', requireAuth, require('./routes/marketing'));
 
 // 健康检查 (不需要认证)
 app.get('/api/admin/health', (req, res) => {

@@ -1,0 +1,357 @@
+<div x-data="marketingApp()" x-init="init()" class="space-y-6">
+
+    <!-- 顶部操作栏 -->
+    <div class="flex items-center justify-between">
+        <h2 class="text-2xl font-bold text-gray-800">内容工坊</h2>
+        <button @click="openCreate()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition flex items-center gap-2">
+            <i class="fas fa-magic"></i> AI 生成内容
+        </button>
+    </div>
+
+    <!-- 筛选栏 -->
+    <div class="bg-white rounded-lg shadow p-4 flex flex-wrap gap-3 items-center">
+        <select x-model="filter.status" @change="loadList()" class="border rounded-lg px-3 py-2 text-sm">
+            <option value="">全部状态</option>
+            <option value="draft">草稿</option>
+            <option value="published">已发布</option>
+            <option value="archived">已归档</option>
+        </select>
+        <select x-model="filter.platform" @change="loadList()" class="border rounded-lg px-3 py-2 text-sm">
+            <option value="">全部平台</option>
+            <option value="公众号">公众号</option>
+            <option value="小红书">小红书</option>
+            <option value="抖音">抖音</option>
+            <option value="视频号">视频号</option>
+        </select>
+        <select x-model="filter.source_type" @change="loadList()" class="border rounded-lg px-3 py-2 text-sm">
+            <option value="">全部素材</option>
+            <option value="scene">看图场景</option>
+            <option value="picturebook">绘本故事</option>
+            <option value="podcast">磨耳朵</option>
+            <option value="word">单词</option>
+        </select>
+        <input type="text" x-model="filter.keyword" @keyup.enter="loadList()" placeholder="搜索标题/标签..." class="border rounded-lg px-3 py-2 text-sm flex-1 min-w-[200px]">
+        <button @click="loadList()" class="bg-gray-100 px-3 py-2 rounded-lg text-sm hover:bg-gray-200"><i class="fas fa-search"></i></button>
+    </div>
+
+    <!-- 列表 -->
+    <div class="bg-white rounded-lg shadow overflow-hidden">
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-4 py-3 text-left font-medium text-gray-500">标题</th>
+                    <th class="px-4 py-3 text-left font-medium text-gray-500 w-24">平台</th>
+                    <th class="px-4 py-3 text-left font-medium text-gray-500 w-28">素材来源</th>
+                    <th class="px-4 py-3 text-left font-medium text-gray-500 w-20">状态</th>
+                    <th class="px-4 py-3 text-left font-medium text-gray-500 w-40">更新时间</th>
+                    <th class="px-4 py-3 text-center font-medium text-gray-500 w-32">操作</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y">
+                <template x-for="item in list" :key="item.id">
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-4 py-3">
+                            <div class="font-medium text-gray-800 truncate max-w-md" x-text="item.title"></div>
+                            <div class="text-xs text-gray-400 mt-1 truncate max-w-md" x-text="item.tags"></div>
+                        </td>
+                        <td class="px-4 py-3">
+                            <span class="inline-block px-2 py-0.5 rounded text-xs font-medium"
+                                :class="{
+                                    'bg-green-100 text-green-700': item.platform === '公众号',
+                                    'bg-red-100 text-red-700': item.platform === '小红书',
+                                    'bg-blue-100 text-blue-700': item.platform === '抖音',
+                                    'bg-purple-100 text-purple-700': item.platform === '视频号'
+                                }"
+                                x-text="item.platform || '-'"></span>
+                        </td>
+                        <td class="px-4 py-3 text-gray-500">
+                            <span x-text="sourceLabel(item.source_type)"></span>
+                            <span class="text-xs text-gray-400 block truncate max-w-[120px]" x-text="item.source_title"></span>
+                        </td>
+                        <td class="px-4 py-3">
+                            <span class="inline-block px-2 py-0.5 rounded text-xs font-medium"
+                                :class="{
+                                    'bg-yellow-100 text-yellow-700': item.status === 'draft',
+                                    'bg-green-100 text-green-700': item.status === 'published',
+                                    'bg-gray-100 text-gray-500': item.status === 'archived'
+                                }"
+                                x-text="statusLabel(item.status)"></span>
+                        </td>
+                        <td class="px-4 py-3 text-gray-500 text-xs" x-text="formatTime(item.updated_at)"></td>
+                        <td class="px-4 py-3 text-center">
+                            <button @click="openEdit(item)" class="text-blue-600 hover:underline text-xs mr-2">编辑</button>
+                            <button @click="deleteItem(item.id)" class="text-red-500 hover:underline text-xs">删除</button>
+                        </td>
+                    </tr>
+                </template>
+                <tr x-show="list.length === 0">
+                    <td colspan="6" class="text-center py-12 text-gray-400">暂无内容，点击右上角「AI 生成内容」开始创作</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <!-- 分页 -->
+        <div x-show="totalPages > 1" class="flex items-center justify-between px-4 py-3 bg-gray-50 border-t">
+            <div class="text-sm text-gray-500">共 <span x-text="total"></span> 条</div>
+            <div class="flex gap-1">
+                <button @click="goPage(currentPage-1)" :disabled="currentPage<=1" class="px-3 py-1 border rounded text-sm disabled:opacity-40">&lt;</button>
+                <template x-for="p in totalPages" :key="p">
+                    <button @click="goPage(p)" class="px-3 py-1 border rounded text-sm" :class="p===currentPage ? 'bg-blue-600 text-white border-blue-600' : ''" x-text="p"></button>
+                </template>
+                <button @click="goPage(currentPage+1)" :disabled="currentPage>=totalPages" class="px-3 py-1 border rounded text-sm disabled:opacity-40">&gt;</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== 创建/编辑 弹窗 ===== -->
+    <div x-show="showModal" x-transition class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" @click.self="showModal=false" style="display:none">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col" @click.stop>
+            <div class="flex items-center justify-between px-6 py-4 border-b">
+                <h3 class="text-lg font-bold" x-text="editId ? '编辑内容' : 'AI 生成内容'"></h3>
+                <button @click="showModal=false" class="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+            </div>
+
+            <div class="flex-1 overflow-y-auto p-6 space-y-6">
+
+                <!-- Step 1: 选择素材 (仅创建时) -->
+                <div x-show="!editId" class="space-y-4">
+                    <div class="font-semibold text-gray-700"><span class="bg-blue-600 text-white w-6 h-6 rounded-full inline-flex items-center justify-center text-xs mr-2">1</span>选择素材</div>
+
+                    <div class="grid grid-cols-4 gap-3">
+                        <button @click="form.source_type='scene'; searchSources()" class="border-2 rounded-lg p-3 text-center transition"
+                            :class="form.source_type==='scene' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'">
+                            <i class="fas fa-image text-2xl text-blue-500 mb-1"></i><br><span class="text-sm">看图场景</span>
+                        </button>
+                        <button @click="form.source_type='picturebook'; searchSources()" class="border-2 rounded-lg p-3 text-center transition"
+                            :class="form.source_type==='picturebook' ? 'border-green-500 bg-green-50' : 'border-gray-200 hover:border-gray-300'">
+                            <i class="fas fa-book-open text-2xl text-green-500 mb-1"></i><br><span class="text-sm">绘本故事</span>
+                        </button>
+                        <button @click="form.source_type='podcast'; searchSources()" class="border-2 rounded-lg p-3 text-center transition"
+                            :class="form.source_type==='podcast' ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-gray-300'">
+                            <i class="fas fa-headphones text-2xl text-purple-500 mb-1"></i><br><span class="text-sm">磨耳朵</span>
+                        </button>
+                        <button @click="form.source_type='word'; searchSources()" class="border-2 rounded-lg p-3 text-center transition"
+                            :class="form.source_type==='word' ? 'border-orange-500 bg-orange-50' : 'border-gray-200 hover:border-gray-300'">
+                            <i class="fas fa-spell-check text-2xl text-orange-500 mb-1"></i><br><span class="text-sm">单词</span>
+                        </button>
+                    </div>
+
+                    <!-- 素材搜索 -->
+                    <div x-show="form.source_type" class="space-y-2">
+                        <input type="text" x-model="sourceKeyword" @keyup.enter="searchSources()" placeholder="搜索素材..." class="border rounded-lg px-3 py-2 text-sm w-full">
+                        <div class="max-h-48 overflow-y-auto border rounded-lg divide-y">
+                            <template x-for="s in sources" :key="s.id">
+                                <div @click="selectSource(s)" class="px-3 py-2 hover:bg-blue-50 cursor-pointer flex items-center gap-3 transition"
+                                    :class="form.source_id == s.id ? 'bg-blue-50 border-l-4 border-blue-500' : ''">
+                                    <img x-show="s.cover" :src="s.cover" class="w-10 h-10 rounded object-cover flex-shrink-0">
+                                    <div class="min-w-0">
+                                        <div class="font-medium text-sm truncate" x-text="s.title"></div>
+                                        <div class="text-xs text-gray-400 truncate" x-text="s.subtitle"></div>
+                                    </div>
+                                </div>
+                            </template>
+                            <div x-show="sources.length === 0" class="text-center py-4 text-gray-400 text-sm">暂无数据</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 2: 平台与风格 (仅创建时) -->
+                <div x-show="!editId" class="space-y-4">
+                    <div class="font-semibold text-gray-700"><span class="bg-blue-600 text-white w-6 h-6 rounded-full inline-flex items-center justify-center text-xs mr-2">2</span>选择平台</div>
+                    <div class="flex gap-3 flex-wrap">
+                        <template x-for="p in platforms" :key="p">
+                            <button @click="form.platform=p" class="px-4 py-2 border-2 rounded-lg text-sm transition"
+                                :class="form.platform===p ? 'border-blue-500 bg-blue-50 font-medium' : 'border-gray-200 hover:border-gray-300'"
+                                x-text="p"></button>
+                        </template>
+                    </div>
+                    <input type="text" x-model="form.style" placeholder="写作风格补充(可选)，如：幽默风趣、知识科普..." class="border rounded-lg px-3 py-2 text-sm w-full">
+
+                    <button @click="generate()" :disabled="generating || !form.source_id" class="bg-gradient-to-r from-blue-600 to-purple-600 text-white px-6 py-2.5 rounded-lg hover:opacity-90 transition disabled:opacity-40 flex items-center gap-2">
+                        <i class="fas fa-magic" :class="generating ? 'animate-spin' : ''"></i>
+                        <span x-text="generating ? 'AI 生成中...' : 'AI 生成文案'"></span>
+                    </button>
+                </div>
+
+                <!-- Step 3: 编辑内容 -->
+                <div x-show="form.title || editId" class="space-y-4">
+                    <div class="font-semibold text-gray-700" x-show="!editId"><span class="bg-blue-600 text-white w-6 h-6 rounded-full inline-flex items-center justify-center text-xs mr-2">3</span>编辑内容</div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-600 mb-1">标题</label>
+                            <input type="text" x-model="form.title" class="border rounded-lg px-3 py-2 text-sm w-full">
+                        </div>
+                        <div class="flex gap-4">
+                            <div class="flex-1">
+                                <label class="block text-sm font-medium text-gray-600 mb-1">平台</label>
+                                <select x-model="form.platform" class="border rounded-lg px-3 py-2 text-sm w-full">
+                                    <template x-for="p in platforms" :key="p"><option :value="p" x-text="p"></option></template>
+                                </select>
+                            </div>
+                            <div class="flex-1">
+                                <label class="block text-sm font-medium text-gray-600 mb-1">状态</label>
+                                <select x-model="form.status" class="border rounded-lg px-3 py-2 text-sm w-full">
+                                    <option value="draft">草稿</option>
+                                    <option value="published">已发布</option>
+                                    <option value="archived">已归档</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-600 mb-1">标签 <span class="text-gray-400 font-normal">(逗号分隔)</span></label>
+                        <input type="text" x-model="form.tags" class="border rounded-lg px-3 py-2 text-sm w-full" placeholder="英语启蒙,儿童教育,亲子互动">
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-600 mb-1">正文 <span class="text-gray-400 font-normal">(支持 Markdown)</span></label>
+                        <textarea x-model="form.body" rows="16" class="border rounded-lg px-3 py-2 text-sm w-full font-mono leading-relaxed"></textarea>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-600 mb-1">发布备注</label>
+                        <input type="text" x-model="form.publish_note" class="border rounded-lg px-3 py-2 text-sm w-full" placeholder="备注信息...">
+                    </div>
+                </div>
+            </div>
+
+            <!-- 底部按钮 -->
+            <div x-show="form.title || editId" class="px-6 py-4 border-t flex justify-end gap-3">
+                <button @click="showModal=false" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">取消</button>
+                <button @click="save()" :disabled="saving" class="bg-blue-600 text-white px-6 py-2 rounded-lg text-sm hover:bg-blue-700 disabled:opacity-40">
+                    <span x-text="saving ? '保存中...' : '保存'"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+<script>
+function marketingApp() {
+    return {
+        list: [], total: 0, currentPage: 1, pageSize: 20, totalPages: 1,
+        filter: { status: '', platform: '', source_type: '', keyword: '' },
+        showModal: false, editId: null,
+        form: { title: '', body: '', tags: '', platform: '公众号', source_type: '', source_id: 0, source_title: '', status: 'draft', style: '', publish_note: '', ai_prompt: '', content_type: 'article' },
+        sources: [], sourceKeyword: '',
+        platforms: ['公众号', '小红书', '抖音', '视频号'],
+        generating: false, saving: false,
+
+        async init() { await this.loadList(); },
+
+        async loadList() {
+            const p = new URLSearchParams({ page: this.currentPage, page_size: this.pageSize, ...this.filter });
+            const res = await fetch('/marketing/api/list?' + p).then(r => r.json());
+            if (res.success) {
+                this.list = res.data.list;
+                this.total = res.data.total;
+                this.totalPages = Math.ceil(res.data.total / this.pageSize) || 1;
+            }
+        },
+
+        goPage(p) {
+            if (p < 1 || p > this.totalPages) return;
+            this.currentPage = p;
+            this.loadList();
+        },
+
+        openCreate() {
+            this.editId = null;
+            this.form = { title: '', body: '', tags: '', platform: '公众号', source_type: '', source_id: 0, source_title: '', status: 'draft', style: '', publish_note: '', ai_prompt: '', content_type: 'article' };
+            this.sources = []; this.sourceKeyword = '';
+            this.showModal = true;
+        },
+
+        async openEdit(item) {
+            this.editId = item.id;
+            this.form = { ...item };
+            this.showModal = true;
+        },
+
+        async searchSources() {
+            const res = await fetch(`/marketing/api/sources?type=${this.form.source_type}&keyword=${encodeURIComponent(this.sourceKeyword)}`).then(r => r.json());
+            if (res.success) this.sources = res.data;
+        },
+
+        selectSource(s) {
+            this.form.source_id = s.id;
+            this.form.source_title = s.title;
+        },
+
+        async generate() {
+            if (!this.form.source_id) return alert('请先选择一个素材');
+            this.generating = true;
+            try {
+                const res = await fetch('/marketing/api/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        source_type: this.form.source_type,
+                        source_id: this.form.source_id,
+                        platform: this.form.platform,
+                        style: this.form.style
+                    })
+                }).then(r => r.json());
+
+                if (res.success) {
+                    this.form.title = res.data.title;
+                    this.form.body = res.data.body;
+                    this.form.tags = res.data.tags;
+                    this.form.source_title = res.data.source_title;
+                    this.form.ai_prompt = res.data.ai_prompt;
+                } else {
+                    alert('生成失败: ' + (res.message || '未知错误'));
+                }
+            } catch (e) {
+                alert('请求失败: ' + e.message);
+            }
+            this.generating = false;
+        },
+
+        async save() {
+            if (!this.form.title) return alert('标题不能为空');
+            this.saving = true;
+            try {
+                const body = { ...this.form };
+                if (this.editId) body.id = this.editId;
+                const res = await fetch('/marketing/api/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                }).then(r => r.json());
+
+                if (res.success) {
+                    this.showModal = false;
+                    this.loadList();
+                } else {
+                    alert(res.message || '保存失败');
+                }
+            } catch (e) {
+                alert('请求失败: ' + e.message);
+            }
+            this.saving = false;
+        },
+
+        async deleteItem(id) {
+            if (!confirm('确定删除这条内容？')) return;
+            const res = await fetch('/marketing/api/' + id, { method: 'DELETE' }).then(r => r.json());
+            if (res.success) this.loadList();
+            else alert(res.message || '删除失败');
+        },
+
+        sourceLabel(type) {
+            return { scene: '场景', picturebook: '绘本', podcast: '磨耳朵', word: '单词' }[type] || '-';
+        },
+        statusLabel(s) {
+            return { draft: '草稿', published: '已发布', archived: '已归档' }[s] || s;
+        },
+        formatTime(t) {
+            if (!t) return '';
+            return new Date(t).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+        }
+    };
+}
+</script>
