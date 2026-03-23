@@ -178,12 +178,11 @@ router.post('/upload', upload.single('image'), (req, res) => {
     res.json({ success: true, url: `/uploads/scenes/${req.file.filename}` });
 });
 
-// 5. AI 生成图片
+// 5. AI 生成图片 (Imagen 4.0 via proxy)
 router.post('/generate-image', async (req, res) => {
     try {
-        const { prompt, name } = req.body;
-        // 使用场景专属方法，或者通用方法
-        const result = await aiService.generateSceneImage(name || 'scene', prompt);
+        const { prompt } = req.body;
+        const result = await aiService.generateImage(prompt);
 
         if (result.success) {
             res.json({ success: true, imageUrl: result.imageUrl });
@@ -191,7 +190,8 @@ router.post('/generate-image', async (req, res) => {
             res.status(500).json({ success: false, message: result.error });
         }
     } catch (error) {
-        res.status(500).json({ success: false, message: '生成失败' });
+        console.error('生成场景图片错误:', error.message, error.stack);
+        res.status(500).json({ success: false, message: error.message || '生成失败' });
     }
 });
 
@@ -267,6 +267,19 @@ router.get('/:id/wxacode', async (req, res) => {
 // 8. 删除场景
 router.delete('/:id', async (req, res) => {
     try {
+        // 查询场景图片路径
+        const scenes = await query('SELECT image_url FROM scenes WHERE id = ?', [req.params.id]);
+        if (scenes.length > 0 && scenes[0].image_url) {
+            const imageUrl = scenes[0].image_url;
+            // 仅删除本地上传的图片（以 /uploads/ 开头）
+            if (imageUrl.startsWith('/uploads/')) {
+                const filePath = path.join(__dirname, '../../', imageUrl);
+                if (fs.existsSync(filePath)) {
+                    fs.unlinkSync(filePath);
+                }
+            }
+        }
+
         await query('DELETE FROM scene_objects WHERE scene_id = ?', [req.params.id]);
         await query('DELETE FROM scenes WHERE id = ?', [req.params.id]);
         res.json({ success: true, message: '删除成功' });
@@ -319,8 +332,8 @@ router.post('/objects/:objId/generate', async (req, res) => {
         let audioFemale = '';
 
         if (existingWord) {
-            // 使用已有单词数据
-            phonetic = existingWord.phonetic || '';
+            // 使用已有单词数据，去掉音标外层斜杠
+            phonetic = (existingWord.phonetic || '').replace(/^\/+/, '').replace(/\/+$/, '');
             translation = existingWord.translation || '';
             audioMale = existingWord.audio_url_male || '';
             audioFemale = existingWord.audio_url_female || '';
@@ -335,7 +348,8 @@ router.post('/objects/:objId/generate', async (req, res) => {
             // 获取音标
             const phoneticResult = await aiService.getPhonetic(text);
             if (phoneticResult.success) {
-                phonetic = phoneticResult.phonetic;
+                // 去掉所有外层斜杠，前端统一加 /xxx/ 显示
+                phonetic = (phoneticResult.phonetic || '').replace(/^\/+/, '').replace(/\/+$/, '');
             }
 
             // 获取翻译
