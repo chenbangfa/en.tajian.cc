@@ -1,67 +1,328 @@
-<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-    <div class="bg-white rounded-xl shadow-sm p-6 flex flex-col items-center justify-center border-b-4 border-blue-500">
-        <div class="text-4xl font-bold text-blue-600 mb-2" id="stat-words">0</div>
-        <div class="text-gray-500 font-medium">总单词数</div>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+
+<!-- Row 1: 8 核心指标卡片 -->
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+    <div class="bg-white rounded-xl shadow-sm p-5 border-b-4 border-blue-500">
+        <div class="flex items-center justify-between">
+            <div>
+                <div class="text-3xl font-bold text-blue-600" id="m-totalUsers">-</div>
+                <div class="text-gray-500 text-sm mt-1">总用户</div>
+            </div>
+            <i class="fas fa-users text-blue-200 text-3xl"></i>
+        </div>
     </div>
-    <div
-        class="bg-white rounded-xl shadow-sm p-6 flex flex-col items-center justify-center border-b-4 border-green-500">
-        <div class="text-4xl font-bold text-green-600 mb-2" id="stat-with-image">0</div>
-        <div class="text-gray-500 font-medium">有图片</div>
+    <div class="bg-white rounded-xl shadow-sm p-5 border-b-4 border-green-500">
+        <div class="flex items-center justify-between">
+            <div>
+                <div class="text-3xl font-bold text-green-600" id="m-todayNew">-</div>
+                <div class="text-gray-500 text-sm mt-1">今日新增</div>
+            </div>
+            <i class="fas fa-user-plus text-green-200 text-3xl"></i>
+        </div>
     </div>
-    <div
-        class="bg-white rounded-xl shadow-sm p-6 flex flex-col items-center justify-center border-b-4 border-yellow-500">
-        <div class="text-4xl font-bold text-yellow-600 mb-2" id="stat-without-image">0</div>
-        <div class="text-gray-500 font-medium">无图片</div>
+    <div class="bg-white rounded-xl shadow-sm p-5 border-b-4 border-yellow-500">
+        <div class="flex items-center justify-between">
+            <div>
+                <div class="text-3xl font-bold text-yellow-600" id="m-todayCheckin">-</div>
+                <div class="text-gray-500 text-sm mt-1">今日打卡</div>
+            </div>
+            <i class="fas fa-calendar-check text-yellow-200 text-3xl"></i>
+        </div>
     </div>
-    <div
-        class="bg-white rounded-xl shadow-sm p-6 flex flex-col items-center justify-center border-b-4 border-purple-500">
-        <div class="text-4xl font-bold text-purple-600 mb-2" id="stat-categories">0</div>
-        <div class="text-gray-500 font-medium">分类数</div>
+    <div class="bg-white rounded-xl shadow-sm p-5 border-b-4 border-purple-500">
+        <div class="flex items-center justify-between">
+            <div>
+                <div class="text-3xl font-bold text-purple-600" id="m-todayActive">-</div>
+                <div class="text-gray-500 text-sm mt-1">今日活跃</div>
+            </div>
+            <i class="fas fa-bolt text-purple-200 text-3xl"></i>
+        </div>
+    </div>
+    <div class="bg-white rounded-xl shadow-sm p-5 border-b-4 border-indigo-500">
+        <div class="flex items-center justify-between">
+            <div>
+                <div class="text-3xl font-bold text-indigo-600" id="m-vipUsers">-</div>
+                <div class="text-gray-500 text-sm mt-1">VIP用户</div>
+            </div>
+            <i class="fas fa-crown text-indigo-200 text-3xl"></i>
+        </div>
+    </div>
+    <div class="bg-white rounded-xl shadow-sm p-5 border-b-4 border-red-500">
+        <div class="flex items-center justify-between">
+            <div>
+                <div class="text-3xl font-bold text-red-600" id="m-todayRevenue">-</div>
+                <div class="text-gray-500 text-sm mt-1">今日收入(元)</div>
+            </div>
+            <i class="fas fa-yen-sign text-red-200 text-3xl"></i>
+        </div>
+    </div>
+    <div class="bg-white rounded-xl shadow-sm p-5 border-b-4 border-orange-500">
+        <div class="flex items-center justify-between">
+            <div>
+                <div class="text-3xl font-bold text-orange-600" id="m-pointsConsumed">-</div>
+                <div class="text-gray-500 text-sm mt-1">消耗积分</div>
+            </div>
+            <i class="fas fa-coins text-orange-200 text-3xl"></i>
+        </div>
+    </div>
+    <div class="bg-white rounded-xl shadow-sm p-5 border-b-4 border-emerald-500">
+        <div class="flex items-center justify-between">
+            <div>
+                <div class="text-3xl font-bold text-emerald-600" id="m-totalGrowth">-</div>
+                <div class="text-gray-500 text-sm mt-1">总成长值</div>
+            </div>
+            <i class="fas fa-seedling text-emerald-200 text-3xl"></i>
+        </div>
     </div>
 </div>
 
-<div class="bg-white rounded-xl shadow-sm p-6">
-    <h3 class="text-lg font-bold text-gray-800 mb-4">最近添加单词</h3>
-    <p class="text-gray-500 text-sm">功能开发中...</p>
+<!-- Row 2: 趋势图 -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+    <div class="bg-white rounded-xl shadow-sm p-5">
+        <h3 class="text-base font-bold text-gray-800 mb-3">新增用户趋势（近30天 vs 环比）</h3>
+        <div id="chart-new-users" style="height:320px"></div>
+    </div>
+    <div class="bg-white rounded-xl shadow-sm p-5">
+        <h3 class="text-base font-bold text-gray-800 mb-3">打卡趋势 & 平均分</h3>
+        <div id="chart-checkins" style="height:320px"></div>
+    </div>
+</div>
+
+<!-- Row 3: 分布 + 排行榜 -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+    <div class="bg-white rounded-xl shadow-sm p-5">
+        <h3 class="text-base font-bold text-gray-800 mb-3">VIP 等级分布</h3>
+        <div id="chart-vip" style="height:280px"></div>
+    </div>
+    <div class="bg-white rounded-xl shadow-sm p-5">
+        <h3 class="text-base font-bold text-gray-800 mb-3">评测分数分布</h3>
+        <div id="chart-assessments" style="height:280px"></div>
+    </div>
+    <div class="bg-white rounded-xl shadow-sm p-5">
+        <h3 class="text-base font-bold text-gray-800 mb-3"><i class="fas fa-seedling text-green-500 mr-1"></i> 成长花园 Top 30</h3>
+        <div id="leaderboard" class="overflow-y-auto" style="max-height:280px"></div>
+    </div>
+</div>
+
+<!-- Row 4: 更多洞察 -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+    <div class="bg-white rounded-xl shadow-sm p-5">
+        <h3 class="text-base font-bold text-gray-800 mb-3">热门单词 Top 10</h3>
+        <div id="chart-words" style="height:300px"></div>
+    </div>
+    <div class="bg-white rounded-xl shadow-sm p-5">
+        <h3 class="text-base font-bold text-gray-800 mb-3">学习模式分布</h3>
+        <div id="chart-modes" style="height:300px"></div>
+    </div>
+    <div class="bg-white rounded-xl shadow-sm p-5">
+        <h3 class="text-base font-bold text-gray-800 mb-3">内容类型使用</h3>
+        <div id="chart-content-types" style="height:300px"></div>
+    </div>
 </div>
 
 <script>
-    async function loadStats() {
-        try {
-            // 1. Get basic stats
-            const res = await fetch(`${API_BASE}/stats/overview`);
-            const data = await res.json();
+const COLORS = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06b6d4','#f97316'];
+const charts = [];
 
-            if (data.success) {
-                document.getElementById('stat-words').textContent = data.data.words || 0;
-                // Note: categories count is not in overview, maybe we fetch it or use words data
-            }
+function initChart(id) {
+    const c = echarts.init(document.getElementById(id));
+    charts.push(c);
+    return c;
+}
 
-            // 2. Get words for image stats (Client-side calculation to match original logic)
-            // Ideally this should be a backend API but for now we port existing logic
-            const wordsRes = await fetch(`${API_BASE}/words?limit=10000`);
-            const wordsData = await wordsRes.json();
+// 格式化数字
+function fmtNum(n) {
+    if (n >= 10000) return (n / 10000).toFixed(1) + '万';
+    return n.toLocaleString();
+}
 
-            if (wordsData.success) {
-                const words = wordsData.data.list;
-                const withImage = words.filter(w => w.image_url).length;
-                const total = words.length;
+document.addEventListener('DOMContentLoaded', async () => {
+    // 并行请求所有数据
+    const [overviewRes, trendsRes, distRes, learningRes, lbRes] = await Promise.all([
+        fetch(`${API_BASE}/stats/dashboard-overview`).then(r => r.json()),
+        fetch(`${API_BASE}/stats/trends`).then(r => r.json()),
+        fetch(`${API_BASE}/stats/distributions`).then(r => r.json()),
+        fetch(`${API_BASE}/stats/learning`).then(r => r.json()),
+        fetch(`${API_BASE}/stats/garden-leaderboard`).then(r => r.json())
+    ]);
 
-                document.getElementById('stat-with-image').textContent = withImage;
-                document.getElementById('stat-without-image').textContent = total - withImage;
-
-                // Get unique categories count from words if needed, or fetch categories
-                const catRes = await fetch(`${API_BASE}/categories`);
-                const catData = await catRes.json();
-                if (catData.success) {
-                    document.getElementById('stat-categories').textContent = catData.data.length;
-                }
-            }
-        } catch (e) {
-            console.error('加载统计失败:', e);
-            // showToast('加载统计失败', 'error'); // Suppress error to avoid annoyance
-        }
+    // 1. 核心指标卡片
+    if (overviewRes.success) {
+        const d = overviewRes.data;
+        document.getElementById('m-totalUsers').textContent = fmtNum(d.totalUsers);
+        document.getElementById('m-todayNew').textContent = d.todayNew;
+        document.getElementById('m-todayCheckin').textContent = d.todayCheckin;
+        document.getElementById('m-todayActive').textContent = d.todayActive;
+        document.getElementById('m-vipUsers').textContent = d.vipUsers;
+        document.getElementById('m-todayRevenue').textContent = (d.todayRevenue / 100).toFixed(2);
+        document.getElementById('m-pointsConsumed').textContent = fmtNum(d.pointsConsumed);
+        document.getElementById('m-totalGrowth').textContent = fmtNum(d.totalGrowth);
     }
 
-    document.addEventListener('DOMContentLoaded', loadStats);
+    // 2. 新增用户趋势
+    if (trendsRes.success) {
+        const { newUsersCurrent, newUsersPrev, checkinTrend } = trendsRes.data;
+
+        // 新增用户：当前 vs 环比
+        const userChart = initChart('chart-new-users');
+        const curDates = newUsersCurrent.map(r => {
+            const d = new Date(r.date);
+            return (d.getMonth() + 1) + '/' + d.getDate();
+        });
+        const curValues = newUsersCurrent.map(r => r.count);
+        const prevValues = newUsersPrev.map(r => r.count);
+        // 补齐长度
+        while (prevValues.length < curValues.length) prevValues.push(0);
+
+        userChart.setOption({
+            tooltip: { trigger: 'axis' },
+            legend: { data: ['本期', '上期'], top: 0 },
+            grid: { top: 35, bottom: 25, left: 40, right: 15 },
+            xAxis: { type: 'category', data: curDates, axisLabel: { fontSize: 11 } },
+            yAxis: { type: 'value', minInterval: 1 },
+            series: [
+                { name: '本期', type: 'line', smooth: true, data: curValues, itemStyle: { color: '#3b82f6' }, areaStyle: { color: 'rgba(59,130,246,0.08)' } },
+                { name: '上期', type: 'line', smooth: true, data: prevValues, lineStyle: { type: 'dashed', color: '#94a3b8' }, itemStyle: { color: '#94a3b8' } }
+            ]
+        });
+
+        // 打卡趋势 + 平均分
+        const ckChart = initChart('chart-checkins');
+        const ckDates = checkinTrend.map(r => {
+            const d = new Date(r.date);
+            return (d.getMonth() + 1) + '/' + d.getDate();
+        });
+
+        ckChart.setOption({
+            tooltip: { trigger: 'axis' },
+            legend: { data: ['打卡人数', '平均分'], top: 0 },
+            grid: { top: 35, bottom: 25, left: 45, right: 45 },
+            xAxis: { type: 'category', data: ckDates, axisLabel: { fontSize: 11 } },
+            yAxis: [
+                { type: 'value', name: '人数', minInterval: 1 },
+                { type: 'value', name: '分数', min: 0, max: 100 }
+            ],
+            series: [
+                { name: '打卡人数', type: 'bar', data: checkinTrend.map(r => r.count), itemStyle: { color: '#10b981', borderRadius: [4, 4, 0, 0] } },
+                { name: '平均分', type: 'line', yAxisIndex: 1, smooth: true, data: checkinTrend.map(r => r.avg_score ? +r.avg_score.toFixed(1) : 0), itemStyle: { color: '#f59e0b' } }
+            ]
+        });
+    }
+
+    // 3. 分布图
+    if (distRes.success) {
+        const { vip, assessments, modes, contentTypes } = distRes.data;
+
+        // VIP 饼图
+        const vipChart = initChart('chart-vip');
+        const vipLabels = { 0: '普通用户', 1: '月卡VIP', 2: '年卡VIP' };
+        vipChart.setOption({
+            tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+            color: ['#94a3b8', '#3b82f6', '#f59e0b'],
+            series: [{
+                type: 'pie', radius: ['40%', '70%'], center: ['50%', '55%'],
+                label: { formatter: '{b}\n{c}人', fontSize: 11 },
+                data: vip.map(v => ({ name: vipLabels[v.vip_level] || '等级' + v.vip_level, value: v.count }))
+            }]
+        });
+
+        // 评测分数柱状图
+        const assessChart = initChart('chart-assessments');
+        assessChart.setOption({
+            tooltip: { trigger: 'axis' },
+            grid: { top: 15, bottom: 25, left: 40, right: 15 },
+            xAxis: { type: 'category', data: assessments.map(a => a.bucket) },
+            yAxis: { type: 'value', minInterval: 1 },
+            series: [{
+                type: 'bar', data: assessments.map((a, i) => ({ value: a.count, itemStyle: { color: COLORS[i], borderRadius: [4, 4, 0, 0] } }))
+            }]
+        });
+
+        // 学习模式饼图
+        const modeChart = initChart('chart-modes');
+        const modeLabels = { easy: '简单', standard: '标准', challenge: '挑战' };
+        modeChart.setOption({
+            tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+            color: ['#10b981', '#3b82f6', '#ef4444'],
+            series: [{
+                type: 'pie', radius: ['40%', '70%'], center: ['50%', '55%'],
+                label: { formatter: '{b}\n{d}%', fontSize: 11 },
+                data: modes.map(m => ({ name: modeLabels[m.mode] || m.mode, value: m.count }))
+            }]
+        });
+
+        // 内容类型柱状图
+        const ctChart = initChart('chart-content-types');
+        const ctLabels = { word: '单词', scene: '场景', podcast: '磨耳朵', dialogue: '对话' };
+        ctChart.setOption({
+            tooltip: { trigger: 'axis' },
+            grid: { top: 15, bottom: 25, left: 40, right: 15 },
+            xAxis: { type: 'category', data: contentTypes.map(c => ctLabels[c.task_type] || c.task_type) },
+            yAxis: { type: 'value', minInterval: 1 },
+            series: [{
+                type: 'bar',
+                data: contentTypes.map((c, i) => ({ value: c.count, itemStyle: { color: COLORS[i], borderRadius: [4, 4, 0, 0] } }))
+            }]
+        });
+    }
+
+    // 4. 热门单词
+    if (learningRes.success && learningRes.data.popular_words) {
+        const wordsChart = initChart('chart-words');
+        const words = learningRes.data.popular_words.slice().reverse();
+        wordsChart.setOption({
+            tooltip: { trigger: 'axis' },
+            grid: { top: 10, bottom: 10, left: 90, right: 30 },
+            xAxis: { type: 'value' },
+            yAxis: { type: 'category', data: words.map(w => w.word), axisLabel: { fontSize: 11 } },
+            series: [{
+                type: 'bar',
+                data: words.map((w, i) => ({ value: w.learn_count, itemStyle: { color: COLORS[i % COLORS.length], borderRadius: [0, 4, 4, 0] } })),
+                label: { show: true, position: 'right', fontSize: 11 }
+            }]
+        });
+    }
+
+    // 5. 排行榜
+    if (lbRes.success) {
+        renderLeaderboard(lbRes.data);
+    }
+
+    // 窗口 resize
+    window.addEventListener('resize', () => charts.forEach(c => c.resize()));
+});
+
+function renderLeaderboard(list) {
+    const el = document.getElementById('leaderboard');
+    if (!list.length) { el.innerHTML = '<p class="text-gray-400 text-sm text-center py-4">暂无数据</p>'; return; }
+
+    el.innerHTML = `<table class="w-full text-sm">
+        <thead><tr class="text-gray-500 text-xs border-b">
+            <th class="pb-2 text-left w-8">#</th>
+            <th class="pb-2 text-left">伙伴</th>
+            <th class="pb-2 text-right">成长值</th>
+            <th class="pb-2 text-right">阶段</th>
+        </tr></thead>
+        <tbody>${list.map((r, i) => {
+            const rankClass = i < 3 ? 'font-bold ' + ['text-yellow-500', 'text-gray-400', 'text-amber-600'][i] : 'text-gray-500';
+            const img = r.stage_image
+                ? `<img src="${r.stage_image}" class="w-7 h-7 rounded object-cover">`
+                : '<div class="w-7 h-7 rounded bg-green-100 flex items-center justify-center text-sm">🌱</div>';
+            return `<tr class="border-b border-gray-50 hover:bg-gray-50">
+                <td class="py-1.5 ${rankClass}">${i + 1}</td>
+                <td class="py-1.5">
+                    <div class="flex items-center gap-2">
+                        ${img}
+                        <div class="leading-tight">
+                            <div class="font-medium text-gray-800 text-xs">${r.pet_name || r.pet_type}</div>
+                            <div class="text-gray-400 text-xs">${r.nickname || '匿名'}</div>
+                        </div>
+                    </div>
+                </td>
+                <td class="py-1.5 text-right font-semibold text-green-600">${r.growth_points}</td>
+                <td class="py-1.5 text-right text-gray-500 text-xs">${r.stage_name || '阶段' + r.growth_stage}</td>
+            </tr>`;
+        }).join('')}</tbody>
+    </table>`;
+}
 </script>

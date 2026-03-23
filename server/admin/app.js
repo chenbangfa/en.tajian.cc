@@ -70,6 +70,7 @@ app.use('/api/admin/auth', require('./routes/auth'));
 
 // 受保护的页面路由
 app.get('/', requireAuth, (req, res) => res.render('index', { page: 'dashboard', title: '数据统计', user: req.session.adminUser }));
+app.get('/users', requireAuth, (req, res) => res.render('users/index', { page: 'users', title: '用户管理', user: req.session.adminUser }));
 app.get('/categories', requireAuth, (req, res) => res.render('categories', { page: 'categories', title: '分类管理', user: req.session.adminUser }));
 app.get('/words', requireAuth, (req, res) => res.render('words', { page: 'words', title: '单词管理', user: req.session.adminUser }));
 app.get('/podcast/categories', requireAuth, (req, res) => res.render('podcast/categories', { page: 'podcast-cat', title: '磨耳朵分类', user: req.session.adminUser }));
@@ -121,6 +122,7 @@ app.use('/api/admin/podcast', requireAuth, require('./routes/podcast'));
 app.use('/api/admin/batch', requireAuth, require('./routes/batch'));
 app.use('/api/admin/prompts', requireAuth, require('./routes/prompts'));
 app.use('/api/admin/stats', requireAuth, require('./routes/stats'));
+app.use('/api/admin/users', requireAuth, require('./routes/users'));
 app.use('/api/admin/checkin-curriculum', requireAuth, require('./routes/checkin_curriculum'));
 app.use('/api/admin/dialogue', requireAuth, require('./routes/dialogue'));
 app.use('/picture-books/categories', requireAuth, require('./routes/picturebook_categories'));

@@ -1,0 +1,326 @@
+<!-- 搜索筛选栏 -->
+<div class="bg-white rounded-xl shadow-sm p-4 mb-6 flex flex-wrap items-center gap-4">
+    <div class="flex-1 min-w-[200px]">
+        <input id="search-input" type="text" placeholder="搜索昵称 / 手机号"
+            class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm">
+    </div>
+    <select id="vip-filter"
+        class="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm">
+        <option value="">全部等级</option>
+        <option value="0">普通用户</option>
+        <option value="1">月卡VIP</option>
+        <option value="2">年卡VIP</option>
+    </select>
+    <button onclick="loadUsers(1)" class="px-5 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 transition">
+        <i class="fas fa-search mr-1"></i>搜索
+    </button>
+</div>
+
+<!-- 用户表格 -->
+<div class="bg-white rounded-xl shadow-sm overflow-hidden">
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm text-left">
+            <thead class="bg-gray-50 text-gray-600 text-xs uppercase">
+                <tr>
+                    <th class="px-4 py-3">用户</th>
+                    <th class="px-4 py-3">手机号</th>
+                    <th class="px-4 py-3">VIP</th>
+                    <th class="px-4 py-3 text-right">积分</th>
+                    <th class="px-4 py-3 text-right">成长值</th>
+                    <th class="px-4 py-3 text-right">学习(分钟)</th>
+                    <th class="px-4 py-3 text-right">连续打卡</th>
+                    <th class="px-4 py-3">注册时间</th>
+                    <th class="px-4 py-3 text-center">操作</th>
+                </tr>
+            </thead>
+            <tbody id="user-table-body" class="divide-y divide-gray-100">
+            </tbody>
+        </table>
+    </div>
+
+    <!-- 分页 -->
+    <div class="px-4 py-3 border-t flex items-center justify-between text-sm text-gray-600">
+        <span id="page-info"></span>
+        <div class="flex gap-2" id="pagination"></div>
+    </div>
+</div>
+
+<!-- 用户详情弹窗 -->
+<div id="detail-modal" class="fixed inset-0 bg-black/40 z-50 hidden flex items-center justify-center">
+    <div id="detail-content" class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] overflow-y-auto mx-4 transform scale-95 opacity-0 transition-all duration-200">
+        <!-- header -->
+        <div class="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between rounded-t-2xl z-10">
+            <h3 class="text-lg font-bold text-gray-800">用户详情</h3>
+            <button onclick="closeDetail()" class="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+        </div>
+        <div id="detail-body" class="p-6 space-y-6"></div>
+    </div>
+</div>
+
+<script>
+let currentPage = 1;
+let totalPages = 1;
+
+async function loadUsers(page = 1) {
+    currentPage = page;
+    const search = document.getElementById('search-input').value.trim();
+    const vip = document.getElementById('vip-filter').value;
+
+    const params = new URLSearchParams({ page, limit: 20 });
+    if (search) params.set('search', search);
+    if (vip !== '') params.set('vip_level', vip);
+
+    try {
+        const res = await fetch(`${API_BASE}/users?${params}`);
+        const data = await res.json();
+        if (!data.success) return showToast(data.message, 'error');
+
+        const { list, pagination } = data.data;
+        totalPages = Math.ceil(pagination.total / pagination.limit) || 1;
+
+        renderTable(list);
+        renderPagination(pagination);
+    } catch (e) {
+        console.error(e);
+        showToast('加载失败', 'error');
+    }
+}
+
+function renderTable(list) {
+    const tbody = document.getElementById('user-table-body');
+    if (!list.length) {
+        tbody.innerHTML = '<tr><td colspan="9" class="px-4 py-8 text-center text-gray-400">暂无数据</td></tr>';
+        return;
+    }
+    tbody.innerHTML = list.map(u => {
+        const vipBadge = u.vip_level === 2
+            ? '<span class="px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">年卡</span>'
+            : u.vip_level === 1
+                ? '<span class="px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">月卡</span>'
+                : '<span class="px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-500">普通</span>';
+
+        const avatar = u.avatar_url
+            ? `<img src="${u.avatar_url}" class="w-8 h-8 rounded-full object-cover">`
+            : `<div class="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-sm">${(u.nickname || '?')[0]}</div>`;
+
+        const date = u.created_at ? new Date(u.created_at).toLocaleDateString('zh-CN') : '-';
+
+        return `<tr class="hover:bg-gray-50 cursor-pointer" onclick="showDetail(${u.id})">
+            <td class="px-4 py-3">
+                <div class="flex items-center gap-2.5">
+                    ${avatar}
+                    <span class="font-medium text-gray-800 truncate max-w-[120px]">${u.nickname || '未设置'}</span>
+                </div>
+            </td>
+            <td class="px-4 py-3 text-gray-600">${u.phone || '-'}</td>
+            <td class="px-4 py-3">${vipBadge}</td>
+            <td class="px-4 py-3 text-right font-medium">${u.points || 0}</td>
+            <td class="px-4 py-3 text-right font-medium text-green-600">${u.growth_points || 0}</td>
+            <td class="px-4 py-3 text-right">${u.total_study_minutes || 0}</td>
+            <td class="px-4 py-3 text-right">${u.consecutive_days || 0}天</td>
+            <td class="px-4 py-3 text-gray-500">${date}</td>
+            <td class="px-4 py-3 text-center">
+                <button class="text-blue-600 hover:text-blue-800" onclick="event.stopPropagation(); showDetail(${u.id})">
+                    <i class="fas fa-eye"></i>
+                </button>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+function renderPagination(p) {
+    document.getElementById('page-info').textContent = `共 ${p.total} 位用户，第 ${p.page}/${totalPages} 页`;
+    const pg = document.getElementById('pagination');
+    let html = '';
+
+    const btnClass = 'px-3 py-1 rounded border text-sm';
+    const activeClass = 'bg-blue-600 text-white border-blue-600';
+    const normalClass = 'bg-white text-gray-700 hover:bg-gray-50';
+    const disabledClass = 'bg-gray-100 text-gray-400 cursor-not-allowed';
+
+    html += `<button class="${btnClass} ${p.page > 1 ? normalClass : disabledClass}" ${p.page > 1 ? `onclick="loadUsers(${p.page - 1})"` : 'disabled'}>上一页</button>`;
+
+    // 显示页码
+    const start = Math.max(1, p.page - 2);
+    const end = Math.min(totalPages, p.page + 2);
+    if (start > 1) html += `<button class="${btnClass} ${normalClass}" onclick="loadUsers(1)">1</button>`;
+    if (start > 2) html += `<span class="px-1 text-gray-400">...</span>`;
+    for (let i = start; i <= end; i++) {
+        html += `<button class="${btnClass} ${i === p.page ? activeClass : normalClass}" onclick="loadUsers(${i})">${i}</button>`;
+    }
+    if (end < totalPages - 1) html += `<span class="px-1 text-gray-400">...</span>`;
+    if (end < totalPages) html += `<button class="${btnClass} ${normalClass}" onclick="loadUsers(${totalPages})">${totalPages}</button>`;
+
+    html += `<button class="${btnClass} ${p.page < totalPages ? normalClass : disabledClass}" ${p.page < totalPages ? `onclick="loadUsers(${p.page + 1})"` : 'disabled'}>下一页</button>`;
+
+    pg.innerHTML = html;
+}
+
+// 详情弹窗
+async function showDetail(id) {
+    const modal = document.getElementById('detail-modal');
+    const content = document.getElementById('detail-content');
+    const body = document.getElementById('detail-body');
+
+    modal.classList.remove('hidden');
+    setTimeout(() => { content.classList.remove('scale-95', 'opacity-0'); content.classList.add('scale-100', 'opacity-100'); }, 10);
+
+    body.innerHTML = '<div class="text-center py-12 text-gray-400"><i class="fas fa-spinner fa-spin text-2xl"></i><p class="mt-2">加载中...</p></div>';
+
+    try {
+        const res = await fetch(`${API_BASE}/users/${id}`);
+        const data = await res.json();
+        if (!data.success) { body.innerHTML = `<p class="text-red-500">${data.message}</p>`; return; }
+
+        const { user: u, checkinStats: cs, recentPlans, pet, recentOrders, recentAssessments } = data.data;
+
+        const vipLabel = u.vip_level === 2 ? '年卡VIP' : u.vip_level === 1 ? '月卡VIP' : '普通用户';
+        const vipExpiry = u.vip_expire_date ? new Date(u.vip_expire_date).toLocaleDateString('zh-CN') : '-';
+        const avatar = u.avatar_url
+            ? `<img src="${u.avatar_url}" class="w-16 h-16 rounded-full object-cover">`
+            : `<div class="w-16 h-16 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-2xl">${(u.nickname || '?')[0]}</div>`;
+
+        let html = '';
+
+        // 基本信息
+        html += `
+        <div class="flex items-start gap-4">
+            ${avatar}
+            <div class="flex-1">
+                <h4 class="text-xl font-bold text-gray-800">${u.nickname || '未设置'}</h4>
+                <p class="text-gray-500 text-sm mt-1">ID: ${u.id} · 手机: ${u.phone || '未绑定'} · ${vipLabel}${u.vip_level > 0 ? ' (到期:' + vipExpiry + ')' : ''}</p>
+            </div>
+        </div>`;
+
+        // 数据卡片
+        html += `
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div class="bg-blue-50 rounded-lg p-3 text-center">
+                <div class="text-xl font-bold text-blue-600">${u.points || 0}</div>
+                <div class="text-xs text-gray-500 mt-1">积分</div>
+            </div>
+            <div class="bg-green-50 rounded-lg p-3 text-center">
+                <div class="text-xl font-bold text-green-600">${pet ? pet.growth_points : 0}</div>
+                <div class="text-xs text-gray-500 mt-1">成长值</div>
+            </div>
+            <div class="bg-yellow-50 rounded-lg p-3 text-center">
+                <div class="text-xl font-bold text-yellow-600">${cs ? cs.consecutive_days : 0}</div>
+                <div class="text-xs text-gray-500 mt-1">连续打卡</div>
+            </div>
+            <div class="bg-purple-50 rounded-lg p-3 text-center">
+                <div class="text-xl font-bold text-purple-600">${u.total_study_minutes || 0}</div>
+                <div class="text-xs text-gray-500 mt-1">学习分钟</div>
+            </div>
+        </div>`;
+
+        // 伙伴信息
+        if (pet) {
+            const petImg = pet.stage_image ? `<img src="${pet.stage_image}" class="w-12 h-12 rounded-lg object-cover">` : '<div class="w-12 h-12 rounded-lg bg-green-100 flex items-center justify-center text-2xl">🌱</div>';
+            html += `
+            <div>
+                <h5 class="font-bold text-gray-700 mb-2"><i class="fas fa-seedling text-green-500 mr-1"></i> 成长伙伴</h5>
+                <div class="flex items-center gap-3 bg-green-50 rounded-lg p-3">
+                    ${petImg}
+                    <div>
+                        <span class="font-semibold">${pet.pet_name || pet.type_name || pet.pet_type}</span>
+                        <span class="text-gray-500 text-sm ml-2">${pet.stage_name || '阶段' + pet.growth_stage}</span>
+                        <p class="text-sm text-gray-500 mt-0.5">成长值 ${pet.growth_points} · 阶段 ${pet.growth_stage}</p>
+                    </div>
+                </div>
+            </div>`;
+        }
+
+        // 最近打卡
+        if (recentPlans.length) {
+            html += `
+            <div>
+                <h5 class="font-bold text-gray-700 mb-2"><i class="fas fa-calendar-check text-blue-500 mr-1"></i> 最近打卡</h5>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead><tr class="text-gray-500 text-xs border-b">
+                            <th class="pb-2 text-left">日期</th><th class="pb-2">模式</th><th class="pb-2">总分</th><th class="pb-2">均分</th><th class="pb-2">状态</th>
+                        </tr></thead>
+                        <tbody>${recentPlans.map(p => {
+                            const modeLabel = { easy: '简单', standard: '标准', challenge: '挑战' }[p.mode] || p.mode;
+                            return `<tr class="border-b border-gray-50">
+                                <td class="py-1.5">${new Date(p.task_date).toLocaleDateString('zh-CN')}</td>
+                                <td class="text-center">${modeLabel}</td>
+                                <td class="text-center">${p.total_score || 0}</td>
+                                <td class="text-center">${p.avg_score ? p.avg_score.toFixed(1) : '-'}</td>
+                                <td class="text-center">${p.is_completed ? '<span class="text-green-600">✓</span>' : '<span class="text-gray-400">-</span>'}</td>
+                            </tr>`;
+                        }).join('')}</tbody>
+                    </table>
+                </div>
+            </div>`;
+        }
+
+        // 最近订单
+        if (recentOrders.length) {
+            html += `
+            <div>
+                <h5 class="font-bold text-gray-700 mb-2"><i class="fas fa-receipt text-orange-500 mr-1"></i> 最近订单</h5>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead><tr class="text-gray-500 text-xs border-b">
+                            <th class="pb-2 text-left">产品</th><th class="pb-2">金额</th><th class="pb-2">状态</th><th class="pb-2 text-right">时间</th>
+                        </tr></thead>
+                        <tbody>${recentOrders.map(o => {
+                            const statusMap = { pending: '待支付', paid: '已支付', failed: '失败', refunded: '已退款' };
+                            const statusClass = o.status === 'paid' ? 'text-green-600' : o.status === 'pending' ? 'text-yellow-600' : 'text-gray-500';
+                            return `<tr class="border-b border-gray-50">
+                                <td class="py-1.5">${o.product_name}</td>
+                                <td class="text-center">¥${(o.amount / 100).toFixed(2)}</td>
+                                <td class="text-center ${statusClass}">${statusMap[o.status] || o.status}</td>
+                                <td class="text-right text-gray-500">${new Date(o.created_at).toLocaleDateString('zh-CN')}</td>
+                            </tr>`;
+                        }).join('')}</tbody>
+                    </table>
+                </div>
+            </div>`;
+        }
+
+        // 最近评测
+        if (recentAssessments.length) {
+            html += `
+            <div>
+                <h5 class="font-bold text-gray-700 mb-2"><i class="fas fa-microphone text-purple-500 mr-1"></i> 最近评测</h5>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead><tr class="text-gray-500 text-xs border-b">
+                            <th class="pb-2 text-left">内容</th><th class="pb-2">总分</th><th class="pb-2">发音</th><th class="pb-2">流畅</th><th class="pb-2 text-right">时间</th>
+                        </tr></thead>
+                        <tbody>${recentAssessments.map(a => `<tr class="border-b border-gray-50">
+                            <td class="py-1.5 max-w-[150px] truncate">${a.reference_text || a.content_type}</td>
+                            <td class="text-center font-medium">${a.overall_score || 0}</td>
+                            <td class="text-center">${a.pronunciation_score || 0}</td>
+                            <td class="text-center">${a.fluency_score || 0}</td>
+                            <td class="text-right text-gray-500">${new Date(a.created_at).toLocaleDateString('zh-CN')}</td>
+                        </tr>`).join('')}</tbody>
+                    </table>
+                </div>
+            </div>`;
+        }
+
+        body.innerHTML = html;
+    } catch (e) {
+        console.error(e);
+        body.innerHTML = '<p class="text-red-500">加载失败</p>';
+    }
+}
+
+function closeDetail() {
+    const modal = document.getElementById('detail-modal');
+    const content = document.getElementById('detail-content');
+    content.classList.remove('scale-100', 'opacity-100');
+    content.classList.add('scale-95', 'opacity-0');
+    setTimeout(() => modal.classList.add('hidden'), 200);
+}
+
+// 回车搜索
+document.getElementById('search-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') loadUsers(1);
+});
+
+document.addEventListener('DOMContentLoaded', () => loadUsers(1));
+</script>
