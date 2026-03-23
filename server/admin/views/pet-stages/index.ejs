@@ -76,15 +76,47 @@
                     <option value="lottie">Lottie 动画</option>
                 </select>
             </div>
-            <!-- 图片上传 -->
+            <!-- 阶段图片：上传 / AI 生成 -->
             <div>
                 <label class="block text-sm font-medium text-gray-600 mb-1">阶段图片</label>
-                <div class="flex items-center gap-4">
-                    <img id="editImagePreview" class="w-24 h-24 object-contain rounded-lg border bg-gray-50 hidden" src="">
-                    <label class="cursor-pointer bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-lg text-sm text-gray-600 transition-colors">
-                        <i class="fas fa-cloud-upload-alt mr-1"></i> 上传图片
-                        <input type="file" id="editImageFile" accept="image/*" class="hidden" onchange="previewFile(this, 'editImagePreview')">
-                    </label>
+                <!-- Tab 切换 -->
+                <div class="flex bg-gray-100 p-1 rounded-lg mb-3 text-sm font-medium">
+                    <button type="button" onclick="switchImgTab('upload')" id="imgTab-upload"
+                        class="flex-1 py-1.5 rounded-md bg-white shadow-sm text-gray-800 transition-all">本地上传</button>
+                    <button type="button" onclick="switchImgTab('ai')" id="imgTab-ai"
+                        class="flex-1 py-1.5 rounded-md text-gray-500 hover:text-gray-800 transition-all">AI 生成</button>
+                </div>
+                <!-- 上传面板 -->
+                <div id="imgPanel-upload">
+                    <div class="flex items-center gap-4">
+                        <img id="editImagePreview" class="w-24 h-24 object-contain rounded-lg border bg-gray-50 hidden" src="">
+                        <label class="cursor-pointer bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-lg text-sm text-gray-600 transition-colors">
+                            <i class="fas fa-cloud-upload-alt mr-1"></i> 上传图片
+                            <input type="file" id="editImageFile" accept="image/*" class="hidden" onchange="previewFile(this, 'editImagePreview')">
+                        </label>
+                    </div>
+                </div>
+                <!-- AI 生成面板 -->
+                <div id="imgPanel-ai" class="hidden space-y-2">
+                    <div class="flex gap-2">
+                        <button type="button" onclick="buildStagePrompt()"
+                            class="shrink-0 px-3 py-2 bg-indigo-100 text-indigo-700 hover:bg-indigo-200 rounded-lg text-xs font-medium transition-colors">
+                            <i class="fas fa-wand-magic-sparkles mr-1"></i>智能生成提示词
+                        </button>
+                        <span class="text-[11px] text-gray-400 leading-tight self-center">根据伙伴名称/阶段名称/描述自动构建</span>
+                    </div>
+                    <textarea id="aiImagePrompt" rows="4"
+                        class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-green-500 resize-none"
+                        placeholder="描述你想要的阶段图片，或点击上方按钮自动生成..."></textarea>
+                    <div class="flex gap-2">
+                        <button type="button" onclick="generateStageImage()"
+                            class="flex-1 py-2 bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white rounded-lg text-sm font-medium transition-all shadow-sm">
+                            <i class="fas fa-magic mr-1"></i> 生成图片
+                        </button>
+                    </div>
+                    <div id="aiImageResult" class="hidden">
+                        <img id="aiImagePreview" class="w-full max-h-48 object-contain rounded-lg border bg-gray-50" src="">
+                    </div>
                 </div>
             </div>
             <!-- 动画上传 -->
@@ -377,6 +409,10 @@
         document.getElementById('editAnimPreview').classList.add('hidden');
         document.getElementById('editImageFile').value = '';
         document.getElementById('editAnimFile').value = '';
+        document.getElementById('aiImagePrompt').value = '';
+        document.getElementById('aiImageResult').classList.add('hidden');
+        _aiGeneratedUrl = '';
+        switchImgTab('upload');
         document.getElementById('modalTitle').textContent = '新增阶段';
         document.getElementById('editModal').classList.remove('hidden');
     }
@@ -406,6 +442,10 @@
 
         document.getElementById('editImageFile').value = '';
         document.getElementById('editAnimFile').value = '';
+        document.getElementById('aiImagePrompt').value = '';
+        document.getElementById('aiImageResult').classList.add('hidden');
+        _aiGeneratedUrl = '';
+        switchImgTab('upload');
         document.getElementById('modalTitle').textContent = '编辑阶段';
         document.getElementById('editModal').classList.remove('hidden');
     }
@@ -494,6 +534,83 @@
             loadStages();
         } catch (e) {
             showToast('删除失败', 'error');
+        }
+    }
+
+    // ── 图片 Tab 切换 & AI 生成 ──
+
+    function switchImgTab(tab) {
+        document.getElementById('imgTab-upload').className = tab === 'upload'
+            ? 'flex-1 py-1.5 rounded-md bg-white shadow-sm text-gray-800 transition-all'
+            : 'flex-1 py-1.5 rounded-md text-gray-500 hover:text-gray-800 transition-all';
+        document.getElementById('imgTab-ai').className = tab === 'ai'
+            ? 'flex-1 py-1.5 rounded-md bg-white shadow-sm text-gray-800 transition-all'
+            : 'flex-1 py-1.5 rounded-md text-gray-500 hover:text-gray-800 transition-all';
+        document.getElementById('imgPanel-upload').className = tab === 'upload' ? '' : 'hidden';
+        document.getElementById('imgPanel-ai').className = tab === 'ai' ? 'space-y-2' : 'hidden space-y-2';
+    }
+
+    function buildStagePrompt() {
+        const petType = document.getElementById('editPetType');
+        const petName = petType.options[petType.selectedIndex]?.text?.trim() || '';
+        const stageName = document.getElementById('editName').value.trim();
+        const stageDesc = document.getElementById('editDesc').value.trim();
+        const unlockMsg = document.getElementById('editMessage').value.trim();
+        const stageNum = document.getElementById('editStage').value;
+
+        if (!petName && !stageName) {
+            showToast('请先填写伙伴类型和阶段名称', 'error');
+            return;
+        }
+
+        const prompt = `Create a hyper-realistic, photorealistic digital illustration of a cute ${petName} character at the "${stageName}" growth stage (stage ${stageNum || '?'}).
+
+${stageDesc ? `Stage description: ${stageDesc}.` : ''}
+${unlockMsg ? `Evolution context: ${unlockMsg}.` : ''}
+
+Art direction:
+- Photorealistic 3D rendering with subsurface scattering and soft studio lighting
+- Adorable character design appealing to children aged 5-10
+- Rich micro-details: realistic fur/petal/leaf textures, tiny water droplets, soft shadows
+- Warm, inviting color palette with gentle bokeh background
+- The character should feel alive — expressive eyes, natural pose
+- Square composition (1:1), centered subject, clean background gradient
+- Quality reference: Pixar/Disney character render quality`;
+
+        document.getElementById('aiImagePrompt').value = prompt;
+    }
+
+    let _aiGeneratedUrl = '';
+
+    async function generateStageImage() {
+        const prompt = document.getElementById('aiImagePrompt').value.trim();
+        if (!prompt) { showToast('请输入提示词', 'error'); return; }
+
+        const stageId = document.getElementById('editId').value;
+
+        try {
+            showToast('AI 图片生成中，请耐心等待...', 'info');
+            const res = await fetch(`${API_BASE}/pet-stages/api/generate-image`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt, stage_id: stageId || undefined })
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                _aiGeneratedUrl = data.url;
+                document.getElementById('aiImagePreview').src = data.url;
+                document.getElementById('aiImageResult').classList.remove('hidden');
+                // 同步更新左侧上传面板的预览
+                const uploadPreview = document.getElementById('editImagePreview');
+                uploadPreview.src = data.url;
+                uploadPreview.classList.remove('hidden');
+                showToast('图片生成成功！');
+            } else {
+                showToast(data.message || '生成失败', 'error');
+            }
+        } catch (e) {
+            showToast('生成失败: ' + e.message, 'error');
         }
     }
 

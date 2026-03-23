@@ -4,6 +4,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { query } = require('../../src/config/database');
+const aiService = require('../../src/services/ai.service');
 
 // Multer 配置
 const storage = multer.diskStorage({
@@ -160,6 +161,29 @@ router.post('/upload', upload.single('file'), (req, res) => {
             .catch(() => res.json({ success: true, url }));
     } else {
         res.json({ success: true, url });
+    }
+});
+
+// AI 生成阶段图片
+router.post('/api/generate-image', async (req, res) => {
+    try {
+        const { prompt, stage_id } = req.body;
+        if (!prompt) return res.status(400).json({ success: false, message: '缺少提示词' });
+
+        const result = await aiService.generateImage(prompt);
+        if (!result.success) {
+            return res.status(500).json({ success: false, message: result.error || '生成失败' });
+        }
+
+        // 如果指定了 stage_id，直接更新数据库
+        if (stage_id) {
+            await query('UPDATE pet_growth_stages SET image_url = ? WHERE id = ?', [result.imageUrl, stage_id]);
+        }
+
+        res.json({ success: true, url: result.imageUrl });
+    } catch (error) {
+        console.error('AI生成阶段图片错误:', error.message);
+        res.status(500).json({ success: false, message: error.message || '生成失败' });
     }
 });
 
