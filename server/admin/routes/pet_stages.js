@@ -177,7 +177,7 @@ For each stage, provide:
 - stage_name: Chinese name, 2-4 characters (e.g. "新生期", "成长期", "传说期")
 - required_points: use exactly these values in order: 0, 50, 150, 300, 500, 800
 - unlock_message: Chinese, a warm encouraging message for a child aged 5-10, 10-20 characters
-- description: English, 2-3 sentences describing the pet's EXACT physical appearance at this stage — size, colors, fur/petal texture, expression, posture, distinguishing features. Be extremely specific to "${pet_name}". These descriptions will be used as prompts for photorealistic AI image generation, so include details about lighting, rendering style, and composition.
+- description: English, 2-3 sentences describing the pet's EXACT physical appearance at this stage — size, colors, fur/petal texture, expression, posture, distinguishing features. Be extremely specific to "${pet_name}". These descriptions will be used as prompts for photorealistic AI image generation, so include details about lighting, rendering style, and composition. IMPORTANT: Each description must end with "No text, no letters, no words, no labels in the image." to ensure generated images are pure illustrations without any text overlay.
 
 The 6 stages must show a clear visual progression:
 Stage 1: Newborn / seed — tiny, vulnerable, adorable

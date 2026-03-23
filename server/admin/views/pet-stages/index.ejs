@@ -585,9 +585,9 @@
             return;
         }
 
-        const prompt = `Create a hyper-realistic, photorealistic digital illustration of a cute ${petName} character at the "${stageName}" growth stage (stage ${stageNum || '?'}).
+        const prompt = `Create a hyper-realistic, photorealistic digital illustration of a cute ${petName} character at growth stage ${stageNum || '?'}.
 
-${stageDesc ? `Stage description: ${stageDesc}.` : ''}
+${stageDesc ? `Visual appearance: ${stageDesc}.` : ''}
 
 Art direction:
 - Photorealistic 3D rendering with subsurface scattering and soft studio lighting
@@ -596,7 +596,9 @@ Art direction:
 - Warm, inviting color palette with gentle bokeh background
 - The character should feel alive — expressive eyes, natural pose
 - Square composition (1:1), centered subject, clean background gradient
-- Quality reference: Pixar/Disney character render quality`;
+- Quality reference: Pixar/Disney character render quality
+
+STRICT: The image must contain absolutely NO text, NO letters, NO numbers, NO words, NO watermarks, NO labels, NO captions in any language. Pure illustration only.`;
 
         document.getElementById('aiImagePrompt').value = prompt;
     }
