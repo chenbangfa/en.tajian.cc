@@ -98,50 +98,32 @@ IMPORTANT:
         }
 
         try {
-            console.log('[AIService] 开始生成图片 (Nano Banana)...');
+            console.log('[AIService] 开始生成图片 (Gemini Flash Image)...');
             console.log('[AIService] Prompt:', prompt.substring(0, 100) + '...');
 
-            // 使用 Gemini 2.0 Flash Image Generation 模型
             const response = await axios.post(
-                `${this.baseUrl}/models/gemini-2.5-flash-image:generateContent?key=${this.apiKey}`,
+                `${this.baseUrl}/models/gemini-3-pro-image-preview:generateContent?key=${this.apiKey}`,
                 {
-                    contents: [{
-                        parts: [{
-                            text: prompt
-                        }]
-                    }],
-                    generationConfig: {
-                        responseModalities: ["image", "text"]
-                    }
+                    contents: [{ parts: [{ text: prompt }] }],
+                    generationConfig: { responseModalities: ['image', 'text'] }
                 },
                 {
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    timeout: 120000 // 120秒超时
+                    headers: { 'Content-Type': 'application/json' },
+                    timeout: 120000
                 }
             );
 
-            // 检查响应中是否有图片数据
             const candidates = response.data.candidates;
             if (candidates && candidates.length > 0) {
                 const parts = candidates[0].content?.parts || [];
-
                 for (const part of parts) {
                     if (part.inlineData && part.inlineData.mimeType?.startsWith('image/')) {
                         const imageData = part.inlineData.data;
                         const imagePath = await this.saveBase64Image(imageData, `gen_${Date.now()}`);
-
-                        console.log('[AIService] Nano Banana 图片生成成功:', imagePath);
-                        return {
-                            success: true,
-                            imageUrl: imagePath
-                        };
+                        console.log('[AIService] 图片生成成功:', imagePath);
+                        return { success: true, imageUrl: imagePath };
                     }
                 }
-
-                // 如果没有图片，输出调试信息
-                console.log('[AIService] Gemini 未返回图片，响应:', JSON.stringify(parts).substring(0, 500));
             }
 
             return {
@@ -149,7 +131,7 @@ IMPORTANT:
                 error: '图片生成未返回有效数据，请稍后重试'
             };
         } catch (error) {
-            console.error('[AIService] Nano Banana 生成图片错误:', error.response?.data || error.message);
+            console.error('[AIService] 图片生成错误:', error.response?.data || error.message);
 
             return {
                 success: false,
@@ -556,7 +538,7 @@ Only return the JSON array, no other text.`
             console.log('[AIService] 通过代理生成图片...');
             const response = await axios.post(
                 `${process.env.PROXY_BASE_URL}/proxy/generate-image`,
-                { prompt },
+                { prompt, aspectRatio: '9:16' },
                 {
                     headers: {
                         'Content-Type': 'application/json',
@@ -620,7 +602,7 @@ Only return the JSON array, no other text.`
     async callGeminiText(prompt) {
         const doCall = async (baseUrl, apiKey) => {
             const response = await axios.post(
-                `${baseUrl}/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+                `${baseUrl}/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
                 {
                     contents: [{ parts: [{ text: prompt }] }],
                     generationConfig: { temperature: 0.7, maxOutputTokens: 4096 }
@@ -632,7 +614,7 @@ Only return the JSON array, no other text.`
             return { success: false, error: 'Gemini 未返回文本' };
         };
 
-        // 优先走代理
+        // 优先走代理（国内服务器无法直连 Google API）
         if (process.env.PROXY_BASE_URL) {
             try {
                 const resp = await axios.post(
@@ -644,13 +626,15 @@ Only return the JSON array, no other text.`
                     }
                 );
                 if (resp.data.success && resp.data.text) return { success: true, text: resp.data.text };
-                // 代理失败不阻塞，尝试直连
-                console.warn('[AIService] 代理文本生成失败，尝试直连');
+                console.warn('[AIService] 代理文本生成返回失败:', resp.data.error);
+                return { success: false, error: resp.data.error || '代理文本生成失败' };
             } catch (e) {
-                console.warn('[AIService] 代理不可用，尝试直连:', e.message);
+                console.error('[AIService] 代理文本生成异常:', e.code, e.message);
+                return { success: false, error: `代理不可用: ${e.message}` };
             }
         }
 
+        // 无代理配置时才尝试直连
         try {
             return await doCall(this.baseUrl, this.apiKey);
         } catch (error) {
@@ -768,7 +752,7 @@ Respond ONLY with a valid JSON object in this exact format:
             }
 
             const response = await axios.post(
-                `${this.baseUrl}/models/gemini-2.0-flash:generateContent?key=${this.apiKey}`,
+                `${this.baseUrl}/models/gemini-2.5-flash:generateContent?key=${this.apiKey}`,
                 {
                     contents: [{
                         parts: [{ text: prompt }]
@@ -964,22 +948,12 @@ Respond ONLY with a valid JSON object in this exact format:
      */
     async translateWithGemini(text) {
         try {
-            const response = await axios.post(
-                `${this.baseUrl}/models/gemini-2.0-flash:generateContent?key=${this.apiKey}`,
-                {
-                    contents: [{
-                        parts: [{
-                            text: `Translate the following English text to Chinese. Only respond with the translation, nothing else.\n\nText: ${text}`
-                        }]
-                    }]
-                }
-            );
-
-            const result = response.data.candidates?.[0]?.content?.parts?.[0]?.text;
-            if (result) {
-                return { success: true, translation: result.trim() };
+            const prompt = `Translate the following English text to Chinese. Only respond with the translation, nothing else.\n\nText: ${text}`;
+            const result = await this.callGeminiText(prompt);
+            if (result.success && result.text) {
+                return { success: true, translation: result.text.trim() };
             }
-            return { success: false, error: '无翻译结果' };
+            return { success: false, error: result.error || '无翻译结果' };
         } catch (error) {
             console.error('[AIService] Gemini翻译错误:', error.message);
             return { success: false, error: error.message };
@@ -993,27 +967,16 @@ Respond ONLY with a valid JSON object in this exact format:
      */
     async getPhonetic(text) {
         try {
-            // 先尝试使用Gemini生成音标
-            const response = await axios.post(
-                `${this.baseUrl}/models/gemini-2.0-flash:generateContent?key=${this.apiKey}`,
-                {
-                    contents: [{
-                        parts: [{
-                            text: `Provide the IPA (International Phonetic Alphabet) pronunciation for the following English text. Only respond with the IPA notation, nothing else. If it's a sentence, provide the pronunciation for key words separated by spaces.\n\nText: ${text}`
-                        }]
-                    }]
-                }
-            );
-
-            const result = response.data.candidates?.[0]?.content?.parts?.[0]?.text;
-            if (result) {
-                // 清理结果，移除可能的斜杠
-                let phonetic = result.trim().replace(/^\//, '').replace(/\/$/, '');
+            const prompt = `Provide the IPA (International Phonetic Alphabet) pronunciation for the following English text. Only respond with the IPA notation, nothing else. If it's a sentence, provide the pronunciation for key words separated by spaces.\n\nText: ${text}`;
+            const result = await this.callGeminiText(prompt);
+            if (result.success && result.text) {
+                // 清理结果，移除所有外层斜杠
+                let phonetic = result.text.trim().replace(/^\/+/, '').replace(/\/+$/, '');
                 return { success: true, phonetic };
             }
-            return { success: false, error: '无法获取音标' };
+            return { success: false, error: result.error || '无法获取音标' };
         } catch (error) {
-            console.error('[AIService] 获取音标错误:', error.message);
+            console.error('[AIService] 获取音标错误:', error.message, error.stack);
             return { success: false, error: error.message };
         }
     }
