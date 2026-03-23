@@ -512,10 +512,13 @@ Only return the JSON array, no other text.`
                     }
                 }
 
+                // 合并垂直相邻、水平重叠的文本行（解决 "Chinese"+"cabbage" 拆分问题）
+                const merged = this._mergeAdjacentWords(words);
+
                 return {
                     success: true,
                     engine: 'youdao',
-                    words: words
+                    words: merged
                 };
             }
 
@@ -564,6 +567,66 @@ Only return the JSON array, no other text.`
     /**
      * 保存Base64图片：优先上传 COS，不可用时回退到本地
      */
+    /**
+     * 合并垂直相邻、水平重叠的 OCR 文本行
+     * 例如 "Chinese" + "cabbage" → "Chinese cabbage"
+     */
+    _mergeAdjacentWords(words) {
+        if (words.length <= 1) return words;
+
+        const merged = [...words];
+        let changed = true;
+
+        while (changed) {
+            changed = false;
+            for (let i = 0; i < merged.length; i++) {
+                for (let j = i + 1; j < merged.length; j++) {
+                    const a = merged[i];
+                    const b = merged[j];
+
+                    // 水平重叠判断：两个框的 X 范围有交集
+                    const aLeft = a.rect.x, aRight = a.rect.x + a.rect.w;
+                    const bLeft = b.rect.x, bRight = b.rect.x + b.rect.w;
+                    const overlapX = Math.min(aRight, bRight) - Math.max(aLeft, bLeft);
+                    const minW = Math.min(a.rect.w, b.rect.w);
+                    // 水平重叠需超过较窄框宽度的 30%
+                    if (overlapX < minW * 0.3) continue;
+
+                    // 垂直间距判断：两个框的 Y 间距小于较矮框高度的 80%
+                    const aTop = a.rect.y, aBottom = a.rect.y + a.rect.h;
+                    const bTop = b.rect.y, bBottom = b.rect.y + b.rect.h;
+                    const gapY = Math.max(0, Math.max(aTop, bTop) - Math.min(aBottom, bBottom));
+                    const minH = Math.min(a.rect.h, b.rect.h);
+                    if (gapY > minH * 0.8) continue;
+
+                    // 合并：文本拼接，框取并集
+                    const upper = aTop <= bTop ? a : b;
+                    const lower = aTop <= bTop ? b : a;
+                    const newLeft = Math.min(aLeft, bLeft);
+                    const newTop = Math.min(aTop, bTop);
+                    const newRight = Math.max(aRight, bRight);
+                    const newBottom = Math.max(aBottom, bBottom);
+
+                    merged[i] = {
+                        text: upper.text + ' ' + lower.text,
+                        rect: {
+                            x: newLeft,
+                            y: newTop,
+                            w: newRight - newLeft,
+                            h: newBottom - newTop
+                        }
+                    };
+                    merged.splice(j, 1);
+                    changed = true;
+                    break;
+                }
+                if (changed) break;
+            }
+        }
+
+        return merged;
+    }
+
     async saveBase64Image(base64Data, prefix) {
         // 优先上传到 COS
         if (cosService.isConfigured) {
