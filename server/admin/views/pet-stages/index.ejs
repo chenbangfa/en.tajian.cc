@@ -10,7 +10,7 @@
             <button onclick="showAddTypeModal()"
                 class="flex items-center space-x-2 border-2 border-green-500 text-green-600 hover:bg-green-50 px-5 py-2.5 rounded-xl transition-all">
                 <i class="fas fa-paw"></i>
-                <span>管理类型</span>
+                <span>管理伙伴</span>
             </button>
             <button onclick="showAddModal()"
                 class="flex items-center space-x-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white px-6 py-3 rounded-xl shadow-lg shadow-green-200 transition-all duration-300 hover:-translate-y-0.5">
@@ -165,6 +165,27 @@
     </div>
 </div>
 
+<!-- AI 阶段预览弹窗 -->
+<div id="aiStagesModal" class="hidden fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl">
+        <div class="p-5 border-b border-gray-100 flex justify-between items-center">
+            <h3 id="aiStagesTitle" class="text-lg font-bold text-gray-800">AI 生成成长阶段</h3>
+            <button onclick="closeAiStagesModal()" class="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+        </div>
+        <div id="aiStagesContent" class="p-5">
+            <!-- 加载态 / 结果 -->
+        </div>
+        <div id="aiStagesFooter" class="hidden p-5 border-t border-gray-100 flex justify-end space-x-3">
+            <button onclick="regenerateStages()" class="px-5 py-2 rounded-lg border text-purple-600 border-purple-300 hover:bg-purple-50 text-sm font-medium">
+                <i class="fas fa-redo mr-1"></i>重新生成
+            </button>
+            <button onclick="saveAiStages()" class="px-5 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 text-sm font-medium">
+                <i class="fas fa-check mr-1"></i>确认保存
+            </button>
+        </div>
+    </div>
+</div>
+
 <style>
     .tab-btn { color: #9CA3AF; background: transparent; }
     .tab-btn.active { color: #fff; background: linear-gradient(135deg, #10B981, #059669); box-shadow: 0 4px 12px rgba(16,185,129,0.3); }
@@ -251,8 +272,9 @@
                 <input type="text" value="${t.name}" class="w-20 px-2 py-1 border rounded text-sm" id="tn-${t.id}">
                 <input type="text" value="${t.icon || ''}" class="w-12 px-2 py-1 border rounded text-sm text-center" id="ti-${t.id}">
                 <input type="number" value="${t.sort_order || 0}" class="w-14 px-2 py-1 border rounded text-sm" id="ts-${t.id}">
-                <button onclick="updateType(${t.id})" class="text-blue-600 hover:text-blue-800 text-sm"><i class="fas fa-save"></i></button>
-                <button onclick="deleteType(${t.id}, '${t.name}')" class="text-red-500 hover:text-red-700 text-sm"><i class="fas fa-trash-alt"></i></button>
+                <button onclick="updateType(${t.id})" class="text-blue-600 hover:text-blue-800 text-sm" title="保存"><i class="fas fa-save"></i></button>
+                <button onclick="aiGenerateStages('${t.type_key}', '${t.name}')" class="text-purple-600 hover:text-purple-800 text-sm" title="AI 生成阶段"><i class="fas fa-wand-magic-sparkles"></i></button>
+                <button onclick="deleteType(${t.id}, '${t.name}')" class="text-red-500 hover:text-red-700 text-sm" title="删除"><i class="fas fa-trash-alt"></i></button>
             </div>
         `).join('');
     }
@@ -612,6 +634,141 @@ Art direction:
         } catch (e) {
             showToast('生成失败: ' + e.message, 'error');
         }
+    }
+
+    // ── AI 批量生成阶段 ──
+
+    let _aiTypeKey = '';
+    let _aiPetName = '';
+    let _aiStagesData = [];
+
+    async function aiGenerateStages(typeKey, petName) {
+        _aiTypeKey = typeKey;
+        _aiPetName = petName;
+        _aiStagesData = [];
+
+        document.getElementById('aiStagesTitle').textContent = `AI 生成「${petName}」成长阶段`;
+        document.getElementById('aiStagesContent').innerHTML = `
+            <div class="text-center py-12 text-gray-400">
+                <i class="fas fa-spinner fa-spin text-3xl mb-4 text-purple-500"></i>
+                <p class="text-sm">正在为「${petName}」生成 6 个成长阶段...</p>
+                <p class="text-xs text-gray-300 mt-1">AI 生成中，请耐心等待</p>
+            </div>`;
+        document.getElementById('aiStagesFooter').classList.add('hidden');
+        document.getElementById('aiStagesModal').classList.remove('hidden');
+
+        try {
+            const res = await fetch(`${API_BASE}/pet-stages/api/generate-stages`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pet_name: petName })
+            });
+            const data = await res.json();
+
+            if (data.success && data.data) {
+                _aiStagesData = data.data;
+                renderAiStagesPreview();
+            } else {
+                document.getElementById('aiStagesContent').innerHTML = `
+                    <div class="text-center py-8 text-red-500">
+                        <i class="fas fa-exclamation-circle text-2xl mb-3"></i>
+                        <p class="text-sm">${data.message || '生成失败，请重试'}</p>
+                    </div>`;
+                document.getElementById('aiStagesFooter').classList.remove('hidden');
+            }
+        } catch (e) {
+            document.getElementById('aiStagesContent').innerHTML = `
+                <div class="text-center py-8 text-red-500">
+                    <i class="fas fa-exclamation-circle text-2xl mb-3"></i>
+                    <p class="text-sm">请求失败: ${e.message}</p>
+                </div>`;
+            document.getElementById('aiStagesFooter').classList.remove('hidden');
+        }
+    }
+
+    function renderAiStagesPreview() {
+        const stageColors = ['blue', 'green', 'yellow', 'orange', 'pink', 'purple'];
+        const stageIcons = ['🥚', '🌱', '⭐', '🔥', '👑', '🏆'];
+
+        document.getElementById('aiStagesContent').innerHTML = _aiStagesData.map((s, i) => {
+            const color = stageColors[i] || 'gray';
+            const icon = stageIcons[i] || '📌';
+            return `
+            <div class="border border-gray-200 rounded-xl p-4 mb-3 hover:border-${color}-300 transition-colors">
+                <div class="flex items-center gap-3 mb-2">
+                    <span class="text-xl">${icon}</span>
+                    <div class="flex items-center gap-2 flex-1">
+                        <span class="text-xs bg-${color}-100 text-${color}-700 px-2 py-0.5 rounded font-bold">阶段 ${s.stage}</span>
+                        <input type="text" value="${s.stage_name}" onchange="_aiStagesData[${i}].stage_name=this.value"
+                            class="font-bold text-gray-800 bg-transparent border-b border-transparent hover:border-gray-300 focus:border-green-500 outline-none px-1 flex-1">
+                        <span class="text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded">
+                            <i class="fas fa-star mr-0.5"></i>
+                            <input type="number" value="${s.required_points}" onchange="_aiStagesData[${i}].required_points=parseInt(this.value)"
+                                class="w-12 bg-transparent border-none outline-none text-center text-xs">
+                        </span>
+                    </div>
+                </div>
+                <div class="pl-9 space-y-1.5">
+                    <div class="flex items-center gap-1">
+                        <span class="text-[10px] text-gray-400 w-14 shrink-0">进化提示</span>
+                        <input type="text" value="${s.unlock_message || ''}" onchange="_aiStagesData[${i}].unlock_message=this.value"
+                            class="flex-1 text-xs text-gray-600 italic bg-transparent border-b border-transparent hover:border-gray-300 focus:border-green-500 outline-none px-1">
+                    </div>
+                    <div class="flex items-start gap-1">
+                        <span class="text-[10px] text-gray-400 w-14 shrink-0 mt-1">图片描述</span>
+                        <textarea onchange="_aiStagesData[${i}].description=this.value" rows="2"
+                            class="flex-1 text-xs text-gray-500 bg-gray-50 rounded px-2 py-1 border border-transparent hover:border-gray-300 focus:border-green-500 outline-none resize-none">${s.description || ''}</textarea>
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+
+        document.getElementById('aiStagesFooter').classList.remove('hidden');
+    }
+
+    function regenerateStages() {
+        aiGenerateStages(_aiTypeKey, _aiPetName);
+    }
+
+    async function saveAiStages() {
+        if (_aiStagesData.length === 0) { showToast('无阶段数据', 'error'); return; }
+
+        try {
+            const res = await fetch(`${API_BASE}/pet-stages/api/bulk-create-stages`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pet_type: _aiTypeKey, stages: _aiStagesData })
+            });
+            const data = await res.json();
+
+            if (data.needConfirm) {
+                if (!confirm(data.message)) return;
+                // 带 overwrite 重试
+                const res2 = await fetch(`${API_BASE}/pet-stages/api/bulk-create-stages`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pet_type: _aiTypeKey, stages: _aiStagesData, overwrite: true })
+                });
+                const data2 = await res2.json();
+                if (!data2.success) { showToast(data2.message || '保存失败', 'error'); return; }
+            } else if (!data.success) {
+                showToast(data.message || '保存失败', 'error');
+                return;
+            }
+
+            showToast(`已保存 ${_aiStagesData.length} 个阶段`);
+            closeAiStagesModal();
+            // 切换到该伙伴类型并刷新
+            currentType = _aiTypeKey;
+            renderTabs();
+            loadStages();
+        } catch (e) {
+            showToast('保存失败: ' + e.message, 'error');
+        }
+    }
+
+    function closeAiStagesModal() {
+        document.getElementById('aiStagesModal').classList.add('hidden');
     }
 
     // Init

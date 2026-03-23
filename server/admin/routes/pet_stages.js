@@ -164,6 +164,95 @@ router.post('/upload', upload.single('file'), (req, res) => {
     }
 });
 
+// AI 生成 6 个成长阶段描述
+router.post('/api/generate-stages', async (req, res) => {
+    try {
+        const { pet_name } = req.body;
+        if (!pet_name) return res.status(400).json({ success: false, message: '缺少伙伴名称' });
+
+        const prompt = `You are a creative children's game designer. Generate exactly 6 growth stages for a virtual pet companion called "${pet_name}" (this is a Chinese name, understand what creature/plant it refers to).
+
+For each stage, provide:
+- stage: number (1 through 6)
+- stage_name: Chinese name, 2-4 characters (e.g. "新生期", "成长期", "传说期")
+- required_points: use exactly these values in order: 0, 50, 150, 300, 500, 800
+- unlock_message: Chinese, a warm encouraging message for a child aged 5-10, 10-20 characters
+- description: English, 2-3 sentences describing the pet's EXACT physical appearance at this stage — size, colors, fur/petal texture, expression, posture, distinguishing features. Be extremely specific to "${pet_name}". These descriptions will be used as prompts for photorealistic AI image generation, so include details about lighting, rendering style, and composition.
+
+The 6 stages must show a clear visual progression:
+Stage 1: Newborn / seed — tiny, vulnerable, adorable
+Stage 2: Young / sprout — small but showing personality
+Stage 3: Growing / juvenile — developing distinctive features
+Stage 4: Mature / adult — full-grown, confident, beautiful
+Stage 5: Elite / magnificent — extra impressive, glowing aura or special effects
+Stage 6: Legendary / mythical — transcendent, magical, awe-inspiring, with fantasy elements
+
+Return ONLY a valid JSON array. No markdown fences, no explanation, no extra text.
+Example: [{"stage":1,"stage_name":"新生期","required_points":0,"unlock_message":"一个小生命诞生了！","description":"A tiny newborn ..."},...]`;
+
+        const result = await aiService.callGeminiText(prompt);
+        if (!result.success) {
+            return res.status(500).json({ success: false, message: result.error || 'AI 生成失败' });
+        }
+
+        // 解析 JSON（兼容 markdown 代码块包裹）
+        let text = result.text.trim();
+        text = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/, '');
+        const stages = JSON.parse(text);
+
+        if (!Array.isArray(stages) || stages.length < 1) {
+            return res.json({ success: false, message: 'AI 返回格式错误，请重试' });
+        }
+
+        res.json({ success: true, data: stages });
+    } catch (error) {
+        console.error('AI生成阶段错误:', error.message);
+        res.status(500).json({ success: false, message: 'AI 生成失败: ' + error.message });
+    }
+});
+
+// 批量创建阶段
+router.post('/api/bulk-create-stages', async (req, res) => {
+    try {
+        const { pet_type, stages, overwrite } = req.body;
+        if (!pet_type || !Array.isArray(stages) || stages.length === 0) {
+            return res.json({ success: false, message: '参数不完整' });
+        }
+
+        // 检查已有阶段
+        const [existing] = await query(
+            'SELECT COUNT(*) as cnt FROM pet_growth_stages WHERE pet_type = ?', [pet_type]
+        );
+        if (existing.cnt > 0 && !overwrite) {
+            return res.json({
+                success: false,
+                message: `该伙伴已有 ${existing.cnt} 个阶段，是否覆盖？`,
+                needConfirm: true
+            });
+        }
+
+        if (existing.cnt > 0 && overwrite) {
+            await query('DELETE FROM pet_growth_stages WHERE pet_type = ?', [pet_type]);
+        }
+
+        for (const s of stages) {
+            await query(
+                `INSERT INTO pet_growth_stages (pet_type, stage, stage_name, required_points, unlock_message, description, animation_type, sort_order)
+                 VALUES (?, ?, ?, ?, ?, ?, 'image', ?)`,
+                [pet_type, s.stage, s.stage_name, s.required_points || 0, s.unlock_message || '', s.description || '', s.stage]
+            );
+        }
+
+        res.json({ success: true, created: stages.length });
+    } catch (error) {
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.json({ success: false, message: '阶段编号冲突，请先清除已有阶段' });
+        }
+        console.error('批量创建阶段错误:', error.message);
+        res.status(500).json({ success: false, message: '批量创建失败' });
+    }
+});
+
 // AI 生成阶段图片
 router.post('/api/generate-image', async (req, res) => {
     try {
