@@ -422,15 +422,72 @@ Strict: exactly ${count} cards, no duplicates, no extras, no missing, no numbers
                                 <i class="fas fa-magic text-xs"></i>
                             </button>
                         ` : ''}
+                        ${h.id ? `
+                            <button onclick="openEditFields(${i})" class="text-gray-400 hover:text-blue-600 p-0.5" title="编辑音标/翻译">
+                                <i class="fas fa-pen text-xs"></i>
+                            </button>
+                        ` : ''}
                         <button onclick="removeHotspot(${i})" class="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-0.5" title="删除">
                             <i class="fas fa-times text-xs"></i>
                         </button>
                     </div>
                 </div>
-                ${h.phonetic ? `<div class="text-[11px] text-gray-400 pl-6">/${h.phonetic}/</div>` : ''}
-                ${h.translation ? `<div class="text-[11px] text-gray-500 pl-6">${h.translation}</div>` : ''}
+                <div id="hotspot-display-${i}">
+                    ${h.phonetic ? `<div class="text-[11px] text-gray-400 pl-6 cursor-pointer hover:text-blue-500" onclick="openEditFields(${i})">/${h.phonetic}/</div>` : ''}
+                    ${h.translation ? `<div class="text-[11px] text-gray-500 pl-6 cursor-pointer hover:text-blue-500" onclick="openEditFields(${i})">${h.translation}</div>` : ''}
+                </div>
+                <div id="hotspot-edit-${i}" class="hidden pl-6 mt-1 space-y-1">
+                    <input type="text" value="${(h.phonetic || '').replace(/"/g, '&quot;')}" placeholder="音标"
+                        id="edit-phonetic-${i}"
+                        class="w-full text-[11px] px-2 py-1 border rounded bg-white focus:ring-1 focus:ring-blue-400 outline-none">
+                    <input type="text" value="${(h.translation || '').replace(/"/g, '&quot;')}" placeholder="翻译"
+                        id="edit-translation-${i}"
+                        class="w-full text-[11px] px-2 py-1 border rounded bg-white focus:ring-1 focus:ring-blue-400 outline-none">
+                    <div class="flex gap-1.5 pt-0.5">
+                        <button onclick="saveEditFields(${i})" class="text-[10px] px-2 py-0.5 bg-blue-500 text-white rounded hover:bg-blue-600">保存</button>
+                        <button onclick="cancelEditFields(${i})" class="text-[10px] px-2 py-0.5 bg-gray-200 text-gray-600 rounded hover:bg-gray-300">取消</button>
+                    </div>
+                </div>
             </div>
         `).join('');
+    }
+
+    // 编辑音标/翻译
+    function openEditFields(index) {
+        document.getElementById(`hotspot-display-${index}`).classList.add('hidden');
+        document.getElementById(`hotspot-edit-${index}`).classList.remove('hidden');
+    }
+
+    function cancelEditFields(index) {
+        document.getElementById(`hotspot-edit-${index}`).classList.add('hidden');
+        document.getElementById(`hotspot-display-${index}`).classList.remove('hidden');
+    }
+
+    async function saveEditFields(index) {
+        const h = hotspots[index];
+        if (!h.id) { showToast('请先保存场景', 'error'); return; }
+
+        const phonetic = document.getElementById(`edit-phonetic-${index}`).value.trim();
+        const translation = document.getElementById(`edit-translation-${index}`).value.trim();
+
+        try {
+            const res = await fetch(`${API_BASE}/scenes/objects/${h.id}/update-fields`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phonetic, translation })
+            });
+            const data = await res.json();
+            if (data.success) {
+                hotspots[index].phonetic = phonetic;
+                hotspots[index].translation = translation;
+                renderHotspotList();
+                showToast('已保存');
+            } else {
+                showToast(data.message || '保存失败', 'error');
+            }
+        } catch (e) {
+            showToast('保存失败', 'error');
+        }
     }
 
     // 播放音频预览

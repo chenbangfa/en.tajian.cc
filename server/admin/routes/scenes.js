@@ -302,6 +302,25 @@ router.post('/objects/:objId/update-label', async (req, res) => {
     }
 });
 
+// 8.1 更新热点音标/翻译
+router.post('/objects/:objId/update-fields', async (req, res) => {
+    try {
+        const { objId } = req.params;
+        const { phonetic, translation } = req.body;
+        const sets = [];
+        const params = [];
+        if (phonetic !== undefined) { sets.push('phonetic = ?'); params.push(phonetic); }
+        if (translation !== undefined) { sets.push('translation = ?'); params.push(translation); }
+        if (sets.length === 0) return res.json({ success: false, message: '无更新字段' });
+        params.push(objId);
+        await query(`UPDATE scene_objects SET ${sets.join(', ')} WHERE id = ?`, params);
+        res.json({ success: true });
+    } catch (e) {
+        console.error('更新热点字段失败:', e);
+        res.status(500).json({ success: false, message: '更新失败' });
+    }
+});
+
 // 9. 生成热点音频和翻译
 const voiceService = require('../../src/services/voice.service');
 
