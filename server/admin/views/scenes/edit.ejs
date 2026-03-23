@@ -404,31 +404,31 @@ Strict: exactly ${count} cards, no duplicates, no extras, no missing, no numbers
     function renderHotspotList() {
         const list = document.getElementById('hotspotList');
         list.innerHTML = hotspots.map((h, i) => `
-            <div class="bg-gray-50 px-2.5 py-1.5 rounded-lg border border-gray-200 hover:border-blue-300 transition-colors group">
-                <div class="flex items-center gap-1.5">
+            <div class="bg-gray-50 px-2.5 py-2 rounded-lg border border-gray-200 hover:border-blue-300 transition-colors group">
+                <div class="flex items-center gap-2">
                     <span class="text-[10px] text-gray-400 w-4 shrink-0">${i + 1}</span>
                     <input type="text" value="${h.custom_label || ''}" onchange="updateLabel(${i}, this.value)"
-                        class="bg-transparent border-none outline-none font-medium text-gray-700 flex-1 text-xs min-w-0"
+                        class="bg-transparent border-none outline-none font-medium text-gray-700 flex-1 text-sm min-w-0"
                         placeholder="标签">
-                    ${h.phonetic ? `<span class="text-[10px] text-gray-400 shrink-0">/${h.phonetic}/</span>` : ''}
-                    <div class="flex items-center gap-1 shrink-0">
-                        ${h.translation ? '<i class="fas fa-check-circle text-green-500 text-[10px]" title="已翻译"></i>' : ''}
+                    <div class="flex items-center gap-2.5 shrink-0 ml-1">
+                        ${h.translation ? '<i class="fas fa-check-circle text-green-500 text-xs" title="已翻译"></i>' : ''}
                         ${h.audio_url_female ? `
-                            <button onclick="playAudio('${h.audio_url_female}')" class="text-blue-500 hover:text-blue-700" title="播放">
+                            <button onclick="playAudio('${h.audio_url_female}')" class="text-blue-500 hover:text-blue-700 p-0.5" title="播放">
                                 <i class="fas fa-volume-up text-xs"></i>
                             </button>
                         ` : ''}
                         ${h.id ? `
-                            <button onclick="generateHotspotAudio(${h.id}, ${i})" class="text-purple-500 hover:text-purple-700" title="生成音频">
+                            <button onclick="generateHotspotAudio(${h.id}, ${i})" class="text-purple-500 hover:text-purple-700 p-0.5" title="生成音频">
                                 <i class="fas fa-magic text-xs"></i>
                             </button>
                         ` : ''}
-                        <button onclick="removeHotspot(${i})" class="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity" title="删除">
+                        <button onclick="removeHotspot(${i})" class="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-0.5" title="删除">
                             <i class="fas fa-times text-xs"></i>
                         </button>
                     </div>
                 </div>
-                ${h.translation ? `<div class="text-[10px] text-gray-500 ml-5.5 pl-[22px]">${h.translation}</div>` : ''}
+                ${h.phonetic ? `<div class="text-[11px] text-gray-400 pl-6">/${h.phonetic}/</div>` : ''}
+                ${h.translation ? `<div class="text-[11px] text-gray-500 pl-6">${h.translation}</div>` : ''}
             </div>
         `).join('');
     }
