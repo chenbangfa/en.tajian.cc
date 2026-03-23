@@ -147,7 +147,7 @@
             </button>
         </div>
 
-        <div id="hotspotList" class="flex-1 overflow-y-auto p-4 space-y-3">
+        <div id="hotspotList" class="flex-1 overflow-y-auto p-2 space-y-1">
             <!-- Items injected here -->
         </div>
     </div>
@@ -199,6 +199,36 @@
     const sceneId = document.getElementById('sceneId').value;
     const initialCategoryId = "<%= typeof scene !== 'undefined' ? scene.category_id : '' %>";
     let hotspots = []; // { id, word_id, custom_label, rect: {x,y,w,h} (percent), audio_url }
+
+    // --- AI Prompt Builder ---
+
+    function buildScenePrompt(theme, itemsStr) {
+        const items = itemsStr.split(',').map(s => s.trim()).filter(Boolean);
+        const count = items.length;
+
+        // 根据物品数量自动计算列数
+        let cols;
+        if (count <= 4) cols = 2;
+        else if (count <= 9) cols = 3;
+        else cols = 4;
+        const rows = Math.ceil(count / cols);
+
+        // 构建简洁的卡片描述
+        const cardDesc = items.map(item => {
+            const titleCase = item.charAt(0).toUpperCase() + item.slice(1).toLowerCase();
+            return `a photo of a ${item} labeled "${titleCase}"`;
+        }).join(', ');
+
+        return `Generate a tall vertical image (9:16 aspect ratio, like a phone screen) of a children's English vocabulary poster.
+
+Solid flat light pastel background. Title "${theme}" centered at top.
+
+Below the title: a ${cols}×${rows} grid of exactly ${count} white rounded cards filling the full width. Each card shows a realistic photograph of the item with its English name in Title Case below.
+
+The ${count} cards in order: ${cardDesc}.
+
+Strict: exactly ${count} cards, no duplicates, no extras, no missing, no numbers, no background scene, no decorations, no Chinese. All cards same size, all photos same style, all labels same font.`;
+    }
 
     // --- Image Handling ---
 
@@ -374,32 +404,31 @@
     function renderHotspotList() {
         const list = document.getElementById('hotspotList');
         list.innerHTML = hotspots.map((h, i) => `
-            <div class="bg-gray-50 p-3 rounded-xl border border-gray-200 group">
-                <div class="flex items-center justify-between mb-2">
-                    <input type="text" value="${h.custom_label || ''}" onchange="updateLabel(${i}, this.value)" 
-                        class="bg-transparent border-none outline-none font-medium text-gray-700 flex-1 text-sm"
-                        placeholder="输入标签文本">
-                    <button onclick="removeHotspot(${i})" class="text-gray-400 hover:text-red-500 ml-2">
-                        <i class="fas fa-times"></i>
-                    </button>
-                </div>
-                <div class="flex items-center justify-between text-xs">
-                    <div class="flex items-center space-x-2">
-                        ${h.translation ? '<span class="bg-green-100 text-green-700 px-2 py-0.5 rounded">已翻译</span>' : '<span class="bg-gray-100 text-gray-500 px-2 py-0.5 rounded">未翻译</span>'}
+            <div class="bg-gray-50 px-2.5 py-1.5 rounded-lg border border-gray-200 hover:border-blue-300 transition-colors group">
+                <div class="flex items-center gap-1.5">
+                    <span class="text-[10px] text-gray-400 w-4 shrink-0">${i + 1}</span>
+                    <input type="text" value="${h.custom_label || ''}" onchange="updateLabel(${i}, this.value)"
+                        class="bg-transparent border-none outline-none font-medium text-gray-700 flex-1 text-xs min-w-0"
+                        placeholder="标签">
+                    ${h.phonetic ? `<span class="text-[10px] text-gray-400 shrink-0">/${h.phonetic}/</span>` : ''}
+                    <div class="flex items-center gap-1 shrink-0">
+                        ${h.translation ? '<i class="fas fa-check-circle text-green-500 text-[10px]" title="已翻译"></i>' : ''}
                         ${h.audio_url_female ? `
-                            <button onclick="playAudio('${h.audio_url_female}')" class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded hover:bg-blue-200 transition-colors">
-                                <i class="fas fa-volume-up mr-1"></i>播放
+                            <button onclick="playAudio('${h.audio_url_female}')" class="text-blue-500 hover:text-blue-700" title="播放">
+                                <i class="fas fa-volume-up text-xs"></i>
                             </button>
-                        ` : '<span class="bg-gray-100 text-gray-500 px-2 py-0.5 rounded">无音频</span>'}
-                    </div>
-                    ${h.id ? `
-                        <button onclick="generateHotspotAudio(${h.id}, ${i})" class="bg-purple-500 hover:bg-purple-600 text-white px-2 py-1 rounded text-xs transition-colors">
-                            <i class="fas fa-magic mr-1"></i>生成
+                        ` : ''}
+                        ${h.id ? `
+                            <button onclick="generateHotspotAudio(${h.id}, ${i})" class="text-purple-500 hover:text-purple-700" title="生成音频">
+                                <i class="fas fa-magic text-xs"></i>
+                            </button>
+                        ` : ''}
+                        <button onclick="removeHotspot(${i})" class="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity" title="删除">
+                            <i class="fas fa-times text-xs"></i>
                         </button>
-                    ` : '<span class="text-gray-400">保存后可生成</span>'}
+                    </div>
                 </div>
-                ${h.phonetic ? `<div class="text-xs text-gray-500 mt-1">/${h.phonetic}/</div>` : ''}
-                ${h.translation ? `<div class="text-xs text-gray-600 mt-1">${h.translation}</div>` : ''}
+                ${h.translation ? `<div class="text-[10px] text-gray-500 ml-5.5 pl-[22px]">${h.translation}</div>` : ''}
             </div>
         `).join('');
     }
@@ -543,8 +572,30 @@
             select.innerHTML += `<option value="${c.id}" ${c.id == initialCategoryId ? 'selected' : ''}>${c.name}</option>`;
             if (c.children) {
                 c.children.forEach(sub => {
-                    select.innerHTML += `<option value="${sub.id}" ${sub.id == initialCategoryId ? 'selected' : ''}>&nbsp;&nbsp;${sub.name}</option>`;
+                    select.innerHTML += `<option value="${sub.id}" ${sub.id == initialCategoryId ? 'selected' : ''} data-items="${(sub.items || '').replace(/"/g, '&quot;')}" data-name="${sub.name}" data-name-en="${sub.name_en || ''}">&nbsp;&nbsp;${sub.name}</option>`;
                 });
+            }
+        });
+
+        // 监听分类选择变化，自动填充 AI 提示词
+        select.addEventListener('change', function() {
+            const opt = this.options[this.selectedIndex];
+            const items = opt.getAttribute('data-items');
+            const nameEn = opt.getAttribute('data-name-en');
+            const nameCn = opt.getAttribute('data-name');
+            if (items && items.trim()) {
+                // 自动填充场景名称
+                const nameInput = document.querySelector('input[name="name"]');
+                const nameEnInput = document.querySelector('input[name="name_en"]');
+                if (!nameInput.value) nameInput.value = nameCn || '';
+                if (!nameEnInput.value) nameEnInput.value = nameEn || '';
+
+                // 切换到 AI 生成 tab
+                switchImageTab('ai');
+
+                // 生成提示词
+                const prompt = buildScenePrompt(nameEn || nameCn, items);
+                document.getElementById('aiPrompt').value = prompt;
             }
         });
 
@@ -604,7 +655,32 @@
             const result = await res.json();
             if (result.success) {
                 showToast('保存成功');
-                setTimeout(() => location.href = '/scenes', 1000);
+                if (!sceneId && result.id) {
+                    // 新建场景后跳转到编辑页
+                    setTimeout(() => location.href = '/scenes/edit/' + result.id, 1000);
+                } else if (sceneId) {
+                    // 编辑模式：重新加载 hotspots 获取最新的数据库 id
+                    const objRes = await fetch(`${API_BASE}/scenes/${sceneId}/objects`);
+                    const objData = await objRes.json();
+                    if (objData.success) {
+                        hotspots = objData.data.map(o => ({
+                            id: o.id,
+                            custom_label: o.custom_label,
+                            phonetic: o.phonetic || '',
+                            translation: o.translation || '',
+                            audio_url_male: o.audio_url_male || '',
+                            audio_url_female: o.audio_url_female || '',
+                            rect: {
+                                x: o.position_x,
+                                y: o.position_y,
+                                w: o.label_width,
+                                h: o.label_height
+                            }
+                        }));
+                        renderHotspots();
+                        renderHotspotList();
+                    }
+                }
             } else {
                 showToast(result.message, 'error');
             }
