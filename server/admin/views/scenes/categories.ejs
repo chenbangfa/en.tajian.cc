@@ -78,6 +78,14 @@
                 </div>
             </div>
 
+            <div id="itemsGroup" class="hidden">
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">内容词汇 (英文，逗号分隔)</label>
+                <textarea name="items" rows="3"
+                    class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all text-sm"
+                    placeholder="如：apple, banana, orange, pear, grape"></textarea>
+                <p class="text-xs text-gray-400 mt-1">用于 AI 生成场景图时的物品列表，仅二级分类需要填写</p>
+            </div>
+
             <div class="flex items-center space-x-2 pt-2">
                 <input type="checkbox" name="is_active" id="is_active"
                     class="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" checked>
@@ -156,7 +164,8 @@
                 html += `<div class="p-2 bg-white border-t border-gray-100 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">`;
                 cat.children.forEach(sub => {
                     html += `
-                    <div class="flex items-center justify-between p-3 rounded-lg border border-gray-100 hover:border-blue-100 hover:bg-blue-50/30 transition-all group">
+                    <div class="flex flex-col p-3 rounded-lg border border-gray-100 hover:border-blue-100 hover:bg-blue-50/30 transition-all group">
+                        <div class="flex items-center justify-between">
                         <div class="flex items-center space-x-3">
                             <span class="text-xl">${sub.icon || '📄'}</span>
                             <div>
@@ -172,6 +181,8 @@
                                 <i class="fas fa-trash-alt"></i>
                             </button>
                         </div>
+                        </div>
+                        ${sub.items ? `<div class="mt-2 text-xs text-gray-400 truncate" title="${sub.items}"><i class="fas fa-tags mr-1"></i>${sub.items}</div>` : ''}
                     </div>
                 `;
                 });
@@ -201,10 +212,25 @@
         });
 
         select.value = parentId;
+        toggleItemsField(parentId);
+
+        // 监听上级分类变化，动态显示/隐藏 items 字段
+        select.onchange = function() {
+            toggleItemsField(parseInt(this.value));
+        };
+    }
+
+    function toggleItemsField(parentId) {
+        const itemsGroup = document.getElementById('itemsGroup');
+        if (parentId > 0) {
+            itemsGroup.classList.remove('hidden');
+        } else {
+            itemsGroup.classList.add('hidden');
+        }
     }
 
     function editCategory(cat) {
-        openModal();
+        openModal(cat.parent_id);
         document.getElementById('modalTitle').textContent = '编辑分类';
 
         const form = document.getElementById('editForm');
@@ -213,8 +239,10 @@
         form.querySelector('input[name="name_en"]').value = cat.name_en || '';
         form.querySelector('select[name="parent_id"]').value = cat.parent_id;
         form.querySelector('input[name="icon"]').value = cat.icon || '';
+        form.querySelector('textarea[name="items"]').value = cat.items || '';
         form.querySelector('input[name="sort_order"]').value = cat.sort_order;
         form.querySelector('input[name="is_active"]').checked = cat.is_active;
+        toggleItemsField(cat.parent_id);
     }
 
     function closeModal() {
