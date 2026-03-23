@@ -32,15 +32,15 @@ router.get('/', async (req, res) => {
 // 创建分类
 router.post('/', async (req, res) => {
     try {
-        const { name, name_en, parent_id = 0, icon, sort_order = 0 } = req.body;
+        const { name, name_en, parent_id = 0, icon, items, sort_order = 0 } = req.body;
 
         if (!name) {
             return res.status(400).json({ success: false, message: '分类名称不能为空' });
         }
 
         await query(
-            'INSERT INTO scene_categories (name, name_en, parent_id, icon, sort_order) VALUES (?, ?, ?, ?, ?)',
-            [name, name_en, parent_id, icon, sort_order]
+            'INSERT INTO scene_categories (name, name_en, parent_id, icon, items, sort_order) VALUES (?, ?, ?, ?, ?, ?)',
+            [name, name_en, parent_id, icon, items || null, sort_order]
         );
 
         res.json({ success: true, message: '创建成功' });
@@ -54,11 +54,11 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, name_en, parent_id, icon, sort_order, is_active } = req.body;
+        const { name, name_en, parent_id, icon, items, sort_order, is_active } = req.body;
 
         await query(
-            'UPDATE scene_categories SET name=?, name_en=?, parent_id=?, icon=?, sort_order=?, is_active=? WHERE id=?',
-            [name, name_en, parent_id, icon, sort_order, is_active, id]
+            'UPDATE scene_categories SET name=?, name_en=?, parent_id=?, icon=?, items=?, sort_order=?, is_active=? WHERE id=?',
+            [name, name_en, parent_id, icon, items || null, sort_order, is_active, id]
         );
 
         res.json({ success: true, message: '更新成功' });
