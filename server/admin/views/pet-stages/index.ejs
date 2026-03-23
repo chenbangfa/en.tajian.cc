@@ -585,20 +585,19 @@
             return;
         }
 
-        const prompt = `Create a hyper-realistic, photorealistic digital illustration of a cute ${petName} character at growth stage ${stageNum || '?'}.
+        const prompt = `A real photograph of a ${petName} at growth stage ${stageNum || '?'}.
 
 ${stageDesc ? `Visual appearance: ${stageDesc}.` : ''}
 
-Art direction:
-- Photorealistic 3D rendering with subsurface scattering and soft studio lighting
-- Adorable character design appealing to children aged 5-10
-- Rich micro-details: realistic fur/petal/leaf textures, tiny water droplets, soft shadows
-- Warm, inviting color palette with gentle bokeh background
-- The character should feel alive — expressive eyes, natural pose
-- Square composition (1:1), centered subject, clean background gradient
-- Quality reference: Pixar/Disney character render quality
+Photography direction:
+- Shot with a professional DSLR camera, shallow depth of field, soft natural lighting
+- Real, living creature/plant — NOT a cartoon, NOT 3D rendered, NOT illustrated, NOT animated
+- Lifelike details: real fur/skin/petal textures, natural colors, authentic anatomy
+- Warm and inviting mood, gentle bokeh background
+- The subject should look alive — real eyes, natural posture, genuine expression
+- Square composition (1:1), centered subject, clean soft background
 
-STRICT: The image must contain absolutely NO text, NO letters, NO numbers, NO words, NO watermarks, NO labels, NO captions in any language. Pure illustration only.`;
+STRICT: This must look like a real photograph, not a cartoon or digital art. Absolutely NO text, NO letters, NO numbers, NO words, NO watermarks, NO labels in the image.`;
 
         document.getElementById('aiImagePrompt').value = prompt;
     }
