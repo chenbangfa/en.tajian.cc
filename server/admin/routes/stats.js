@@ -169,11 +169,13 @@ router.get('/trends', async (req, res) => {
                    FROM users WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 60 DAY)
                    AND created_at < DATE_SUB(CURDATE(), INTERVAL 30 DAY)
                    GROUP BY DATE(created_at) ORDER BY date`),
-            // 近30天打卡趋势
-            query(`SELECT task_date as date, COUNT(DISTINCT user_id) as count, AVG(avg_score) as avg_score
-                   FROM daily_task_plans
-                   WHERE task_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) AND is_completed = 1
-                   GROUP BY task_date ORDER BY date`)
+            // 近30天打卡趋势（从 daily_task_items 取真实评分）
+            query(`SELECT DATE(dtp.task_date) as date, COUNT(DISTINCT dtp.user_id) as count,
+                          ROUND(AVG(NULLIF(dti.score, 0)), 1) as avg_score
+                   FROM daily_task_plans dtp
+                   LEFT JOIN daily_task_items dti ON dti.plan_id = dtp.id AND dti.score > 0
+                   WHERE dtp.task_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) AND dtp.is_completed = 1
+                   GROUP BY DATE(dtp.task_date) ORDER BY date`)
         ]);
 
         res.json({

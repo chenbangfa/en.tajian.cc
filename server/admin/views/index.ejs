@@ -204,7 +204,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             ],
             series: [
                 { name: '打卡人数', type: 'bar', data: checkinTrend.map(r => r.count), itemStyle: { color: '#10b981', borderRadius: [4, 4, 0, 0] } },
-                { name: '平均分', type: 'line', yAxisIndex: 1, smooth: true, data: checkinTrend.map(r => r.avg_score ? +r.avg_score.toFixed(1) : 0), itemStyle: { color: '#f59e0b' } }
+                { name: '平均分', type: 'line', yAxisIndex: 1, smooth: true, data: checkinTrend.map(r => r.avg_score ? parseFloat(parseFloat(r.avg_score).toFixed(1)) : 0), itemStyle: { color: '#f59e0b' } }
             ]
         });
     }
