@@ -85,18 +85,19 @@ class VoiceService {
     // ==================== Google Gemini TTS ====================
 
     async _googleTTS(text, voice = 'female', speed = 1.0) {
-        const apiKey = process.env.GOOGLE_AI_KEY;
-        if (!apiKey) {
-            return { success: false, error: 'Google: 未配置 GOOGLE_AI_KEY' };
+        const vertexAuth = require('../utils/vertex-auth');
+        if (!vertexAuth.isConfigured) {
+            return { success: false, error: 'Google: 未配置 Vertex AI' };
         }
 
         const voiceMap = { male: 'Puck', female: 'Aoede' };
         const voiceName = voiceMap[voice] || 'Aoede';
 
-        console.log(`[TTS:Google] Gemini TTS, Voice: ${voiceName}, Text: ${text.substring(0, 30)}...`);
+        console.log(`[TTS:Google] Vertex AI TTS, Voice: ${voiceName}, Text: ${text.substring(0, 30)}...`);
 
+        const headers = await vertexAuth.getAuthHeaders();
         const response = await axios.post(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`,
+            vertexAuth.getUrl('gemini-2.5-flash-preview-tts'),
             {
                 contents: [{ parts: [{ text: `Say in a clear voice: ${text}` }] }],
                 generationConfig: {
@@ -106,7 +107,7 @@ class VoiceService {
                     }
                 }
             },
-            { headers: { 'Content-Type': 'application/json' }, timeout: 30000 }
+            { headers, timeout: 30000 }
         );
 
         const candidates = response.data.candidates;
@@ -356,9 +357,17 @@ class VoiceService {
             }
 
             // 响应字段在顶层（无 result 嵌套）
+            // 对于单词评测，overall 会被 fluency/integrity 拖低（短词无意义）
+            // 改用单词级别的 pronunciation 分，更准确反映发音质量
+            let overallScore = Math.round(parseFloat(data.overall || 0));
+            if (contentType === 'word' && data.words && data.words.length > 0) {
+                const wordScore = Math.round(parseFloat(data.words[0].pronunciation || 0));
+                if (wordScore > 0) overallScore = wordScore;
+            }
+
             return {
                 success: true,
-                overallScore: Math.round(parseFloat(data.overall || 0)),
+                overallScore,
                 pronunciationScore: Math.round(parseFloat(data.pronunciation || 0)),
                 fluencyScore: Math.round(parseFloat(data.fluency || 0)),
                 integrityScore: Math.round(parseFloat(data.integrity || 0)),

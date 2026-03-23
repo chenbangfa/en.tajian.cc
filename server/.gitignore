@@ -4,6 +4,9 @@ node_modules/
 # Environment
 .env
 
+# Google Cloud credentials
+credentials/
+
 # Uploads (生产环境会有很多文件)
 uploads/
 

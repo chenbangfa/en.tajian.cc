@@ -1,5 +1,5 @@
 /**
- * Google AI 中转代理服务
+ * Google AI 中转代理服务（Vertex AI）
  * 运行在美国本地服务器，专门处理需要访问 Google API 的请求
  * 腾讯云服务器通过此代理调用 Google Gemini AI
  */
@@ -10,13 +10,13 @@ const sharp = require('sharp');
 
 require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
+const vertexAuth = require('../src/utils/vertex-auth');
+
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 
 const PORT = process.env.PROXY_PORT || 3005;
 const API_KEY = process.env.PROXY_API_KEY;
-const GOOGLE_AI_KEY = process.env.GOOGLE_AI_KEY;
-const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
 // ==================== 鉴权中间件 ====================
 
@@ -33,8 +33,10 @@ function auth(req, res, next) {
 app.get('/proxy/health', (req, res) => {
     res.json({
         success: true,
-        service: 'Google AI Proxy',
-        googleKey: GOOGLE_AI_KEY ? 'configured' : 'MISSING',
+        service: 'Google AI Proxy (Vertex AI)',
+        vertexAI: vertexAuth.isConfigured ? 'configured' : 'MISSING',
+        project: process.env.GOOGLE_CLOUD_PROJECT || 'NOT SET',
+        region: process.env.GOOGLE_CLOUD_REGION || 'us-central1',
         time: new Date().toISOString()
     });
 });
@@ -51,20 +53,21 @@ app.post('/proxy/generate-image', auth, async (req, res) => {
         return res.status(400).json({ success: false, error: '缺少 prompt 参数' });
     }
 
-    if (!GOOGLE_AI_KEY) {
-        return res.status(500).json({ success: false, error: '未配置 GOOGLE_AI_KEY' });
+    if (!vertexAuth.isConfigured) {
+        return res.status(500).json({ success: false, error: '未配置 Vertex AI' });
     }
 
     try {
-        console.log(`[Proxy] 生成图片, prompt: ${prompt.substring(0, 80)}...`);
+        console.log(`[Proxy] 生成图片 (Vertex AI), prompt: ${prompt.substring(0, 80)}...`);
 
+        const headers = await vertexAuth.getAuthHeaders();
         const response = await axios.post(
-            `${GEMINI_BASE}/models/gemini-2.5-flash-image:generateContent?key=${GOOGLE_AI_KEY}`,
+            vertexAuth.getUrl('gemini-3-pro-image-preview'),
             {
                 contents: [{ parts: [{ text: prompt }] }],
                 generationConfig: { responseModalities: ['image', 'text'] }
             },
-            { headers: { 'Content-Type': 'application/json' }, timeout: 120000 }
+            { headers, timeout: 120000 }
         );
 
         const parts = response.data.candidates?.[0]?.content?.parts || [];
@@ -73,10 +76,10 @@ app.post('/proxy/generate-image', auth, async (req, res) => {
                 const rawBuffer = Buffer.from(part.inlineData.data, 'base64');
                 const rawKB = Math.round(rawBuffer.length / 1024);
 
-                // 压缩：最大 1024px，JPEG quality=82，目标 ~150-250KB
+                // 压缩：保持原始比例，最大宽 1080px，JPEG quality=85
                 const compressed = await sharp(rawBuffer)
-                    .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
-                    .jpeg({ quality: 82, progressive: true })
+                    .resize(1080, null, { fit: 'inside', withoutEnlargement: true })
+                    .jpeg({ quality: 85, progressive: true })
                     .toBuffer();
 
                 console.log(`[Proxy] 图片生成成功, 原始 ${rawKB}KB → 压缩后 ${Math.round(compressed.length / 1024)}KB`);
@@ -98,6 +101,40 @@ app.post('/proxy/generate-image', auth, async (req, res) => {
     }
 });
 
+// ==================== Gemini 通用文本生成 ====================
+/**
+ * POST /proxy/gemini-text
+ * body: { prompt }
+ * response: { success, text }
+ */
+app.post('/proxy/gemini-text', auth, async (req, res) => {
+    const { prompt } = req.body;
+    if (!prompt) {
+        return res.status(400).json({ success: false, error: '缺少 prompt 参数' });
+    }
+
+    try {
+        const headers = await vertexAuth.getAuthHeaders();
+        const response = await axios.post(
+            vertexAuth.getUrl('gemini-2.5-flash'),
+            {
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: { temperature: 0.7, maxOutputTokens: 4096 }
+            },
+            { headers, timeout: 60000 }
+        );
+
+        const text = response.data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text) {
+            return res.json({ success: true, text });
+        }
+        res.json({ success: false, error: 'Gemini 未返回文本' });
+    } catch (error) {
+        console.error('[Proxy] gemini-text error:', error.response?.data?.error?.message || error.message);
+        res.status(500).json({ success: false, error: error.response?.data?.error?.message || error.message });
+    }
+});
+
 // ==================== 单词增强 ====================
 /**
  * POST /proxy/enhance-word
@@ -111,8 +148,8 @@ app.post('/proxy/enhance-word', auth, async (req, res) => {
         return res.status(400).json({ success: false, error: '缺少 word 参数' });
     }
 
-    if (!GOOGLE_AI_KEY) {
-        return res.status(500).json({ success: false, error: '未配置 GOOGLE_AI_KEY' });
+    if (!vertexAuth.isConfigured) {
+        return res.status(500).json({ success: false, error: '未配置 Vertex AI' });
     }
 
     try {
@@ -138,13 +175,14 @@ Respond ONLY with a valid JSON object:
 
         console.log(`[Proxy] 增强单词: ${word}`);
 
+        const headers = await vertexAuth.getAuthHeaders();
         const response = await axios.post(
-            `${GEMINI_BASE}/models/gemini-2.0-flash:generateContent?key=${GOOGLE_AI_KEY}`,
+            vertexAuth.getUrl('gemini-2.5-flash'),
             {
                 contents: [{ parts: [{ text: prompt }] }],
                 generationConfig: { temperature: 0.3, maxOutputTokens: 1024 }
             },
-            { headers: { 'Content-Type': 'application/json' }, timeout: 30000 }
+            { headers, timeout: 30000 }
         );
 
         const text = response.data.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -176,18 +214,19 @@ app.post('/proxy/tts', auth, async (req, res) => {
         return res.status(400).json({ success: false, error: '缺少 text 参数' });
     }
 
-    if (!GOOGLE_AI_KEY) {
-        return res.status(500).json({ success: false, error: '未配置 GOOGLE_AI_KEY' });
+    if (!vertexAuth.isConfigured) {
+        return res.status(500).json({ success: false, error: '未配置 Vertex AI' });
     }
 
     try {
         const voiceMap = { male: 'Puck', female: 'Aoede' };
         const voiceName = voiceMap[voice] || 'Aoede';
 
-        console.log(`[Proxy] Google TTS: "${text.substring(0, 40)}", voice: ${voiceName}`);
+        console.log(`[Proxy] Google TTS (Vertex AI): "${text.substring(0, 40)}", voice: ${voiceName}`);
 
+        const headers = await vertexAuth.getAuthHeaders();
         const response = await axios.post(
-            `${GEMINI_BASE}/models/gemini-2.5-flash-preview-tts:generateContent?key=${GOOGLE_AI_KEY}`,
+            vertexAuth.getUrl('gemini-2.5-flash-preview-tts'),
             {
                 contents: [{ parts: [{ text: `Say in a clear voice: ${text}` }] }],
                 generationConfig: {
@@ -195,7 +234,7 @@ app.post('/proxy/tts', auth, async (req, res) => {
                     speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } }
                 }
             },
-            { headers: { 'Content-Type': 'application/json' }, timeout: 30000 }
+            { headers, timeout: 30000 }
         );
 
         const parts = response.data.candidates?.[0]?.content?.parts || [];
@@ -251,13 +290,14 @@ ${chunkText}`;
 }
 
 async function analyzeChunk(chunkText) {
+    const headers = await vertexAuth.getAuthHeaders();
     const response = await axios.post(
-        `${GEMINI_BASE}/models/gemini-2.0-flash:generateContent?key=${GOOGLE_AI_KEY}`,
+        vertexAuth.getUrl('gemini-2.5-flash'),
         {
             contents: [{ parts: [{ text: buildAnalyzePrompt(chunkText) }] }],
             generationConfig: { temperature: 0.2, maxOutputTokens: 8192 }
         },
-        { headers: { 'Content-Type': 'application/json' }, timeout: 90000 }
+        { headers, timeout: 90000 }
     );
     let raw = response.data.candidates?.[0]?.content?.parts?.[0]?.text || '';
     raw = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
@@ -269,7 +309,7 @@ async function analyzeChunk(chunkText) {
 app.post('/proxy/analyze-podcast', auth, async (req, res) => {
     const { text } = req.body;
     if (!text) return res.status(400).json({ success: false, error: '缺少 text 参数' });
-    if (!GOOGLE_AI_KEY) return res.status(500).json({ success: false, error: '未配置 GOOGLE_AI_KEY' });
+    if (!vertexAuth.isConfigured) return res.status(500).json({ success: false, error: '未配置 Vertex AI' });
 
     try {
         // 按句子分割，每块不超过 PODCAST_CHUNK_SIZE 句，避免输出超出 token 限制
@@ -321,7 +361,8 @@ function addWavHeader(samples, sampleRate, numChannels, bitDepth) {
 // ==================== 启动 ====================
 
 app.listen(PORT, () => {
-    console.log(`🌐 Google AI Proxy 启动成功: http://localhost:${PORT}`);
+    console.log(`🌐 Google AI Proxy (Vertex AI) 启动成功: http://localhost:${PORT}`);
     console.log(`🔑 API Key 鉴权: ${API_KEY ? '已启用' : '未启用（开发模式）'}`);
-    console.log(`🤖 Google AI Key: ${GOOGLE_AI_KEY ? '已配置' : '❌ 未配置'}`);
+    console.log(`🤖 Vertex AI: ${vertexAuth.isConfigured ? '已配置' : '❌ 未配置'}`);
+    console.log(`📍 Project: ${process.env.GOOGLE_CLOUD_PROJECT || 'NOT SET'}, Region: ${process.env.GOOGLE_CLOUD_REGION || 'us-central1'}`);
 });

@@ -24,9 +24,11 @@ module.exports = {
     expiresIn: process.env.JWT_EXPIRES_IN || '7d'
   },
 
-  // Google AI配置
+  // Google Vertex AI 配置
   googleAI: {
-    apiKey: process.env.GOOGLE_AI_KEY
+    serviceAccountPath: process.env.GOOGLE_SERVICE_ACCOUNT_PATH,
+    projectId: process.env.GOOGLE_CLOUD_PROJECT,
+    region: process.env.GOOGLE_CLOUD_REGION || 'us-central1'
   },
 
   // 有道API配置

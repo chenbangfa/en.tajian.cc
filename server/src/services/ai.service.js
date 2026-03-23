@@ -8,15 +8,15 @@ const sizeOf = require('image-size');
 const tencentcloud = require("tencentcloud-sdk-nodejs-ocr");
 const OcrClient = tencentcloud.ocr.v20181119.Client;
 const cosService = require('./cos.service');
+const vertexAuth = require('../utils/vertex-auth');
 require('dotenv').config(); // Ensure env vars are loaded
 
 /**
- * Google Gemini AI 图片生成服务
+ * Google Gemini AI 图片生成服务 (Vertex AI)
  */
 class AIService {
     constructor() {
-        this.apiKey = config.googleAI.apiKey;
-        this.baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
+        this.vertexAuth = vertexAuth;
     }
 
     /**
@@ -98,19 +98,17 @@ IMPORTANT:
         }
 
         try {
-            console.log('[AIService] 开始生成图片 (Gemini Flash Image)...');
+            console.log('[AIService] 开始生成图片 (Vertex AI)...');
             console.log('[AIService] Prompt:', prompt.substring(0, 100) + '...');
 
+            const headers = await this.vertexAuth.getAuthHeaders();
             const response = await axios.post(
-                `${this.baseUrl}/models/gemini-3-pro-image-preview:generateContent?key=${this.apiKey}`,
+                this.vertexAuth.getUrl('gemini-3-pro-image-preview'),
                 {
                     contents: [{ parts: [{ text: prompt }] }],
                     generationConfig: { responseModalities: ['image', 'text'] }
                 },
-                {
-                    headers: { 'Content-Type': 'application/json' },
-                    timeout: 120000
-                }
+                { headers, timeout: 120000 }
             );
 
             const candidates = response.data.candidates;
@@ -151,8 +149,9 @@ IMPORTANT:
         The image should contain various clearly visible objects that children can learn English words from. 
         Educational, colorful, engaging, with labeled objects. High quality, suitable for young learners.`;
 
+            const headers = await this.vertexAuth.getAuthHeaders();
             const response = await axios.post(
-                `${this.baseUrl}/models/imagen-3.0-generate-002:predict`,
+                this.vertexAuth.getUrl('imagen-3.0-generate-002', 'predict'),
                 {
                     instances: [{ prompt }],
                     parameters: {
@@ -161,12 +160,7 @@ IMPORTANT:
                         safetyFilterLevel: 'block_some'
                     }
                 },
-                {
-                    headers: {
-                        'Authorization': `Bearer ${this.apiKey}`,
-                        'Content-Type': 'application/json'
-                    }
-                }
+                { headers }
             );
 
             if (response.data.predictions && response.data.predictions.length > 0) {
@@ -286,8 +280,9 @@ IMPORTANT:
             const base64Image = imageBuffer.toString('base64');
             const mimeType = this.getMimeType(imagePath);
 
+            const headers = await this.vertexAuth.getAuthHeaders();
             const response = await axios.post(
-                `${this.baseUrl}/models/gemini-2.0-flash-exp:generateContent?key=${this.apiKey}`,
+                this.vertexAuth.getUrl('gemini-2.0-flash-exp'),
                 {
                     contents: [{
                         parts: [
@@ -300,7 +295,7 @@ Do NOT crop or offset. Inspect the FULL image.
 
 Example response format:
 [
-  {"text": "Apple", "box": [100, 200, 300, 400]}, 
+  {"text": "Apple", "box": [100, 200, 300, 400]},
   {"text": "Car", "box": [500, 600, 700, 800]}
 ]
 Only return valid JSON.`
@@ -317,7 +312,7 @@ Only return valid JSON.`
                         responseMimeType: "application/json"
                     }
                 },
-                { headers: { 'Content-Type': 'application/json' } }
+                { headers }
             );
 
             const text = response.data.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -370,8 +365,9 @@ Only return valid JSON.`
             const base64Image = imageBuffer.toString('base64');
             const mimeType = this.getMimeType(imagePath);
 
+            const headers = await this.vertexAuth.getAuthHeaders();
             const response = await axios.post(
-                `${this.baseUrl}/models/gemini-2.0-flash-exp:generateContent?key=${this.apiKey}`,
+                this.vertexAuth.getUrl('gemini-2.0-flash-exp'),
                 {
                     contents: [{
                         parts: [
@@ -380,7 +376,7 @@ Only return valid JSON.`
 1. The English word for the object
 2. The Chinese translation
 3. A simple English sentence using the word
-Return the result as a JSON array with format: 
+Return the result as a JSON array with format:
 [{"word": "cat", "translation": "猫", "sentence": "I see a cute cat."}]
 Only return the JSON array, no other text.`
                             },
@@ -394,9 +390,7 @@ Only return the JSON array, no other text.`
                     }]
                 },
                 {
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
+                    headers
                 }
             );
 
@@ -663,14 +657,15 @@ Only return the JSON array, no other text.`
      * @returns {Object} { success: boolean, text?: string, error?: string }
      */
     async callGeminiText(prompt) {
-        const doCall = async (baseUrl, apiKey) => {
+        const doCall = async () => {
+            const headers = await this.vertexAuth.getAuthHeaders();
             const response = await axios.post(
-                `${baseUrl}/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+                this.vertexAuth.getUrl('gemini-2.5-flash'),
                 {
                     contents: [{ parts: [{ text: prompt }] }],
                     generationConfig: { temperature: 0.7, maxOutputTokens: 4096 }
                 },
-                { headers: { 'Content-Type': 'application/json' }, timeout: 60000 }
+                { headers, timeout: 60000 }
             );
             const text = response.data.candidates?.[0]?.content?.parts?.[0]?.text;
             if (text) return { success: true, text };
@@ -699,7 +694,7 @@ Only return the JSON array, no other text.`
 
         // 无代理配置时才尝试直连
         try {
-            return await doCall(this.baseUrl, this.apiKey);
+            return await doCall();
         } catch (error) {
             console.error('[AIService] Gemini文本生成失败:', error.response?.data || error.message);
             return { success: false, error: error.response?.data?.error?.message || error.message };
@@ -814,8 +809,9 @@ Respond ONLY with a valid JSON object in this exact format:
 }`;
             }
 
+            const headers = await this.vertexAuth.getAuthHeaders();
             const response = await axios.post(
-                `${this.baseUrl}/models/gemini-2.5-flash:generateContent?key=${this.apiKey}`,
+                this.vertexAuth.getUrl('gemini-2.5-flash'),
                 {
                     contents: [{
                         parts: [{ text: prompt }]
@@ -825,10 +821,7 @@ Respond ONLY with a valid JSON object in this exact format:
                         maxOutputTokens: 1024
                     }
                 },
-                {
-                    headers: { 'Content-Type': 'application/json' },
-                    timeout: 30000
-                }
+                { headers, timeout: 30000 }
             );
 
             const text = response.data.candidates?.[0]?.content?.parts?.[0]?.text;
