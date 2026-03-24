@@ -246,7 +246,7 @@ async function showDetail(id) {
                                 <td class="py-1.5">${new Date(p.task_date).toLocaleDateString('zh-CN')}</td>
                                 <td class="text-center">${modeLabel}</td>
                                 <td class="text-center">${p.total_score || 0}</td>
-                                <td class="text-center">${p.avg_score ? p.avg_score.toFixed(1) : '-'}</td>
+                                <td class="text-center">${p.avg_score ? parseFloat(p.avg_score).toFixed(1) : '-'}</td>
                                 <td class="text-center">${p.is_completed ? '<span class="text-green-600">✓</span>' : '<span class="text-gray-400">-</span>'}</td>
                             </tr>`;
                         }).join('')}</tbody>

@@ -1704,6 +1704,17 @@ router.get('/v2/today', authMiddleware, async (req, res) => {
             `, [userId, courseId]);
             const learnedIds = new Set(learnedRows.map(r => r.course_item_id));
 
+            // 获取最近一次计划的 course_item_id（用于复习时避免连续重复）
+            const lastPlanRows = await query(`
+                SELECT dti.course_item_id
+                FROM daily_task_items dti
+                JOIN daily_task_plans dtp ON dti.plan_id = dtp.id
+                WHERE dtp.user_id = ? AND dtp.course_id = ? AND dtp.task_date < ?
+                ORDER BY dtp.task_date DESC
+                LIMIT ?
+            `, [userId, courseId, today, dailyTarget]);
+            const lastPlanIds = new Set(lastPlanRows.map(r => r.course_item_id));
+
             // 课程所有单词（按顺序）
             const courseItems = await query(`
                 SELECT ci.id as course_item_id, ci.target_id as word_id, ci.sort_order
@@ -1715,8 +1726,10 @@ router.get('/v2/today', authMiddleware, async (req, res) => {
             let todayItems = courseItems.filter(ci => !learnedIds.has(ci.course_item_id));
             // 课程快学完时，用已学的补充（复习）
             if (todayItems.length < dailyTarget) {
-                const reviewItems = courseItems.filter(ci => learnedIds.has(ci.course_item_id));
-                todayItems = [...todayItems, ...reviewItems].slice(0, dailyTarget);
+                // 优先选不在上次计划中的已学单词（避免连续两天重复）
+                const reviewFresh = courseItems.filter(ci => learnedIds.has(ci.course_item_id) && !lastPlanIds.has(ci.course_item_id));
+                const reviewRepeat = courseItems.filter(ci => lastPlanIds.has(ci.course_item_id));
+                todayItems = [...todayItems, ...reviewFresh, ...reviewRepeat].slice(0, dailyTarget);
             }
             todayItems = todayItems.slice(0, dailyTarget);
 
@@ -1857,10 +1870,18 @@ router.post('/v2/done', authMiddleware, async (req, res) => {
         const isComplete = newDoneCount >= (plan.word_target || 10);
 
         if (isComplete && !plan.is_completed) {
-            await query('UPDATE daily_task_plans SET word_completed = ?, is_completed = 1, completed_at = NOW() WHERE id = ?',
-                [newDoneCount, plan.id]);
+            // 计算总分和均分
+            const [scoreRow] = await query(
+                'SELECT COALESCE(SUM(score), 0) as total, COALESCE(AVG(score), 0) as avg FROM daily_task_items WHERE plan_id = ? AND status = "completed" AND score > 0',
+                [plan.id]
+            );
+            const totalScore = scoreRow ? parseFloat(scoreRow.total) : 0;
+            const avgScore = scoreRow ? parseFloat(scoreRow.avg) : 0;
+
+            await query('UPDATE daily_task_plans SET word_completed = ?, is_completed = 1, completed_at = NOW(), total_score = ?, avg_score = ? WHERE id = ?',
+                [newDoneCount, totalScore, avgScore, plan.id]);
             const today = new Date().toISOString().split('T')[0];
-            await updateCheckinStats(userId, today, 0);
+            await updateCheckinStats(userId, today, avgScore);
         } else {
             await query('UPDATE daily_task_plans SET word_completed = ? WHERE id = ?', [newDoneCount, plan.id]);
         }
