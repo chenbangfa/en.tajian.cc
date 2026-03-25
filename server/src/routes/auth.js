@@ -46,7 +46,7 @@ router.post('/login', async (req, res) => {
             // 新用户注册
             const result = await query(
                 'INSERT INTO users (openid, unionid, points) VALUES (?, ?, ?)',
-                [openid, unionid || null, 100] // 新用户赠送100积分
+                [openid, unionid || null, 500] // 新用户赠送500积分
             );
             userId = result.insertId;
         } else {

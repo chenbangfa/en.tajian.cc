@@ -105,7 +105,7 @@ IMPORTANT:
             const response = await axios.post(
                 this.vertexAuth.getUrl('gemini-3-pro-image-preview'),
                 {
-                    contents: [{ parts: [{ text: prompt }] }],
+                    contents: [{ role: 'user', parts: [{ text: prompt }] }],
                     generationConfig: { responseModalities: ['image', 'text'] }
                 },
                 { headers, timeout: 120000 }
@@ -285,6 +285,7 @@ IMPORTANT:
                 this.vertexAuth.getUrl('gemini-2.0-flash-exp'),
                 {
                     contents: [{
+                        role: 'user',
                         parts: [
                             {
                                 text: `Detect text in this image.
@@ -370,6 +371,7 @@ Only return valid JSON.`
                 this.vertexAuth.getUrl('gemini-2.0-flash-exp'),
                 {
                     contents: [{
+                        role: 'user',
                         parts: [
                             {
                                 text: `Analyze this image and identify all visible objects. For each object, provide:
@@ -662,7 +664,7 @@ Only return the JSON array, no other text.`
             const response = await axios.post(
                 this.vertexAuth.getUrl('gemini-2.5-flash'),
                 {
-                    contents: [{ parts: [{ text: prompt }] }],
+                    contents: [{ role: 'user', parts: [{ text: prompt }] }],
                     generationConfig: { temperature: 0.7, maxOutputTokens: 4096 }
                 },
                 { headers, timeout: 60000 }
@@ -814,6 +816,7 @@ Respond ONLY with a valid JSON object in this exact format:
                 this.vertexAuth.getUrl('gemini-2.5-flash'),
                 {
                     contents: [{
+                        role: 'user',
                         parts: [{ text: prompt }]
                     }],
                     generationConfig: {

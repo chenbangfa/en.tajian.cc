@@ -99,7 +99,7 @@ class VoiceService {
         const response = await axios.post(
             vertexAuth.getUrl('gemini-2.5-flash-preview-tts'),
             {
-                contents: [{ parts: [{ text: `Say in a clear voice: ${text}` }] }],
+                contents: [{ role: 'user', parts: [{ text: `Say in a clear voice: ${text}` }] }],
                 generationConfig: {
                     responseModalities: ["AUDIO"],
                     speechConfig: {

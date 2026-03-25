@@ -64,7 +64,7 @@ app.post('/proxy/generate-image', auth, async (req, res) => {
         const response = await axios.post(
             vertexAuth.getUrl('gemini-3-pro-image-preview'),
             {
-                contents: [{ parts: [{ text: prompt }] }],
+                contents: [{ role: 'user', parts: [{ text: prompt }] }],
                 generationConfig: { responseModalities: ['image', 'text'] }
             },
             { headers, timeout: 120000 }
@@ -118,7 +118,7 @@ app.post('/proxy/gemini-text', auth, async (req, res) => {
         const response = await axios.post(
             vertexAuth.getUrl('gemini-2.5-flash'),
             {
-                contents: [{ parts: [{ text: prompt }] }],
+                contents: [{ role: 'user', parts: [{ text: prompt }] }],
                 generationConfig: { temperature: 0.7, maxOutputTokens: 4096 }
             },
             { headers, timeout: 60000 }
@@ -179,7 +179,7 @@ Respond ONLY with a valid JSON object:
         const response = await axios.post(
             vertexAuth.getUrl('gemini-2.5-flash'),
             {
-                contents: [{ parts: [{ text: prompt }] }],
+                contents: [{ role: 'user', parts: [{ text: prompt }] }],
                 generationConfig: { temperature: 0.3, maxOutputTokens: 1024 }
             },
             { headers, timeout: 30000 }
@@ -228,7 +228,7 @@ app.post('/proxy/tts', auth, async (req, res) => {
         const response = await axios.post(
             vertexAuth.getUrl('gemini-2.5-flash-preview-tts'),
             {
-                contents: [{ parts: [{ text: `Say in a clear voice: ${text}` }] }],
+                contents: [{ role: 'user', parts: [{ text: `Say in a clear voice: ${text}` }] }],
                 generationConfig: {
                     responseModalities: ['AUDIO'],
                     speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } }
@@ -294,7 +294,7 @@ async function analyzeChunk(chunkText) {
     const response = await axios.post(
         vertexAuth.getUrl('gemini-2.5-flash'),
         {
-            contents: [{ parts: [{ text: buildAnalyzePrompt(chunkText) }] }],
+            contents: [{ role: 'user', parts: [{ text: buildAnalyzePrompt(chunkText) }] }],
             generationConfig: { temperature: 0.2, maxOutputTokens: 8192 }
         },
         { headers, timeout: 90000 }
