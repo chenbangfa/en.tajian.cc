@@ -400,6 +400,11 @@ class VoiceService {
                 const nonce = Math.floor(Math.random() * 100000000);
                 const voiceId = `voice_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
+                // 根据文件扩展名判断音频格式：0=PCM, 1=WAV, 2=MP3, 4=SPEEX
+                const ext = path.extname(audioPath).toLowerCase();
+                const voiceFormatMap = { '.wav': 1, '.mp3': 2, '.pcm': 0, '.spx': 4 };
+                const voiceFormat = voiceFormatMap[ext] !== undefined ? voiceFormatMap[ext] : 1;
+
                 const params = {
                     eval_mode: evalModeMap[contentType] || 0,
                     expired, nonce,
@@ -410,7 +415,7 @@ class VoiceService {
                     server_engine_type: '16k_en',
                     text_mode: 0,
                     timestamp,
-                    voice_format: 2,
+                    voice_format: voiceFormat,
                     voice_id: voiceId,
                     rec_mode: 0
                 };
@@ -441,7 +446,9 @@ class VoiceService {
 
                         if (response.code === 0 && response.voice_id && !handshakeComplete) {
                             handshakeComplete = true;
-                            const CHUNK_SIZE = 4096;
+                            // 文档建议：每40ms发送40ms音频（16kHz 16bit mono = 1280字节/40ms）
+                            const CHUNK_SIZE = 1280;
+                            const CHUNK_INTERVAL = 40;
                             const totalChunks = Math.ceil(audioBuffer.length / CHUNK_SIZE);
 
                             const sendChunk = (index) => {
@@ -453,7 +460,7 @@ class VoiceService {
                                 const end = Math.min(start + CHUNK_SIZE, audioBuffer.length);
                                 const chunk = audioBuffer.slice(start, end);
                                 ws.send(chunk, { binary: true }, (err) => {
-                                    if (!err) setTimeout(() => sendChunk(index + 1), 10);
+                                    if (!err) setTimeout(() => sendChunk(index + 1), CHUNK_INTERVAL);
                                 });
                             };
                             sendChunk(0);
