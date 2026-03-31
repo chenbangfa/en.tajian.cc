@@ -167,11 +167,17 @@ router.post('/assess', authMiddleware, requirePoints(5), handleUpload, async (re
             });
         }
 
-        // 调用腾讯云语音评测
+        // 根据文本长度自动修正 content_type，防止单词模式传入长文本导致评测失败
+        const wordCount = reference_text.trim().split(/\s+/).length;
+        let finalContentType = content_type;
+        if (content_type === 'word' && wordCount > 2) {
+            finalContentType = wordCount <= 20 ? 'sentence' : 'paragraph';
+        }
+
         const result = await voiceService.assessPronunciation(
             req.file.path,
             reference_text,
-            content_type
+            finalContentType
         );
 
         if (!result.success) {
