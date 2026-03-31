@@ -357,13 +357,9 @@ class VoiceService {
             }
 
             // 响应字段在顶层（无 result 嵌套）
-            // 对于单词评测，overall 会被 fluency/integrity 拖低（短词无意义）
-            // 改用单词级别的 pronunciation 分，更准确反映发音质量
-            let overallScore = Math.round(parseFloat(data.overall || 0));
-            if (contentType === 'word' && data.words && data.words.length > 0) {
-                const wordScore = Math.round(parseFloat(data.words[0].pronunciation || 0));
-                if (wordScore > 0) overallScore = wordScore;
-            }
+            // 有道 overall 是独立算法，常远低于子分数（如 59 vs 99/100/100），体验差
+            // 统一用 pronunciation 分作为 overall，和子分数体系一致
+            const overallScore = Math.round(parseFloat(data.pronunciation || data.overall || 0));
 
             return {
                 success: true,
