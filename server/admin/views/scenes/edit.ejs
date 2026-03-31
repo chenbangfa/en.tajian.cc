@@ -67,12 +67,33 @@
 
                 <!-- AI Panel -->
                 <div id="panel-ai" class="hidden space-y-2">
+                    <!-- Style Selector -->
+                    <div class="flex bg-purple-50 p-1 rounded-lg text-xs font-medium">
+                        <button type="button" onclick="switchAiStyle('poster')" id="style-poster"
+                            class="flex-1 py-1.5 rounded-md bg-purple-600 text-white transition-all">
+                            <i class="fas fa-th mr-1"></i>词汇海报
+                        </button>
+                        <button type="button" onclick="switchAiStyle('scene')" id="style-scene"
+                            class="flex-1 py-1.5 rounded-md text-purple-600 hover:bg-purple-100 transition-all">
+                            <i class="fas fa-image mr-1"></i>场景图
+                        </button>
+                        <button type="button" onclick="switchAiStyle('custom')" id="style-custom"
+                            class="flex-1 py-1.5 rounded-md text-purple-600 hover:bg-purple-100 transition-all">
+                            <i class="fas fa-pen mr-1"></i>自定义
+                        </button>
+                    </div>
+
+                    <!-- Scene Style Info -->
+                    <div id="ai-style-info" class="text-xs text-gray-500 bg-gray-50 px-3 py-2 rounded-lg">
+                        <span id="ai-style-desc">生成词汇卡片网格海报 (9:16 竖版)</span>
+                    </div>
+
                     <textarea id="aiPrompt" rows="3"
                         class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm outline-none focus:border-blue-500"
-                        placeholder="描述场景，例如：A messy bedroom with toys on the floor..."></textarea>
-                    <button type="button" onclick="generateSceneImage()"
+                        placeholder="选择分类后自动填充，也可手动修改..."></textarea>
+                    <button type="button" id="btnGenerateImage" onclick="generateSceneImage()"
                         class="w-full py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors">
-                        <i class="fas fa-magic mr-1"></i> 生成场景图
+                        <i class="fas fa-magic mr-1"></i> 生成图片
                     </button>
                 </div>
 
@@ -105,6 +126,12 @@
                     class="flex items-center space-x-1.5 bg-yellow-500 hover:bg-yellow-600 text-white text-xs px-3 py-1.5 rounded-lg transition-colors shadow-sm">
                     <i class="fas fa-bolt"></i>
                     <span>智能识别(OCR)</span>
+                </button>
+
+                <button id="drawModeBtn" type="button" onclick="toggleDrawMode()"
+                    class="flex items-center space-x-1.5 bg-slate-600 hover:bg-slate-700 text-white text-xs px-3 py-1.5 rounded-lg transition-colors shadow-sm">
+                    <i class="fas fa-draw-polygon"></i>
+                    <span>手动框选</span>
                 </button>
 
                 <select id="ocrEngine"
@@ -162,6 +189,7 @@
         <img id="wxacodeImg" class="hidden mx-auto w-64 h-64 rounded-lg border" alt="小程序码">
         <div id="wxacodeError" class="hidden text-red-500 text-sm py-4"></div>
         <div class="mt-4 flex gap-3 justify-center">
+            <button id="wxacodeRegenerate" onclick="generateWxacode(true)" class="bg-orange-500 text-white px-4 py-2 rounded-lg text-sm hover:bg-orange-600"><i class="fas fa-rotate mr-1"></i>重新生成</button>
             <a id="wxacodeDownload" href="#" download class="hidden bg-green-500 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-600"><i class="fas fa-download mr-1"></i>下载</a>
             <button onclick="document.getElementById('wxacodeModal').classList.add('hidden');document.getElementById('wxacodeModal').classList.remove('flex')" class="bg-gray-100 px-4 py-2 rounded-lg text-sm hover:bg-gray-200">关闭</button>
         </div>
@@ -192,6 +220,22 @@
         background-color: rgba(239, 68, 68, 0.3);
         z-index: 20;
     }
+
+    #hotspotLayer.draw-mode {
+        cursor: crosshair;
+    }
+
+    #hotspotLayer.draw-mode .hotspot-box {
+        pointer-events: none;
+    }
+
+    .hotspot-preview {
+        position: absolute;
+        border: 2px dashed #22c55e;
+        background: rgba(34, 197, 94, 0.16);
+        pointer-events: none;
+        z-index: 30;
+    }
 </style>
 
 <script>
@@ -199,21 +243,75 @@
     const sceneId = document.getElementById('sceneId').value;
     const initialCategoryId = "<%= typeof scene !== 'undefined' ? scene.category_id : '' %>";
     let hotspots = []; // { id, word_id, custom_label, rect: {x,y,w,h} (percent), audio_url }
+    let drawModeEnabled = false;
+    let isDrawingHotspot = false;
+    let drawStartPoint = null;
+    let drawPreviewEl = null;
 
-    // --- AI Prompt Builder ---
+    // --- AI Style & Prompt Builder ---
 
-    function buildScenePrompt(theme, itemsStr) {
+    let currentAiStyle = 'poster'; // 'poster' | 'scene' | 'custom'
+
+    function switchAiStyle(style) {
+        currentAiStyle = style;
+        const styles = ['scene', 'poster', 'custom'];
+        styles.forEach(s => {
+            const btn = document.getElementById(`style-${s}`);
+            btn.className = s === style
+                ? 'flex-1 py-1.5 rounded-md bg-purple-600 text-white transition-all'
+                : 'flex-1 py-1.5 rounded-md text-purple-600 hover:bg-purple-100 transition-all';
+        });
+
+        const descEl = document.getElementById('ai-style-desc');
+        const promptInput = document.getElementById('aiPrompt');
+        if (style === 'scene') {
+            descEl.textContent = '根据分类物品自动生成儿童英语场景探索图 (1:1)';
+            promptInput.readOnly = false;
+            applyCategoryPromptFromSelection({ forcePrompt: true });
+        } else if (style === 'poster') {
+            descEl.textContent = '生成词汇卡片网格海报 (9:16 竖版)';
+            promptInput.readOnly = false;
+            applyPosterPromptFromSelection();
+        } else {
+            descEl.textContent = '自定义提示词，直接发送给 AI（服务端仍会增强风格）';
+            promptInput.readOnly = false;
+            promptInput.value = '';
+            promptInput.placeholder = '描述场景，例如：A messy bedroom with toys on the floor...';
+        }
+    }
+
+    function applyPosterPromptFromSelection() {
+        const select = document.getElementById('categorySelect');
+        const opt = select.options[select.selectedIndex];
+        if (!opt) return;
+        const items = opt.getAttribute('data-items');
+        const nameEn = opt.getAttribute('data-name-en');
+        const nameCn = opt.getAttribute('data-name');
+        if (!items || !items.trim()) {
+            document.getElementById('aiPrompt').value = '';
+            document.getElementById('aiPrompt').placeholder = '请先选择一个有物品列表的分类';
+            return;
+        }
+        document.getElementById('aiPrompt').value = buildPosterPrompt(nameEn || nameCn, items);
+    }
+
+    function buildSceneExplorePrompt(theme, itemsStr) {
+        const items = itemsStr.split(',').map(s => s.trim()).filter(Boolean);
+        if (!items.length) return '';
+        const itemList = items.join(', ');
+        return `A colorful, cheerful ${theme} scene for children's English learning. The scene naturally contains these objects: ${itemList}. Each object should be clearly visible and easy to identify by tapping. Friendly, inviting illustration that makes children want to explore and find objects.`;
+    }
+
+    function buildPosterPrompt(theme, itemsStr) {
         const items = itemsStr.split(',').map(s => s.trim()).filter(Boolean);
         const count = items.length;
 
-        // 根据物品数量自动计算列数
         let cols;
         if (count <= 4) cols = 2;
         else if (count <= 9) cols = 3;
         else cols = 4;
         const rows = Math.ceil(count / cols);
 
-        // 构建简洁的卡片描述
         const cardDesc = items.map(item => {
             const titleCase = item.charAt(0).toUpperCase() + item.slice(1).toLowerCase();
             return `a photo of a ${item} labeled "${titleCase}"`;
@@ -279,22 +377,55 @@ Strict: exactly ${count} cards, no duplicates, no extras, no missing, no numbers
         const prompt = document.getElementById('aiPrompt').value;
         if (!prompt) return showToast('请输入描述', 'error');
 
+        const btn = document.getElementById('btnGenerateImage');
+        const originalHTML = btn.innerHTML;
+        btn.disabled = true;
+        btn.classList.add('opacity-70', 'cursor-not-allowed');
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> AI 生成中...';
+
+        // 计时器：每秒更新按钮文字显示已等待时间
+        let seconds = 0;
+        const timer = setInterval(() => {
+            seconds++;
+            btn.innerHTML = `<i class="fas fa-spinner fa-spin mr-1"></i> AI 生成中... (${seconds}s)`;
+        }, 1000);
+
         try {
-            showToast('AI生成中，请耐心等待...', 'info');
             const res = await fetch(`${API_BASE}/scenes/generate-image`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt, name: document.querySelector('input[name="name"]').value })
+                body: JSON.stringify({
+                    prompt,
+                    ai_style: currentAiStyle,
+                    name: document.querySelector('input[name="name"]').value,
+                    name_en: document.querySelector('input[name="name_en"]').value,
+                    category_id: document.querySelector('select[name="category_id"]').value,
+                    difficulty_level: document.querySelector('input[name="difficulty_level"]').value
+                })
             });
             const data = await res.json();
             if (data.success) {
                 updateMainImage(data.imageUrl);
-                showToast('生成成功');
+                if (sceneId) {
+                    const saved = await saveSceneData({ silent: true, reloadAfterSave: false });
+                    if (saved.success) {
+                        showToast('生成成功，已自动保存');
+                    } else {
+                        showToast(`生成成功，但自动保存失败: ${saved.message || '请手动点保存全部'}`, 'error');
+                    }
+                } else {
+                    showToast('生成成功，请点击保存全部');
+                }
             } else {
                 showToast(data.message, 'error');
             }
         } catch (e) {
             showToast('生成出错', 'error');
+        } finally {
+            clearInterval(timer);
+            btn.disabled = false;
+            btn.classList.remove('opacity-70', 'cursor-not-allowed');
+            btn.innerHTML = originalHTML;
         }
     }
 
@@ -303,20 +434,137 @@ Strict: exactly ${count} cards, no duplicates, no extras, no missing, no numbers
     // Draw Logic (Simplified: Click to add box center, or drag support later)
     // Here we implement: Click on image -> Add default box at raw position -> user can modify text
 
+    function clampPercent(v) {
+        return Math.max(0, Math.min(100, v));
+    }
+
+    function getLayerPercentPoint(evt) {
+        const layer = document.getElementById('hotspotLayer');
+        const rect = layer.getBoundingClientRect();
+        const x = ((evt.clientX - rect.left) / rect.width) * 100;
+        const y = ((evt.clientY - rect.top) / rect.height) * 100;
+        return { x: clampPercent(x), y: clampPercent(y) };
+    }
+
+    function setDrawMode(enabled) {
+        drawModeEnabled = !!enabled;
+        const layer = document.getElementById('hotspotLayer');
+        const btn = document.getElementById('drawModeBtn');
+        layer.classList.toggle('draw-mode', drawModeEnabled);
+
+        if (drawModeEnabled) {
+            btn.className = 'flex items-center space-x-1.5 bg-orange-500 hover:bg-orange-600 text-white text-xs px-3 py-1.5 rounded-lg transition-colors shadow-sm';
+            btn.querySelector('span').innerText = '框选中';
+            showToast('拖拽图片可新增热点', 'info');
+        } else {
+            btn.className = 'flex items-center space-x-1.5 bg-slate-600 hover:bg-slate-700 text-white text-xs px-3 py-1.5 rounded-lg transition-colors shadow-sm';
+            btn.querySelector('span').innerText = '手动框选';
+        }
+    }
+
+    function toggleDrawMode() {
+        setDrawMode(!drawModeEnabled);
+    }
+
+    function clearDrawPreview() {
+        if (drawPreviewEl && drawPreviewEl.parentNode) {
+            drawPreviewEl.parentNode.removeChild(drawPreviewEl);
+        }
+        drawPreviewEl = null;
+    }
+
+    function onLayerMouseDown(evt) {
+        if (!drawModeEnabled || evt.button !== 0) return;
+        if (!document.getElementById('image_url').value) {
+            showToast('请先上传或生成图片', 'error');
+            return;
+        }
+        evt.preventDefault();
+        evt.stopPropagation();
+
+        isDrawingHotspot = true;
+        drawStartPoint = getLayerPercentPoint(evt);
+
+        clearDrawPreview();
+        drawPreviewEl = document.createElement('div');
+        drawPreviewEl.className = 'hotspot-preview';
+        drawPreviewEl.style.left = `${drawStartPoint.x}%`;
+        drawPreviewEl.style.top = `${drawStartPoint.y}%`;
+        drawPreviewEl.style.width = '0%';
+        drawPreviewEl.style.height = '0%';
+        document.getElementById('hotspotLayer').appendChild(drawPreviewEl);
+    }
+
+    function onLayerMouseMove(evt) {
+        if (!isDrawingHotspot || !drawPreviewEl || !drawStartPoint) return;
+        const current = getLayerPercentPoint(evt);
+        const x = Math.min(drawStartPoint.x, current.x);
+        const y = Math.min(drawStartPoint.y, current.y);
+        const w = Math.abs(current.x - drawStartPoint.x);
+        const h = Math.abs(current.y - drawStartPoint.y);
+
+        drawPreviewEl.style.left = `${x}%`;
+        drawPreviewEl.style.top = `${y}%`;
+        drawPreviewEl.style.width = `${w}%`;
+        drawPreviewEl.style.height = `${h}%`;
+    }
+
+    function onLayerMouseUp(evt) {
+        if (!isDrawingHotspot || !drawStartPoint) return;
+        const endPoint = getLayerPercentPoint(evt);
+        const x = Math.min(drawStartPoint.x, endPoint.x);
+        const y = Math.min(drawStartPoint.y, endPoint.y);
+        const w = Math.abs(endPoint.x - drawStartPoint.x);
+        const h = Math.abs(endPoint.y - drawStartPoint.y);
+
+        isDrawingHotspot = false;
+        drawStartPoint = null;
+        clearDrawPreview();
+
+        if (w < 1 || h < 1) {
+            showToast('拖拽范围太小，请重新框选', 'error');
+            return;
+        }
+
+        hotspots.push({
+            id: Date.now() + Math.random(),
+            custom_label: '',
+            rect: { x, y, w, h }
+        });
+
+        renderHotspots();
+        renderHotspotList();
+
+        const newIndex = hotspots.length - 1;
+        setTimeout(() => {
+            const input = document.getElementById(`hotspot-label-${newIndex}`);
+            if (input) {
+                input.focus();
+                input.select();
+            }
+        }, 0);
+
+        showToast('已新增热点，请填写单词/句子', 'success');
+    }
+
     // 小程序码
-    async function generateWxacode() {
+    async function generateWxacode(force = false) {
         if (!sceneId) return showToast('请先保存场景', 'error');
         const modal = document.getElementById('wxacodeModal');
         const loading = document.getElementById('wxacodeLoading');
         const img = document.getElementById('wxacodeImg');
         const errEl = document.getElementById('wxacodeError');
         const dlBtn = document.getElementById('wxacodeDownload');
+        const regenBtn = document.getElementById('wxacodeRegenerate');
 
         modal.classList.remove('hidden'); modal.classList.add('flex');
         loading.classList.remove('hidden'); img.classList.add('hidden'); errEl.classList.add('hidden'); dlBtn.classList.add('hidden');
+        regenBtn.disabled = true;
+        regenBtn.classList.add('opacity-60', 'cursor-not-allowed');
 
         try {
-            const res = await fetch(`${API_BASE}/scenes/${sceneId}/wxacode`);
+            const suffix = force ? '?force=1' : '';
+            const res = await fetch(`${API_BASE}/scenes/${sceneId}/wxacode${suffix}`);
             const data = await res.json();
             loading.classList.add('hidden');
 
@@ -325,6 +573,7 @@ Strict: exactly ${count} cards, no duplicates, no extras, no missing, no numbers
                 img.classList.remove('hidden');
                 dlBtn.href = data.url;
                 dlBtn.classList.remove('hidden');
+                showToast(force ? '小程序码已重新生成并保存' : (data.cached ? '已读取已保存小程序码' : '小程序码已生成并保存'));
             } else {
                 errEl.textContent = data.message || '生成失败';
                 errEl.classList.remove('hidden');
@@ -333,6 +582,9 @@ Strict: exactly ${count} cards, no duplicates, no extras, no missing, no numbers
             loading.classList.add('hidden');
             errEl.textContent = '请求失败: ' + e.message;
             errEl.classList.remove('hidden');
+        } finally {
+            regenBtn.disabled = false;
+            regenBtn.classList.remove('opacity-60', 'cursor-not-allowed');
         }
     }
 
@@ -367,7 +619,16 @@ Strict: exactly ${count} cards, no duplicates, no extras, no missing, no numbers
                 });
                 renderHotspots();
                 renderHotspotList();
-                showToast(`识别成功，找到 ${data.words.length} 个文本`);
+                if (sceneId) {
+                    const saved = await saveSceneData({ silent: true, reloadAfterSave: true });
+                    if (saved.success) {
+                        showToast(`识别成功，找到 ${data.words.length} 个文本，已自动保存`);
+                    } else {
+                        showToast(`识别成功，找到 ${data.words.length} 个文本，但自动保存失败`, 'error');
+                    }
+                } else {
+                    showToast(`识别成功，找到 ${data.words.length} 个文本，请点击保存全部`);
+                }
             } else {
                 showToast(data.message || data.error || '识别失败', 'error');
             }
@@ -380,6 +641,7 @@ Strict: exactly ${count} cards, no duplicates, no extras, no missing, no numbers
     function renderHotspots() {
         const layer = document.getElementById('hotspotLayer');
         layer.innerHTML = '';
+        if (drawModeEnabled) layer.classList.add('draw-mode');
 
         hotspots.forEach(h => {
             const div = document.createElement('div');
@@ -403,11 +665,16 @@ Strict: exactly ${count} cards, no duplicates, no extras, no missing, no numbers
 
     function renderHotspotList() {
         const list = document.getElementById('hotspotList');
+        const escapeAttr = (v) => String(v || '')
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
         list.innerHTML = hotspots.map((h, i) => `
             <div class="bg-gray-50 px-2.5 py-2 rounded-lg border border-gray-200 hover:border-blue-300 transition-colors group">
                 <div class="flex items-center gap-2">
                     <span class="text-[10px] text-gray-400 w-4 shrink-0">${i + 1}</span>
-                    <input type="text" value="${h.custom_label || ''}" onchange="updateLabel(${i}, this.value)"
+                    <input id="hotspot-label-${i}" type="text" value="${escapeAttr(h.custom_label)}" onchange="updateLabel(${i}, this.value)"
                         class="bg-transparent border-none outline-none font-medium text-gray-700 flex-1 text-sm min-w-0"
                         placeholder="标签">
                     <div class="flex items-center gap-2.5 shrink-0 ml-1">
@@ -597,7 +864,16 @@ Strict: exactly ${count} cards, no duplicates, no extras, no missing, no numbers
             renderHotspotList();
         }
 
-        showToast(`批量生成完成: 成功 ${successCount} 个, 失败 ${failCount} 个`);
+        if (sceneId) {
+            const saved = await saveSceneData({ silent: true, reloadAfterSave: true });
+            if (saved.success) {
+                showToast(`批量生成完成: 成功 ${successCount} 个, 失败 ${failCount} 个，已自动保存`);
+            } else {
+                showToast(`批量生成完成: 成功 ${successCount} 个, 失败 ${failCount} 个，但自动保存失败`, 'error');
+            }
+        } else {
+            showToast(`批量生成完成: 成功 ${successCount} 个, 失败 ${failCount} 个，请点击保存全部`);
+        }
     }
 
     function updateLabel(index, val) {
@@ -618,6 +894,120 @@ Strict: exactly ${count} cards, no duplicates, no extras, no missing, no numbers
         }
     }
 
+    function mapObjectRowToHotspot(o) {
+        return {
+            id: o.id,
+            custom_label: o.custom_label,
+            phonetic: o.phonetic || '',
+            translation: o.translation || '',
+            audio_url_male: o.audio_url_male || '',
+            audio_url_female: o.audio_url_female || '',
+            rect: {
+                x: o.position_x,
+                y: o.position_y,
+                w: o.label_width,
+                h: o.label_height
+            }
+        };
+    }
+
+    async function reloadHotspotsFromServer() {
+        if (!sceneId) return;
+        const objRes = await fetch(`${API_BASE}/scenes/${sceneId}/objects`);
+        const objData = await objRes.json();
+        if (objData.success) {
+            hotspots = objData.data.map(mapObjectRowToHotspot);
+            renderHotspots();
+            renderHotspotList();
+        }
+    }
+
+    function buildScenePayloadFromForm() {
+        const form = document.getElementById('sceneForm');
+        const formData = new FormData(form);
+        const data = Object.fromEntries(formData.entries());
+        data.objects = hotspots.map(h => ({
+            id: Number.isInteger(h.id) && h.id > 0 ? h.id : undefined,
+            custom_label: h.custom_label,
+            position_x: h.rect.x,
+            position_y: h.rect.y,
+            label_width: h.rect.w,
+            label_height: h.rect.h
+        }));
+        return data;
+    }
+
+    let saveInFlight = null;
+    async function saveSceneData({ silent = false, reloadAfterSave = true } = {}) {
+        if (saveInFlight) return saveInFlight;
+
+        const data = buildScenePayloadFromForm();
+        const method = sceneId ? 'PUT' : 'POST';
+        const url = sceneId ? `${API_BASE}/scenes/${sceneId}` : `${API_BASE}/scenes`;
+
+        saveInFlight = (async () => {
+            try {
+                const res = await fetch(url, {
+                    method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                const result = await res.json();
+                if (!result.success) {
+                    if (!silent) showToast(result.message || '保存失败', 'error');
+                    return { success: false, message: result.message || '保存失败' };
+                }
+
+                if (!sceneId && result.id) {
+                    if (!silent) showToast('保存成功');
+                    setTimeout(() => { location.href = '/scenes/edit/' + result.id; }, 1000);
+                    return { success: true, createdId: result.id };
+                }
+
+                if (sceneId && reloadAfterSave) {
+                    await reloadHotspotsFromServer();
+                }
+
+                if (!silent) showToast('保存成功');
+                return { success: true };
+            } catch (err) {
+                if (!silent) showToast('保存失败', 'error');
+                return { success: false, message: err.message || '保存失败' };
+            } finally {
+                saveInFlight = null;
+            }
+        })();
+
+        return saveInFlight;
+    }
+
+    function applyCategoryPromptFromSelection({ forcePrompt = false } = {}) {
+        const select = document.getElementById('categorySelect');
+        const opt = select.options[select.selectedIndex];
+        if (!opt) return false;
+
+        const items = opt.getAttribute('data-items');
+        const nameEn = opt.getAttribute('data-name-en');
+        const nameCn = opt.getAttribute('data-name');
+        if (!items || !items.trim()) return false;
+
+        const nameInput = document.querySelector('input[name="name"]');
+        const nameEnInput = document.querySelector('input[name="name_en"]');
+        if (!nameInput.value) nameInput.value = nameCn || '';
+        if (!nameEnInput.value) nameEnInput.value = nameEn || '';
+
+        const promptInput = document.getElementById('aiPrompt');
+        if (forcePrompt || !promptInput.value.trim()) {
+            if (currentAiStyle === 'poster') {
+                promptInput.value = buildPosterPrompt(nameEn || nameCn, items);
+            } else if (currentAiStyle === 'scene') {
+                promptInput.value = buildSceneExplorePrompt(nameEn || nameCn, items);
+            }
+            // custom 模式不自动填充
+        }
+        return true;
+    }
+
     // --- Init & Load ---
 
     (async function init() {
@@ -636,114 +1026,39 @@ Strict: exactly ${count} cards, no duplicates, no extras, no missing, no numbers
 
         // 监听分类选择变化，自动填充 AI 提示词
         select.addEventListener('change', function() {
-            const opt = this.options[this.selectedIndex];
-            const items = opt.getAttribute('data-items');
-            const nameEn = opt.getAttribute('data-name-en');
-            const nameCn = opt.getAttribute('data-name');
-            if (items && items.trim()) {
-                // 自动填充场景名称
-                const nameInput = document.querySelector('input[name="name"]');
-                const nameEnInput = document.querySelector('input[name="name_en"]');
-                if (!nameInput.value) nameInput.value = nameCn || '';
-                if (!nameEnInput.value) nameEnInput.value = nameEn || '';
-
-                // 切换到 AI 生成 tab
-                switchImageTab('ai');
-
-                // 生成提示词
-                const prompt = buildScenePrompt(nameEn || nameCn, items);
-                document.getElementById('aiPrompt').value = prompt;
+            if (currentAiStyle !== 'custom') {
+                const ok = applyCategoryPromptFromSelection({ forcePrompt: true });
+                if (ok) switchImageTab('ai');
             }
         });
 
+        // Edit 模式：默认 AI tab + 词汇海报风格
+        if (sceneId) {
+            switchImageTab('ai');
+            switchAiStyle('poster');
+        }
+
         // Load Scene Objects if Edit Mode
         if (sceneId) {
-            const objRes = await fetch(`${API_BASE}/scenes/${sceneId}/objects`);
-            const objData = await objRes.json();
-            if (objData.success) {
-                hotspots = objData.data.map(o => ({
-                    id: o.id,
-                    custom_label: o.custom_label,
-                    phonetic: o.phonetic || '',
-                    translation: o.translation || '',
-                    audio_url_male: o.audio_url_male || '',
-                    audio_url_female: o.audio_url_female || '',
-                    rect: {
-                        x: o.position_x,
-                        y: o.position_y,
-                        w: o.label_width,
-                        h: o.label_height
-                    }
-                }));
-                renderHotspots();
-                renderHotspotList();
-                updateMainImage(document.getElementById('image_url').value);
-            }
+            await reloadHotspotsFromServer();
         }
+
+        // 恢复主图显示
+        updateMainImage(document.getElementById('image_url').value);
+
+        // 手动框选热点事件
+        const layer = document.getElementById('hotspotLayer');
+        layer.addEventListener('mousedown', onLayerMouseDown);
+        layer.addEventListener('mousemove', onLayerMouseMove);
+        layer.addEventListener('mouseup', onLayerMouseUp);
+        layer.addEventListener('mouseleave', onLayerMouseUp);
+        setDrawMode(false);
     })();
 
     // Save Form
     document.getElementById('sceneForm').addEventListener('submit', async (e) => {
         e.preventDefault();
-        const formData = new FormData(e.target);
-        const data = Object.fromEntries(formData.entries());
-
-        // Append hotspots (include id to preserve existing data on save)
-        const objects = hotspots.map(h => ({
-            id: Number.isInteger(h.id) && h.id > 0 ? h.id : undefined,
-            custom_label: h.custom_label,
-            position_x: h.rect.x,
-            position_y: h.rect.y,
-            label_width: h.rect.w,
-            label_height: h.rect.h
-        }));
-
-        data.objects = objects;
-
-        const method = sceneId ? 'PUT' : 'POST';
-        const url = sceneId ? `${API_BASE}/scenes/${sceneId}` : `${API_BASE}/scenes`;
-
-        try {
-            const res = await fetch(url, {
-                method: method,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            });
-            const result = await res.json();
-            if (result.success) {
-                showToast('保存成功');
-                if (!sceneId && result.id) {
-                    // 新建场景后跳转到编辑页
-                    setTimeout(() => location.href = '/scenes/edit/' + result.id, 1000);
-                } else if (sceneId) {
-                    // 编辑模式：重新加载 hotspots 获取最新的数据库 id
-                    const objRes = await fetch(`${API_BASE}/scenes/${sceneId}/objects`);
-                    const objData = await objRes.json();
-                    if (objData.success) {
-                        hotspots = objData.data.map(o => ({
-                            id: o.id,
-                            custom_label: o.custom_label,
-                            phonetic: o.phonetic || '',
-                            translation: o.translation || '',
-                            audio_url_male: o.audio_url_male || '',
-                            audio_url_female: o.audio_url_female || '',
-                            rect: {
-                                x: o.position_x,
-                                y: o.position_y,
-                                w: o.label_width,
-                                h: o.label_height
-                            }
-                        }));
-                        renderHotspots();
-                        renderHotspotList();
-                    }
-                }
-            } else {
-                showToast(result.message, 'error');
-            }
-        } catch (err) {
-            showToast('保存失败', 'error');
-        }
+        await saveSceneData({ silent: false, reloadAfterSave: !!sceneId });
     });
 
 </script>
