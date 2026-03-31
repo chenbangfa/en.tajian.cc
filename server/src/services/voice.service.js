@@ -469,7 +469,7 @@ class VoiceService {
 
                             result = {
                                 success: true,
-                                overallScore: Math.round((evalResult.SuggestedScore || evalResult.PronAccuracy || 0) * 100) / 100,
+                                overallScore: Math.round((evalResult.PronAccuracy || 0) * 100) / 100,
                                 pronunciationScore: Math.round((evalResult.PronAccuracy || 0) * 100) / 100,
                                 fluencyScore: Math.round((evalResult.PronFluency || 0) * 100),
                                 integrityScore: Math.round((evalResult.PronCompletion || 0) * 100),
