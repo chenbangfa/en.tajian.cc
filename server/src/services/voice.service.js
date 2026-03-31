@@ -437,6 +437,7 @@ class VoiceService {
                 ws.on('message', (data) => {
                     try {
                         const response = JSON.parse(data.toString());
+                        console.log('[Assess:Tencent] 收到消息:', JSON.stringify(response).substring(0, 300));
 
                         if (response.code === 0 && response.voice_id && !handshakeComplete) {
                             handshakeComplete = true;
