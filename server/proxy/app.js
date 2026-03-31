@@ -18,6 +18,66 @@ app.use(express.json({ limit: '10mb' }));
 const PORT = process.env.PROXY_PORT || 3005;
 const API_KEY = process.env.PROXY_API_KEY;
 
+function getTargetSizeByAspectRatio(aspectRatio = '') {
+    const val = String(aspectRatio || '').trim();
+    if (!val) return null;
+    if (val === '16:9') return { width: 1280, height: 720 };
+    if (val === '9:16') return { width: 720, height: 1280 };
+    return null;
+}
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function getUpstreamError(error) {
+    const status = error?.response?.status || 500;
+    const errObj = error?.response?.data?.error || {};
+    const code = errObj.status || '';
+    const message = errObj.message || error?.message || 'Upstream request failed';
+    return { status, code, message: String(message) };
+}
+
+function isRetryableUpstreamError(error) {
+    const { status, code, message } = getUpstreamError(error);
+    return status === 429
+        || status >= 500
+        || code === 'RESOURCE_EXHAUSTED'
+        || /resource exhausted|quota exceeded|try again later/i.test(message);
+}
+
+function mapProxyStatus(error) {
+    const { status, code, message } = getUpstreamError(error);
+    if (status === 429 || code === 'RESOURCE_EXHAUSTED' || /resource exhausted|quota exceeded|try again later/i.test(message)) {
+        return 429;
+    }
+    if (status >= 400 && status < 500) return status;
+    return 500;
+}
+
+async function withRetry(label, taskFn, options = {}) {
+    const {
+        maxAttempts = 3,
+        baseDelayMs = 1200
+    } = options;
+
+    let lastError = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            return await taskFn();
+        } catch (error) {
+            lastError = error;
+            if (!isRetryableUpstreamError(error) || attempt >= maxAttempts) {
+                throw error;
+            }
+            const waitMs = baseDelayMs * Math.pow(2, attempt - 1);
+            console.warn(`[Proxy] ${label} retry ${attempt}/${maxAttempts}, wait=${waitMs}ms`);
+            await sleep(waitMs);
+        }
+    }
+    throw lastError || new Error(`${label} failed`);
+}
+
 // ==================== 鉴权中间件 ====================
 
 function auth(req, res, next) {
@@ -48,7 +108,7 @@ app.get('/proxy/health', (req, res) => {
  * response: { success, imageData (base64), mimeType }
  */
 app.post('/proxy/generate-image', auth, async (req, res) => {
-    const { prompt } = req.body;
+    const { prompt, aspectRatio = '' } = req.body || {};
     if (!prompt) {
         return res.status(400).json({ success: false, error: '缺少 prompt 参数' });
     }
@@ -58,45 +118,86 @@ app.post('/proxy/generate-image', auth, async (req, res) => {
     }
 
     try {
-        console.log(`[Proxy] 生成图片 (Vertex AI), prompt: ${prompt.substring(0, 80)}...`);
+        console.log(`[Proxy] 生成图片 (Vertex AI), prompt: ${prompt.substring(0, 80)}... aspectRatio=${aspectRatio || 'auto'}`);
 
         const headers = await vertexAuth.getAuthHeaders();
-        const response = await axios.post(
-            vertexAuth.getUrl('gemini-3-pro-image-preview'),
-            {
-                contents: [{ role: 'user', parts: [{ text: prompt }] }],
-                generationConfig: { responseModalities: ['image', 'text'] }
-            },
-            { headers, timeout: 120000 }
-        );
+        let rawBuffer = null;
 
-        const parts = response.data.candidates?.[0]?.content?.parts || [];
-        for (const part of parts) {
-            if (part.inlineData?.mimeType?.startsWith('image/')) {
-                const rawBuffer = Buffer.from(part.inlineData.data, 'base64');
-                const rawKB = Math.round(rawBuffer.length / 1024);
+        // Gemini 图片生成模型 fallback 链：3.1 Flash → 3 Pro
+        const IMAGE_MODELS = [
+            'gemini-3.1-flash-image-preview',
+            'gemini-3-pro-image-preview'
+        ];
 
-                // 压缩：保持原始比例，最大宽 1080px，JPEG quality=85
-                const compressed = await sharp(rawBuffer)
-                    .resize(1080, null, { fit: 'inside', withoutEnlargement: true })
-                    .jpeg({ quality: 85, progressive: true })
-                    .toBuffer();
+        for (let i = 0; i < IMAGE_MODELS.length; i++) {
+            const model = IMAGE_MODELS[i];
+            try {
+                const response = await withRetry(
+                    `generate-image(${model})`,
+                    () => axios.post(
+                        vertexAuth.getUrl(model),
+                        {
+                            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                            generationConfig: { responseModalities: ['image', 'text'] }
+                        },
+                        { headers, timeout: 120000 }
+                    ),
+                    { maxAttempts: 2, baseDelayMs: 1500 }
+                );
 
-                console.log(`[Proxy] 图片生成成功, 原始 ${rawKB}KB → 压缩后 ${Math.round(compressed.length / 1024)}KB`);
-                return res.json({
-                    success: true,
-                    imageData: compressed.toString('base64'),
-                    mimeType: 'image/jpeg'
-                });
+                const parts = response.data.candidates?.[0]?.content?.parts || [];
+                for (const part of parts) {
+                    if (part.inlineData?.mimeType?.startsWith('image/')) {
+                        rawBuffer = Buffer.from(part.inlineData.data, 'base64');
+                        break;
+                    }
+                }
+                if (rawBuffer) {
+                    console.log(`[Proxy] 模型 ${model} 生成成功`);
+                    break;
+                }
+            } catch (err) {
+                console.warn(`[Proxy] 模型 ${model} 失败: ${getUpstreamError(err).message}`);
+                if (i < IMAGE_MODELS.length - 1) {
+                    console.log(`[Proxy] 降级到 ${IMAGE_MODELS[i + 1]}`);
+                } else {
+                    throw err; // 所有模型都失败，抛出最后的错误
+                }
             }
         }
 
-        res.json({ success: false, error: '图片生成未返回有效数据，请稍后重试' });
+        if (!rawBuffer) {
+            return res.json({ success: false, error: '图片生成未返回有效数据，请稍后重试' });
+        }
+
+        const rawKB = Math.round(rawBuffer.length / 1024);
+        const targetSize = getTargetSizeByAspectRatio(aspectRatio);
+        const compressed = targetSize
+            // 指定画幅时，强制输出精确比例（中心裁切），避免后续视频链路出现细黑边
+            ? await sharp(rawBuffer)
+                .resize(targetSize.width, targetSize.height, { fit: 'cover', position: 'centre' })
+                .jpeg({ quality: 85, progressive: true })
+                .toBuffer()
+            // 未指定画幅时沿用原逻辑
+            : await sharp(rawBuffer)
+                .resize(1080, null, { fit: 'inside', withoutEnlargement: true })
+                .jpeg({ quality: 85, progressive: true })
+                .toBuffer();
+
+        console.log(`[Proxy] 图片生成成功, 原始 ${rawKB}KB → 压缩后 ${Math.round(compressed.length / 1024)}KB`);
+        return res.json({
+            success: true,
+            imageData: compressed.toString('base64'),
+            mimeType: 'image/jpeg'
+        });
     } catch (error) {
-        console.error('[Proxy] generate-image error:', error.response?.data || error.message);
-        res.status(500).json({
+        const up = getUpstreamError(error);
+        const status = mapProxyStatus(error);
+        console.error('[Proxy] generate-image error:', status, up.code, up.message);
+        res.status(status).json({
             success: false,
-            error: error.response?.data?.error?.message || error.message
+            error: up.message,
+            code: up.code
         });
     }
 });
@@ -115,13 +216,17 @@ app.post('/proxy/gemini-text', auth, async (req, res) => {
 
     try {
         const headers = await vertexAuth.getAuthHeaders();
-        const response = await axios.post(
-            vertexAuth.getUrl('gemini-2.5-flash'),
-            {
-                contents: [{ role: 'user', parts: [{ text: prompt }] }],
-                generationConfig: { temperature: 0.7, maxOutputTokens: 4096 }
-            },
-            { headers, timeout: 60000 }
+        const response = await withRetry(
+            'gemini-text',
+            () => axios.post(
+                vertexAuth.getUrl('gemini-2.5-flash'),
+                {
+                    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                    generationConfig: { temperature: 0.7, maxOutputTokens: 4096 }
+                },
+                { headers, timeout: 60000 }
+            ),
+            { maxAttempts: 3, baseDelayMs: 1200 }
         );
 
         const text = response.data.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -130,8 +235,143 @@ app.post('/proxy/gemini-text', auth, async (req, res) => {
         }
         res.json({ success: false, error: 'Gemini 未返回文本' });
     } catch (error) {
-        console.error('[Proxy] gemini-text error:', error.response?.data?.error?.message || error.message);
-        res.status(500).json({ success: false, error: error.response?.data?.error?.message || error.message });
+        const up = getUpstreamError(error);
+        const status = mapProxyStatus(error);
+        console.error('[Proxy] gemini-text error:', status, up.code, up.message);
+        res.status(status).json({ success: false, error: up.message, code: up.code });
+    }
+});
+
+// ==================== Veo 视频生成（长任务） ====================
+
+async function fetchRemoteAsBase64(fileUrl) {
+    const response = await axios.get(fileUrl, { responseType: 'arraybuffer', timeout: 30000 });
+    const buffer = Buffer.from(response.data);
+    return {
+        base64: buffer.toString('base64'),
+        mimeType: response.headers['content-type'] || 'image/jpeg'
+    };
+}
+
+/**
+ * POST /proxy/veo/start
+ * body: { prompt, referenceImageUrl?, modelId?, durationSeconds?, aspectRatio?, resolution? }
+ * response: { success, operationName, modelId }
+ */
+app.post('/proxy/veo/start', auth, async (req, res) => {
+    const {
+        prompt,
+        referenceImageUrl = '',
+        modelId = (process.env.VEO_MODEL_ID || 'veo-3.1-fast-generate-001'),
+        durationSeconds = 4,
+        aspectRatio = '16:9',
+        resolution = '720p'
+    } = req.body || {};
+
+    if (!prompt) {
+        return res.status(400).json({ success: false, error: '缺少 prompt 参数' });
+    }
+    if (!vertexAuth.isConfigured) {
+        return res.status(500).json({ success: false, error: '未配置 Vertex AI' });
+    }
+
+    try {
+        const instance = { prompt };
+        if (referenceImageUrl) {
+            const ref = await fetchRemoteAsBase64(referenceImageUrl);
+            instance.image = {
+                bytesBase64Encoded: ref.base64,
+                mimeType: ref.mimeType
+            };
+        }
+
+        const headers = await vertexAuth.getAuthHeaders();
+        const response = await axios.post(
+            vertexAuth.getUrl(modelId, 'predictLongRunning'),
+            {
+                instances: [instance],
+                parameters: {
+                    sampleCount: 1,
+                    durationSeconds,
+                    aspectRatio,
+                    resolution,
+                    generateAudio: false
+                }
+            },
+            { headers, timeout: 90000 }
+        );
+
+        const operationName = response.data?.name;
+        if (!operationName) {
+            return res.json({ success: false, error: 'Veo 未返回 operationName' });
+        }
+
+        res.json({ success: true, operationName, modelId });
+    } catch (error) {
+        console.error('[Proxy] veo/start error:', error.response?.data || error.message);
+        res.status(500).json({
+            success: false,
+            error: error.response?.data?.error?.message || error.message
+        });
+    }
+});
+
+/**
+ * POST /proxy/veo/poll
+ * body: { operationName, modelId? }
+ * response: { success, done, video? }
+ */
+app.post('/proxy/veo/poll', auth, async (req, res) => {
+    const {
+        operationName,
+        modelId = (process.env.VEO_MODEL_ID || 'veo-3.1-fast-generate-001')
+    } = req.body || {};
+
+    if (!operationName) {
+        return res.status(400).json({ success: false, error: '缺少 operationName 参数' });
+    }
+    if (!vertexAuth.isConfigured) {
+        return res.status(500).json({ success: false, error: '未配置 Vertex AI' });
+    }
+
+    try {
+        const headers = await vertexAuth.getAuthHeaders();
+        const response = await axios.post(
+            vertexAuth.getUrl(modelId, 'fetchPredictOperation'),
+            { operationName },
+            { headers, timeout: 90000 }
+        );
+
+        const op = response.data || {};
+        if (!op.done) return res.json({ success: true, done: false });
+
+        if (op.error) {
+            return res.json({
+                success: false,
+                done: true,
+                error: op.error.message || op.error.code || 'Veo 任务失败'
+            });
+        }
+
+        const videos = op.response?.videos || [];
+        const first = videos[0];
+        if (!first) {
+            return res.json({ success: false, done: true, error: 'Veo 未返回视频数据' });
+        }
+
+        const video = {
+            mimeType: first.mimeType || 'video/mp4',
+            bytesBase64Encoded: first.bytesBase64Encoded || '',
+            gcsUri: first.gcsUri || ''
+        };
+
+        return res.json({ success: true, done: true, video });
+    } catch (error) {
+        console.error('[Proxy] veo/poll error:', error.response?.data || error.message);
+        res.status(500).json({
+            success: false,
+            error: error.response?.data?.error?.message || error.message
+        });
     }
 });
 
@@ -176,13 +416,17 @@ Respond ONLY with a valid JSON object:
         console.log(`[Proxy] 增强单词: ${word}`);
 
         const headers = await vertexAuth.getAuthHeaders();
-        const response = await axios.post(
-            vertexAuth.getUrl('gemini-2.5-flash'),
-            {
-                contents: [{ role: 'user', parts: [{ text: prompt }] }],
-                generationConfig: { temperature: 0.3, maxOutputTokens: 1024 }
-            },
-            { headers, timeout: 30000 }
+        const response = await withRetry(
+            'enhance-word',
+            () => axios.post(
+                vertexAuth.getUrl('gemini-2.5-flash'),
+                {
+                    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                    generationConfig: { temperature: 0.3, maxOutputTokens: 1024 }
+                },
+                { headers, timeout: 30000 }
+            ),
+            { maxAttempts: 3, baseDelayMs: 1200 }
         );
 
         const text = response.data.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -197,8 +441,10 @@ Respond ONLY with a valid JSON object:
 
         res.json({ success: false, error: '无法解析 AI 响应' });
     } catch (error) {
-        console.error('[Proxy] enhance-word error:', error.response?.data || error.message);
-        res.status(500).json({ success: false, error: error.message });
+        const up = getUpstreamError(error);
+        const status = mapProxyStatus(error);
+        console.error('[Proxy] enhance-word error:', status, up.code, up.message);
+        res.status(status).json({ success: false, error: up.message, code: up.code });
     }
 });
 
