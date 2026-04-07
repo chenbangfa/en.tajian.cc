@@ -25,6 +25,28 @@ class VoiceService {
         console.log(`[VoiceService] 评测引擎: ${this.assessEngine} (可在.env中修改 ASSESS_ENGINE)`);
     }
 
+    normalizeSpeed(speed, fallback = 1.0) {
+        const parsed = Number(speed);
+        if (!Number.isFinite(parsed)) return fallback;
+        return Math.max(0.7, Math.min(1.2, parsed));
+    }
+
+    getGoogleTtsSpeed(scope = 'default') {
+        const envMap = {
+            picture_book: process.env.GOOGLE_TTS_SPEED_PICTURE_BOOK,
+            dialogue: process.env.GOOGLE_TTS_SPEED_DIALOGUE,
+            podcast: process.env.GOOGLE_TTS_SPEED_PODCAST,
+            default: process.env.GOOGLE_TTS_SPEED_DEFAULT
+        };
+        const fallbackMap = {
+            picture_book: 0.92,
+            dialogue: 0.98,
+            podcast: 0.96,
+            default: 1.0
+        };
+        return this.normalizeSpeed(envMap[scope], fallbackMap[scope] || fallbackMap.default);
+    }
+
     /**
      * 统一 TTS 入口 - 自动选择引擎 + fallback
      * @param {string} text - 要合成的文本
@@ -33,9 +55,8 @@ class VoiceService {
      */
     async textToSpeech(text, voice = 'female', speed = 1.0) {
         // 构建引擎尝试顺序：首选引擎排第一，其余按顺序fallback
-        // 注：google TTS 输出 PCM WAV，微信小程序无法播放，不纳入 fallback 链
-        const allEngines = ['tencent', 'youdao'];
-        const preferred = this.preferredEngine === 'google' ? 'youdao' : this.preferredEngine;
+        const allEngines = ['google', 'tencent', 'youdao'];
+        const preferred = allEngines.includes(this.preferredEngine) ? this.preferredEngine : 'youdao';
         const engines = [preferred, ...allEngines.filter(e => e !== preferred)];
 
         for (let i = 0; i < engines.length; i++) {
@@ -82,9 +103,65 @@ class VoiceService {
         return { success: false, error: '所有TTS引擎均不可用' };
     }
 
+    async googleTextToSpeech(text, voice = 'female', speed = 1.0) {
+        return this._googleTTS(text, voice, this.normalizeSpeed(speed, 1.0));
+    }
+
     // ==================== Google Gemini TTS ====================
 
+    buildGoogleTtsPrompt(text, speed = 1.0) {
+        const normalizedSpeed = this.normalizeSpeed(speed, 1.0);
+        if (normalizedSpeed <= 0.9) {
+            return `Read this slowly, gently, and clearly for a child listener: ${text}`;
+        }
+        if (normalizedSpeed >= 1.1) {
+            return `Read this clearly with a lively pace: ${text}`;
+        }
+        return `Read this clearly in a warm, natural voice: ${text}`;
+    }
+
+    async _googleTTSViaProxy(text, voice = 'female', speed = 1.0) {
+        const proxyUrl = process.env.PROXY_BASE_URL;
+        if (!proxyUrl) {
+            return { success: false, error: 'Google: 未配置 PROXY_BASE_URL，无法通过美国代理请求 TTS' };
+        }
+
+        const headers = { 'Content-Type': 'application/json' };
+        if (process.env.PROXY_API_KEY) {
+            headers['X-Proxy-Key'] = process.env.PROXY_API_KEY;
+        }
+
+        let response;
+        try {
+            response = await axios.post(
+                `${proxyUrl}/proxy/tts`,
+                { text, voice, speed },
+                { headers, timeout: 60000 }
+            );
+        } catch (err) {
+            // 代理返回非 2xx 时 axios 抛异常，提取 JSON 错误信息
+            const errData = err.response?.data;
+            const errMsg = (typeof errData === 'object' && errData?.error) ? errData.error : (err.message || '代理请求失败');
+            const statusCode = err.response?.status;
+            console.error(`[VoiceService] Google TTS 代理错误: ${statusCode} ${errMsg}`);
+            return { success: false, error: `Google: ${errMsg}`, statusCode };
+        }
+
+        if (response.data?.success && response.data?.audioData) {
+            const audioBuffer = Buffer.from(response.data.audioData, 'base64');
+            const ext = response.data.ext || 'wav';
+            const audioPath = await this.saveAudio(audioBuffer, 'tts_google_proxy', ext);
+            return { success: true, audioUrl: audioPath, engine: 'google-proxy' };
+        }
+
+        return { success: false, error: response.data?.error || 'Google: 代理未返回有效音频' };
+    }
+
     async _googleTTS(text, voice = 'female', speed = 1.0) {
+        if (process.env.PROXY_BASE_URL) {
+            return this._googleTTSViaProxy(text, voice, speed);
+        }
+
         const vertexAuth = require('../utils/vertex-auth');
         if (!vertexAuth.isConfigured) {
             return { success: false, error: 'Google: 未配置 Vertex AI' };
@@ -99,7 +176,7 @@ class VoiceService {
         const response = await axios.post(
             vertexAuth.getUrl('gemini-2.5-flash-preview-tts'),
             {
-                contents: [{ role: 'user', parts: [{ text: `Say in a clear voice: ${text}` }] }],
+                contents: [{ role: 'user', parts: [{ text: this.buildGoogleTtsPrompt(text, speed) }] }],
                 generationConfig: {
                     responseModalities: ["AUDIO"],
                     speechConfig: {
@@ -357,9 +434,13 @@ class VoiceService {
             }
 
             // 响应字段在顶层（无 result 嵌套）
-            // 有道 overall 是独立算法，常远低于子分数（如 59 vs 99/100/100），体验差
-            // 统一用 pronunciation 分作为 overall，和子分数体系一致
-            const overallScore = Math.round(parseFloat(data.pronunciation || data.overall || 0));
+            // 对于单词评测，overall 会被 fluency/integrity 拖低（短词无意义）
+            // 改用单词级别的 pronunciation 分，更准确反映发音质量
+            let overallScore = Math.round(parseFloat(data.overall || 0));
+            if (contentType === 'word' && data.words && data.words.length > 0) {
+                const wordScore = Math.round(parseFloat(data.words[0].pronunciation || 0));
+                if (wordScore > 0) overallScore = wordScore;
+            }
 
             return {
                 success: true,
@@ -400,11 +481,6 @@ class VoiceService {
                 const nonce = Math.floor(Math.random() * 100000000);
                 const voiceId = `voice_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-                // 根据文件扩展名判断音频格式：0=PCM, 1=WAV, 2=MP3, 4=SPEEX
-                const ext = path.extname(audioPath).toLowerCase();
-                const voiceFormatMap = { '.wav': 1, '.mp3': 2, '.pcm': 0, '.spx': 4 };
-                const voiceFormat = voiceFormatMap[ext] !== undefined ? voiceFormatMap[ext] : 1;
-
                 const params = {
                     eval_mode: evalModeMap[contentType] || 0,
                     expired, nonce,
@@ -415,7 +491,7 @@ class VoiceService {
                     server_engine_type: '16k_en',
                     text_mode: 0,
                     timestamp,
-                    voice_format: voiceFormat,
+                    voice_format: 2,
                     voice_id: voiceId,
                     rec_mode: 0
                 };
@@ -442,13 +518,10 @@ class VoiceService {
                 ws.on('message', (data) => {
                     try {
                         const response = JSON.parse(data.toString());
-                        console.log('[Assess:Tencent] 收到消息:', JSON.stringify(response).substring(0, 300));
 
                         if (response.code === 0 && response.voice_id && !handshakeComplete) {
                             handshakeComplete = true;
-                            // 文档建议：每40ms发送40ms音频（16kHz 16bit mono = 1280字节/40ms）
-                            const CHUNK_SIZE = 1280;
-                            const CHUNK_INTERVAL = 40;
+                            const CHUNK_SIZE = 4096;
                             const totalChunks = Math.ceil(audioBuffer.length / CHUNK_SIZE);
 
                             const sendChunk = (index) => {
@@ -460,7 +533,7 @@ class VoiceService {
                                 const end = Math.min(start + CHUNK_SIZE, audioBuffer.length);
                                 const chunk = audioBuffer.slice(start, end);
                                 ws.send(chunk, { binary: true }, (err) => {
-                                    if (!err) setTimeout(() => sendChunk(index + 1), CHUNK_INTERVAL);
+                                    if (!err) setTimeout(() => sendChunk(index + 1), 10);
                                 });
                             };
                             sendChunk(0);

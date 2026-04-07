@@ -26,6 +26,16 @@ function getTargetSizeByAspectRatio(aspectRatio = '') {
     return null;
 }
 
+function buildGoogleTtsPrompt(text, speed = 1.0) {
+    if (speed <= 0.9) {
+        return `Read this slowly, gently, and clearly for a child listener: ${text}`;
+    }
+    if (speed >= 1.1) {
+        return `Read this clearly with a lively pace: ${text}`;
+    }
+    return `Read this clearly in a warm, natural voice: ${text}`;
+}
+
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -40,10 +50,12 @@ function getUpstreamError(error) {
 
 function isRetryableUpstreamError(error) {
     const { status, code, message } = getUpstreamError(error);
+    const networkCode = String(error?.code || '').toUpperCase();
     return status === 429
         || status >= 500
+        || ['ECONNABORTED', 'ETIMEDOUT', 'ECONNRESET', 'EPIPE'].includes(networkCode)
         || code === 'RESOURCE_EXHAUSTED'
-        || /resource exhausted|quota exceeded|try again later/i.test(message);
+        || /timeout|resource exhausted|quota exceeded|try again later/i.test(message);
 }
 
 function mapProxyStatus(error) {
@@ -140,7 +152,7 @@ app.post('/proxy/generate-image', auth, async (req, res) => {
                             contents: [{ role: 'user', parts: [{ text: prompt }] }],
                             generationConfig: { responseModalities: ['image', 'text'] }
                         },
-                        { headers, timeout: 120000 }
+                        { headers, timeout: 180000 }
                     ),
                     { maxAttempts: 2, baseDelayMs: 1500 }
                 );
@@ -455,7 +467,7 @@ Respond ONLY with a valid JSON object:
  * response: { success, audioData (base64 WAV), ext }
  */
 app.post('/proxy/tts', auth, async (req, res) => {
-    const { text, voice = 'female' } = req.body;
+    const { text, voice = 'female', speed = 1.0 } = req.body;
     if (!text) {
         return res.status(400).json({ success: false, error: '缺少 text 参数' });
     }
@@ -471,16 +483,20 @@ app.post('/proxy/tts', auth, async (req, res) => {
         console.log(`[Proxy] Google TTS (Vertex AI): "${text.substring(0, 40)}", voice: ${voiceName}`);
 
         const headers = await vertexAuth.getAuthHeaders();
-        const response = await axios.post(
-            vertexAuth.getUrl('gemini-2.5-flash-preview-tts'),
-            {
-                contents: [{ role: 'user', parts: [{ text: `Say in a clear voice: ${text}` }] }],
-                generationConfig: {
-                    responseModalities: ['AUDIO'],
-                    speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } }
-                }
-            },
-            { headers, timeout: 30000 }
+        const response = await withRetry(
+            'tts',
+            () => axios.post(
+                vertexAuth.getUrl('gemini-2.5-flash-preview-tts'),
+                {
+                    contents: [{ role: 'user', parts: [{ text: buildGoogleTtsPrompt(text, speed) }] }],
+                    generationConfig: {
+                        responseModalities: ['AUDIO'],
+                        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } }
+                    }
+                },
+                { headers, timeout: 30000 }
+            ),
+            { maxAttempts: 3, baseDelayMs: 5000 }
         );
 
         const parts = response.data.candidates?.[0]?.content?.parts || [];
@@ -499,8 +515,10 @@ app.post('/proxy/tts', auth, async (req, res) => {
 
         res.json({ success: false, error: 'Google TTS 未返回有效音频' });
     } catch (error) {
-        console.error('[Proxy] tts error:', error.response?.data || error.message);
-        res.status(500).json({ success: false, error: error.message });
+        const up = getUpstreamError(error);
+        const status = mapProxyStatus(error);
+        console.error('[Proxy] tts error:', status, up.code, up.message);
+        res.status(status).json({ success: false, error: up.message, code: up.code });
     }
 });
 

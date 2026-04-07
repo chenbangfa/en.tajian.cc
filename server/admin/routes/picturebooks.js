@@ -5,8 +5,68 @@ const fs = require('fs');
 const { query } = require('../../src/config/database');
 const voiceService = require('../../src/services/voice.service');
 const aiService = require('../../src/services/ai.service');
+const {
+    normalizeComparableText,
+    normalizePromptBookTitleToEnglish,
+    buildCoverSourceText,
+    buildPictureBookCoverPrompt,
+    computeCoverPromptSync,
+    buildPictureBookPagePrompt,
+    computeImagePromptSync,
+    ensurePictureBookPromptColumns
+} = require('../../src/services/picturebookPrompt.service');
 
 const router = express.Router();
+
+ensurePictureBookPromptColumns(query).catch(err => {
+    console.error('[PictureBooks Admin] 提示词同步字段初始化失败:', err.message);
+});
+
+async function getBookPromptContext(bookId) {
+    const [book] = await query(
+        `SELECT b.id, b.title, b.title_en, b.description, b.category_id, b.cover_prompt, b.cover_prompt_source_text, b.cover_prompt_mode,
+                c.name AS category_name, c.name_en AS category_name_en
+           FROM picture_books b
+      LEFT JOIN picture_book_categories c ON b.category_id = c.id
+          WHERE b.id = ?`,
+        [bookId]
+    );
+    return book || null;
+}
+
+function buildPageApiPayload(page, book, baseUrl) {
+    const normalizedPrompt = normalizePromptBookTitleToEnglish(page.image_prompt || '', book?.title || '', book?.title_en || '');
+    const syncInfo = computeImagePromptSync({
+        ...page,
+        image_prompt: normalizedPrompt
+    });
+
+    return {
+        ...page,
+        image_prompt: normalizedPrompt,
+        audio_url: page.audio_url ? (page.audio_url.startsWith('http') ? page.audio_url : baseUrl + page.audio_url) : null,
+        audio_url_male: page.audio_url_male ? (page.audio_url_male.startsWith('http') ? page.audio_url_male : baseUrl + page.audio_url_male) : null,
+        ...syncInfo
+    };
+}
+
+async function getBookPagesForPrompt(bookId) {
+    return query(
+        'SELECT id, page_number, text_en FROM picture_book_pages WHERE book_id = ? ORDER BY sort_order ASC, page_number ASC',
+        [bookId]
+    );
+}
+
+async function buildCoverPromptPayload(bookId) {
+    const book = await getBookPromptContext(bookId);
+    if (!book) return null;
+    const pages = await getBookPagesForPrompt(bookId);
+    const syncInfo = computeCoverPromptSync(book, pages);
+    return {
+        ...book,
+        ...syncInfo
+    };
+}
 
 // Multer config
 const storage = multer.diskStorage({
@@ -25,6 +85,14 @@ const upload = multer({ storage });
 
 router.get('/', (req, res) => {
     res.render('picturebooks/index', { page: 'pb-list', title: '绘本管理', user: req.session.adminUser });
+});
+
+router.get('/batch-images', (req, res) => {
+    res.render('picturebooks/batch-images', { page: 'pb-batch-images', title: '绘本批量生图', user: req.session.adminUser });
+});
+
+router.get('/batch-audio', (req, res) => {
+    res.render('picturebooks/batch-audio', { page: 'pb-batch-audio', title: '绘本批量配音', user: req.session.adminUser });
 });
 
 router.get('/edit/new', (req, res) => {
@@ -69,14 +137,180 @@ router.get('/api/list', async (req, res) => {
     }
 });
 
+router.get('/api/batch/cover-candidates', async (req, res) => {
+    try {
+        const { category_id, mode = 'missing' } = req.query;
+        let sql = `SELECT b.id, b.title, b.title_en, b.cover_url, b.cover_prompt, b.page_count,
+                          b.category_id, c.name AS category_name
+                     FROM picture_books b
+                LEFT JOIN picture_book_categories c ON b.category_id = c.id
+                    WHERE 1=1`;
+        const params = [];
+
+        if (category_id) {
+            sql += ' AND b.category_id = ?';
+            params.push(parseInt(category_id));
+        }
+        if (mode !== 'all') {
+            sql += ` AND (b.cover_url IS NULL OR b.cover_url = '')`;
+        }
+
+        sql += ' ORDER BY b.sort_order ASC, b.id ASC';
+        const books = await query(sql, params);
+        res.json({ success: true, data: books });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+router.get('/api/batch/page-candidates', async (req, res) => {
+    try {
+        const { category_id, mode = 'missing' } = req.query;
+        let sql = `SELECT p.id AS page_id, p.book_id, p.page_number, p.image_url, p.image_prompt, p.text_en,
+                          b.title, b.title_en, b.category_id, c.name AS category_name
+                     FROM picture_book_pages p
+               INNER JOIN picture_books b ON p.book_id = b.id
+                LEFT JOIN picture_book_categories c ON b.category_id = c.id
+                    WHERE 1=1`;
+        const params = [];
+
+        if (category_id) {
+            sql += ' AND b.category_id = ?';
+            params.push(parseInt(category_id));
+        }
+        if (mode !== 'all') {
+            sql += ` AND (p.image_url IS NULL OR p.image_url = '')`;
+        }
+
+        sql += ' ORDER BY b.sort_order ASC, b.id ASC, p.page_number ASC';
+        const pages = await query(sql, params);
+        res.json({ success: true, data: pages });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+router.get('/api/batch/audio-candidates', async (req, res) => {
+    try {
+        const { category_id, mode = 'missing' } = req.query;
+        let sql = `
+            SELECT b.id, b.title, b.title_en, b.cover_url, b.page_count, b.category_id,
+                   c.name AS category_name,
+                   SUM(CASE WHEN p.text_en IS NOT NULL AND TRIM(p.text_en) <> '' THEN 1 ELSE 0 END) AS total_audio_pages,
+                   SUM(CASE WHEN p.text_en IS NOT NULL AND TRIM(p.text_en) <> '' AND (p.audio_url IS NULL OR p.audio_url = '') THEN 1 ELSE 0 END) AS missing_audio_pages,
+                   MIN(CASE WHEN p.text_en IS NOT NULL AND TRIM(p.text_en) <> '' AND (p.audio_url IS NULL OR p.audio_url = '') THEN p.page_number ELSE NULL END) AS first_missing_page
+              FROM picture_books b
+         LEFT JOIN picture_book_pages p ON p.book_id = b.id
+         LEFT JOIN picture_book_categories c ON b.category_id = c.id
+             WHERE 1=1`;
+        const params = [];
+
+        if (category_id) {
+            sql += ' AND b.category_id = ?';
+            params.push(parseInt(category_id, 10));
+        }
+
+        sql += ' GROUP BY b.id, b.title, b.title_en, b.cover_url, b.page_count, b.category_id, c.name';
+        if (mode === 'all') {
+            sql += ' HAVING total_audio_pages > 0';
+        } else {
+            sql += ' HAVING missing_audio_pages > 0';
+        }
+
+        sql += ' ORDER BY missing_audio_pages DESC, b.sort_order ASC, b.id ASC';
+        const books = await query(sql, params);
+        res.json({ success: true, data: books });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+router.post('/api/:id/generate-audio-batch', async (req, res) => {
+    try {
+        const bookId = parseInt(req.params.id, 10);
+        const mode = req.body?.mode === 'all' ? 'all' : 'missing';
+
+        const [book] = await query('SELECT id, title FROM picture_books WHERE id = ?', [bookId]);
+        if (!book) return res.status(404).json({ success: false, message: '绘本不存在' });
+
+        const pages = await query(
+            `SELECT id, page_number, text_en, audio_url
+               FROM picture_book_pages
+              WHERE book_id = ?
+                AND text_en IS NOT NULL
+                AND TRIM(text_en) <> ''
+              ORDER BY page_number ASC`,
+            [bookId]
+        );
+
+        const targetPages = pages.filter(page => mode === 'all' || !page.audio_url);
+        if (targetPages.length === 0) {
+            return res.json({
+                success: true,
+                generated: 0,
+                total: pages.length,
+                speed: voiceService.getGoogleTtsSpeed('picture_book'),
+                voice: 'female',
+                message: '无需生成'
+            });
+        }
+
+        const speed = voiceService.getGoogleTtsSpeed('picture_book');
+        let generated = 0;
+        const failedPages = [];
+
+        for (let i = 0; i < targetPages.length; i++) {
+            const page = targetPages[i];
+            // 每页间隔 3 秒，避免触发 Google TTS 每分钟请求配额限制
+            if (i > 0) await new Promise(r => setTimeout(r, 3000));
+            try {
+                const result = await voiceService.googleTextToSpeech(page.text_en, 'female', speed);
+                if (!result.success || !result.audioUrl) {
+                    throw new Error(result.error || '生成失败');
+                }
+                await query('UPDATE picture_book_pages SET audio_url = ? WHERE id = ?', [result.audioUrl, page.id]);
+                generated++;
+            } catch (err) {
+                failedPages.push({
+                    page_number: page.page_number,
+                    error: err.message || '生成失败'
+                });
+            }
+        }
+
+        if (failedPages.length > 0) {
+            return res.status(500).json({
+                success: false,
+                message: `${book.title} 仍有 ${failedPages.length} 页配音失败`,
+                generated,
+                total: targetPages.length,
+                failed_pages: failedPages,
+                speed,
+                voice: 'female'
+            });
+        }
+
+        res.json({
+            success: true,
+            generated,
+            total: targetPages.length,
+            failed_pages: [],
+            speed,
+            voice: 'female'
+        });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
 router.post('/api/create', async (req, res) => {
     try {
-        const { title, title_en, description, category_id, difficulty_level, age_group, cover_url, is_free } = req.body;
+        const { title, title_en, description, category_id, difficulty_level, age_group, cover_url, cover_prompt, is_free } = req.body;
         if (!title) return res.status(400).json({ success: false, message: '标题不能为空' });
 
         const result = await query(
-            'INSERT INTO picture_books (title, title_en, description, category_id, difficulty_level, age_group, cover_url, is_free) VALUES (?,?,?,?,?,?,?,?)',
-            [title, title_en || '', description || '', category_id || 0, difficulty_level || 1, age_group || null, cover_url || null, is_free !== undefined ? is_free : 1]
+            'INSERT INTO picture_books (title, title_en, description, category_id, difficulty_level, age_group, cover_url, cover_prompt, is_free) VALUES (?,?,?,?,?,?,?,?,?)',
+            [title, title_en || '', description || '', category_id || 0, difficulty_level || 1, age_group || null, cover_url || null, cover_prompt || null, is_free !== undefined ? is_free : 1]
         );
         res.json({ success: true, id: result.insertId });
     } catch (e) {
@@ -86,13 +320,85 @@ router.post('/api/create', async (req, res) => {
 
 router.put('/api/:id', async (req, res) => {
     try {
-        const { title, title_en, description, category_id, difficulty_level, age_group, cover_url, is_free, is_active, sort_order } = req.body;
+        const { title, title_en, description, category_id, difficulty_level, age_group, cover_url, cover_prompt, is_free, is_active, sort_order } = req.body;
         await query(
-            `UPDATE picture_books SET title=?, title_en=?, description=?, category_id=?, difficulty_level=?, age_group=?, cover_url=?, is_free=?, is_active=?, sort_order=? WHERE id=?`,
+            `UPDATE picture_books SET title=?, title_en=?, description=?, category_id=?, difficulty_level=?, age_group=?, cover_url=?, cover_prompt=?, is_free=?, is_active=?, sort_order=? WHERE id=?`,
             [title, title_en || '', description || '', category_id || 0, difficulty_level || 1, age_group || null, cover_url || null,
-             is_free !== undefined ? is_free : 1, is_active !== undefined ? is_active : 1, sort_order || 0, req.params.id]
+             cover_prompt || null, is_free !== undefined ? is_free : 1, is_active !== undefined ? is_active : 1, sort_order || 0, req.params.id]
         );
         res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+router.put('/api/:id/cover-prompt', async (req, res) => {
+    try {
+        const coverPrompt = String(req.body?.cover_prompt || '').trim();
+        const pages = await getBookPagesForPrompt(req.params.id);
+        const book = await getBookPromptContext(req.params.id);
+        if (!book) return res.status(404).json({ success: false, message: '绘本不存在' });
+
+        const sourceText = buildCoverSourceText(book, pages);
+        await query(
+            'UPDATE picture_books SET cover_prompt = ?, cover_prompt_source_text = ?, cover_prompt_mode = ? WHERE id = ?',
+            [coverPrompt || null, sourceText || null, 'manual', req.params.id]
+        );
+
+        const payload = await buildCoverPromptPayload(req.params.id);
+        res.json({
+            success: true,
+            cover_prompt: payload.cover_prompt || '',
+            cover_prompt_mode: payload.cover_prompt_mode || 'manual',
+            cover_prompt_sync_status: payload.cover_prompt_sync_status,
+            cover_prompt_needs_sync: payload.cover_prompt_needs_sync
+        });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+router.get('/api/:id/cover-prompt-status', async (req, res) => {
+    try {
+        const payload = await buildCoverPromptPayload(req.params.id);
+        if (!payload) return res.status(404).json({ success: false, message: '绘本不存在' });
+        res.json({
+            success: true,
+            data: {
+                cover_prompt: payload.cover_prompt || '',
+                cover_prompt_mode: payload.cover_prompt_mode || 'auto',
+                cover_prompt_sync_status: payload.cover_prompt_sync_status,
+                cover_prompt_needs_sync: payload.cover_prompt_needs_sync
+            }
+        });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+router.post('/api/:id/rebuild-cover-prompt', async (req, res) => {
+    try {
+        const book = await getBookPromptContext(req.params.id);
+        if (!book) return res.status(404).json({ success: false, message: '绘本不存在' });
+        const pages = await getBookPagesForPrompt(req.params.id);
+        const prompt = buildPictureBookCoverPrompt(book, pages);
+        const sourceText = buildCoverSourceText(book, pages);
+
+        await query(
+            'UPDATE picture_books SET cover_prompt = ?, cover_prompt_source_text = ?, cover_prompt_mode = ? WHERE id = ?',
+            [prompt, sourceText, 'auto', req.params.id]
+        );
+
+        const payload = await buildCoverPromptPayload(req.params.id);
+        res.json({
+            success: true,
+            data: {
+                cover_prompt: payload.cover_prompt || '',
+                cover_prompt_mode: payload.cover_prompt_mode || 'auto',
+                cover_prompt_sync_status: payload.cover_prompt_sync_status,
+                cover_prompt_needs_sync: payload.cover_prompt_needs_sync
+            }
+        });
     } catch (e) {
         res.status(500).json({ success: false, message: e.message });
     }
@@ -114,16 +420,13 @@ router.delete('/api/:id', async (req, res) => {
 
 router.get('/api/:id/pages', async (req, res) => {
     try {
+        const book = await getBookPromptContext(req.params.id);
         const pages = await query(
             'SELECT * FROM picture_book_pages WHERE book_id = ? ORDER BY sort_order ASC, page_number ASC',
             [req.params.id]
         );
         const baseUrl = process.env.BASE_URL || 'https://en.tajian.cc';
-        const processed = pages.map(p => ({
-            ...p,
-            audio_url: p.audio_url ? (p.audio_url.startsWith('http') ? p.audio_url : baseUrl + p.audio_url) : null,
-            audio_url_male: p.audio_url_male ? (p.audio_url_male.startsWith('http') ? p.audio_url_male : baseUrl + p.audio_url_male) : null
-        }));
+        const processed = pages.map(p => buildPageApiPayload(p, book, baseUrl));
         res.json({ success: true, data: processed });
     } catch (e) {
         res.status(500).json({ success: false, message: e.message });
@@ -153,7 +456,14 @@ router.post('/api/:id/pages', async (req, res) => {
 
 router.put('/api/:id/pages/:pageId', async (req, res) => {
     try {
-        const { text_en, text_cn, image_url, audio_url, audio_url_male } = req.body;
+        const { text_en, text_cn, image_url, image_prompt, audio_url, audio_url_male } = req.body;
+        const book = await getBookPromptContext(req.params.id);
+        const [existingPage] = await query(
+            'SELECT id, text_en, image_prompt, image_prompt_source_text, image_prompt_mode, page_number FROM picture_book_pages WHERE id = ? AND book_id = ?',
+            [req.params.pageId, req.params.id]
+        );
+        if (!existingPage) return res.status(404).json({ success: false, message: '页面不存在' });
+
         const fields = [];
         const params = [];
 
@@ -163,11 +473,133 @@ router.put('/api/:id/pages/:pageId', async (req, res) => {
         if (audio_url !== undefined) { fields.push('audio_url=?'); params.push(audio_url); }
         if (audio_url_male !== undefined) { fields.push('audio_url_male=?'); params.push(audio_url_male); }
 
+        if (image_prompt !== undefined) {
+            const promptText = normalizePromptBookTitleToEnglish(
+                image_prompt,
+                book?.title || '',
+                book?.title_en || ''
+            );
+            const effectiveTextEn = text_en !== undefined ? text_en : existingPage.text_en;
+            fields.push('image_prompt=?');
+            params.push(promptText);
+            fields.push('image_prompt_source_text=?');
+            params.push(normalizeComparableText(effectiveTextEn || ''));
+            fields.push('image_prompt_mode=?');
+            params.push('manual');
+        }
+
         if (fields.length === 0) return res.json({ success: true, message: '无更新' });
 
         params.push(req.params.pageId, req.params.id);
         await query(`UPDATE picture_book_pages SET ${fields.join(',')} WHERE id=? AND book_id=?`, params);
-        res.json({ success: true });
+        const [updatedPage] = await query('SELECT * FROM picture_book_pages WHERE id = ? AND book_id = ?', [req.params.pageId, req.params.id]);
+        const baseUrl = process.env.BASE_URL || 'https://en.tajian.cc';
+        res.json({ success: true, data: buildPageApiPayload(updatedPage, book, baseUrl) });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+router.post('/api/:id/pages/:pageId/rebuild-prompt', async (req, res) => {
+    try {
+        const book = await getBookPromptContext(req.params.id);
+        if (!book) return res.status(404).json({ success: false, message: '绘本不存在' });
+
+        const [page] = await query(
+            'SELECT * FROM picture_book_pages WHERE id = ? AND book_id = ?',
+            [req.params.pageId, req.params.id]
+        );
+        if (!page) return res.status(404).json({ success: false, message: '页面不存在' });
+        if (!normalizeComparableText(page.text_en)) {
+            return res.status(400).json({ success: false, message: '请先填写本页英文文本，再重建图片提示词' });
+        }
+
+        const prompt = buildPictureBookPagePrompt(book, page);
+        await query(
+            `UPDATE picture_book_pages
+                SET image_prompt = ?, image_prompt_source_text = ?, image_prompt_mode = 'auto'
+              WHERE id = ? AND book_id = ?`,
+            [prompt, normalizeComparableText(page.text_en), req.params.pageId, req.params.id]
+        );
+
+        const [updatedPage] = await query('SELECT * FROM picture_book_pages WHERE id = ? AND book_id = ?', [req.params.pageId, req.params.id]);
+        const baseUrl = process.env.BASE_URL || 'https://en.tajian.cc';
+        res.json({ success: true, data: buildPageApiPayload(updatedPage, book, baseUrl) });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+router.post('/api/:id/rebuild-page-prompts', async (req, res) => {
+    try {
+        const book = await getBookPromptContext(req.params.id);
+        if (!book) return res.status(404).json({ success: false, message: '绘本不存在' });
+
+        const pages = await query(
+            'SELECT * FROM picture_book_pages WHERE book_id = ? ORDER BY sort_order ASC, page_number ASC',
+            [req.params.id]
+        );
+
+        let updated = 0;
+        let skipped = 0;
+        for (const page of pages) {
+            if (!normalizeComparableText(page.text_en)) {
+                skipped++;
+                continue;
+            }
+            const prompt = buildPictureBookPagePrompt(book, page);
+            await query(
+                `UPDATE picture_book_pages
+                    SET image_prompt = ?, image_prompt_source_text = ?, image_prompt_mode = 'auto'
+                  WHERE id = ? AND book_id = ?`,
+                [prompt, normalizeComparableText(page.text_en), page.id, req.params.id]
+            );
+            updated++;
+        }
+
+        res.json({ success: true, updated, skipped });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// AI 生成内容页图片（按页面提示词）
+router.post('/api/:id/pages/:pageId/generate-image', async (req, res) => {
+    try {
+        const bookId = req.params.id;
+        const pageId = req.params.pageId;
+        const inputPrompt = String(req.body?.prompt || '').trim();
+        const book = await getBookPromptContext(bookId);
+
+        const [page] = await query(
+            'SELECT id, image_prompt FROM picture_book_pages WHERE id = ? AND book_id = ?',
+            [pageId, bookId]
+        );
+        if (!page) return res.status(404).json({ success: false, message: '页面不存在' });
+
+        const finalPromptRaw = inputPrompt || String(page.image_prompt || '').trim();
+        const finalPrompt = normalizePromptBookTitleToEnglish(finalPromptRaw, book?.title || '', book?.title_en || '');
+        if (!finalPrompt) {
+            return res.status(400).json({ success: false, message: '请先填写页面图片AI提示词' });
+        }
+
+        const result = await aiService.generateImage(finalPrompt);
+        if (!result.success || !result.imageUrl) {
+            return res.status(500).json({ success: false, message: result.error || '生成失败' });
+        }
+
+        await query(
+            'UPDATE picture_book_pages SET image_url = ?, image_prompt = ? WHERE id = ? AND book_id = ?',
+            [result.imageUrl, finalPrompt, pageId, bookId]
+        );
+        const [updatedPage] = await query('SELECT * FROM picture_book_pages WHERE id = ? AND book_id = ?', [pageId, bookId]);
+        const baseUrl = process.env.BASE_URL || 'https://en.tajian.cc';
+        res.json({
+            success: true,
+            imageUrl: result.imageUrl,
+            image_prompt: finalPrompt,
+            data: buildPageApiPayload(updatedPage, book, baseUrl)
+        });
     } catch (e) {
         res.status(500).json({ success: false, message: e.message });
     }
@@ -216,15 +648,14 @@ router.post('/api/:id/pages/:pageId/tts', async (req, res) => {
         if (!page) return res.status(404).json({ success: false, message: '页面不存在' });
         if (!page.text_en) return res.status(400).json({ success: false, message: '页面无英文文本' });
 
-        const { voice = 'female' } = req.body;
-        const result = await voiceService.textToSpeech(page.text_en, voice, 1.0);
+        const speed = voiceService.getGoogleTtsSpeed('picture_book');
+        const result = await voiceService.googleTextToSpeech(page.text_en, 'female', speed);
         if (result.success && result.audioUrl) {
-            const field = voice === 'male' ? 'audio_url_male' : 'audio_url';
-            await query(`UPDATE picture_book_pages SET ${field} = ? WHERE id = ?`, [result.audioUrl, page.id]);
+            await query('UPDATE picture_book_pages SET audio_url = ? WHERE id = ?', [result.audioUrl, page.id]);
 
             const baseUrl = process.env.BASE_URL || 'https://en.tajian.cc';
             const fullUrl = result.audioUrl.startsWith('http') ? result.audioUrl : baseUrl + result.audioUrl;
-            return res.json({ success: true, audio_url: fullUrl, voice });
+            return res.json({ success: true, audio_url: fullUrl, voice: 'female', speed, engine: result.engine || 'google' });
         }
         res.status(500).json({ success: false, message: result.error || '生成失败' });
     } catch (e) {
@@ -430,11 +861,9 @@ router.post('/api/hotspots/:hotspotId/generate', async (req, res) => {
             if (translateResult.success) translation = translateResult.translation;
 
             try {
-                const femaleResult = await voiceService.textToSpeech(text, 'female');
+                const hotspotSpeed = voiceService.getGoogleTtsSpeed('picture_book');
+                const femaleResult = await voiceService.googleTextToSpeech(text, 'female', hotspotSpeed);
                 if (femaleResult.success) audioFemale = femaleResult.audioUrl;
-
-                const maleResult = await voiceService.textToSpeech(text, 'male');
-                if (maleResult.success) audioMale = maleResult.audioUrl;
             } catch (ttsError) {
                 console.error('[PB-Generate] TTS错误:', ttsError.message);
             }
@@ -467,11 +896,34 @@ router.post('/api/hotspots/:hotspotId/generate', async (req, res) => {
 
 router.post('/api/:id/generate-cover', async (req, res) => {
     try {
-        const { prompt } = req.body;
-        if (!prompt) return res.status(400).json({ success: false, message: '请提供描述' });
-        const result = await aiService.generateImage(prompt);
+        const inputPrompt = String(req.body?.prompt || '').trim();
+        const book = await getBookPromptContext(req.params.id);
+        if (!book) return res.status(404).json({ success: false, message: '绘本不存在' });
+        const pages = await getBookPagesForPrompt(req.params.id);
+        const generatedPrompt = buildPictureBookCoverPrompt(book, pages);
+        const finalPromptRaw = inputPrompt || String(book.cover_prompt || '').trim() || generatedPrompt;
+        const normalizedPrompt = normalizePromptBookTitleToEnglish(finalPromptRaw, book?.title || '', book?.title_en || '');
+        if (!normalizedPrompt) return res.status(400).json({ success: false, message: '请先填写或重建封面提示词' });
+        const result = await aiService.generateImage(normalizedPrompt);
         if (result.success) {
-            res.json({ success: true, imageUrl: result.imageUrl });
+            const sourceText = buildCoverSourceText(book, pages);
+            const mode = inputPrompt ? 'manual' : (book.cover_prompt_mode || 'auto');
+            await query(
+                'UPDATE picture_books SET cover_url = ?, cover_prompt = ?, cover_prompt_source_text = ?, cover_prompt_mode = ? WHERE id = ?',
+                [result.imageUrl, normalizedPrompt, sourceText, mode, req.params.id]
+            );
+            const payload = await buildCoverPromptPayload(req.params.id);
+            res.json({
+                success: true,
+                imageUrl: result.imageUrl,
+                data: {
+                    cover_url: result.imageUrl,
+                    cover_prompt: payload.cover_prompt || normalizedPrompt,
+                    cover_prompt_mode: payload.cover_prompt_mode || mode,
+                    cover_prompt_sync_status: payload.cover_prompt_sync_status,
+                    cover_prompt_needs_sync: payload.cover_prompt_needs_sync
+                }
+            });
         } else {
             res.status(500).json({ success: false, message: result.error || '生成失败' });
         }
