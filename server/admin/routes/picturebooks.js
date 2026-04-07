@@ -261,8 +261,8 @@ router.post('/api/:id/generate-audio-batch', async (req, res) => {
 
         for (let i = 0; i < targetPages.length; i++) {
             const page = targetPages[i];
-            // 每页间隔 3 秒，避免触发 Google TTS 每分钟请求配额限制
-            if (i > 0) await new Promise(r => setTimeout(r, 3000));
+            // 页间延迟：中国→美国代理→Google，留足时间避免 429 限流
+            if (i > 0) await new Promise(r => setTimeout(r, 6000));
             try {
                 const result = await voiceService.googleTextToSpeech(page.text_en, 'female', speed);
                 if (!result.success || !result.audioUrl) {
@@ -278,10 +278,12 @@ router.post('/api/:id/generate-audio-batch', async (req, res) => {
             }
         }
 
-        if (failedPages.length > 0) {
+        // 部分成功也算成功（已生成的页已写入 DB，下次只补缺失页）
+        const allFailed = generated === 0 && failedPages.length > 0;
+        if (allFailed) {
             return res.status(500).json({
                 success: false,
-                message: `${book.title} 仍有 ${failedPages.length} 页配音失败`,
+                message: `${book.title} 全部 ${failedPages.length} 页配音失败`,
                 generated,
                 total: targetPages.length,
                 failed_pages: failedPages,
@@ -294,7 +296,10 @@ router.post('/api/:id/generate-audio-batch', async (req, res) => {
             success: true,
             generated,
             total: targetPages.length,
-            failed_pages: [],
+            failed_pages: failedPages,
+            message: failedPages.length > 0
+                ? `${book.title} 完成 ${generated}/${targetPages.length} 页，${failedPages.length} 页失败（下次可补齐）`
+                : undefined,
             speed,
             voice: 'female'
         });
