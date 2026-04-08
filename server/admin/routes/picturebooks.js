@@ -1005,11 +1005,10 @@ router.post('/api/:id/analyze-vocab', async (req, res) => {
 
         let analyzed = 0;
         const failedPages = [];
-        const speed = voiceService.getGoogleTtsSpeed('picture_book');
 
         for (let i = 0; i < targetPages.length; i++) {
             const page = targetPages[i];
-            if (i > 0) await new Promise(r => setTimeout(r, 2000));
+            if (i > 0) await new Promise(r => setTimeout(r, 1500));
 
             try {
                 // 1. AI 分析全部单词
@@ -1024,7 +1023,7 @@ router.post('/api/:id/analyze-vocab', async (req, res) => {
 
                 const words = resp.data.words;
 
-                // 2. 为每个词查找/生成音频
+                // 2. 复用 words 表已有音频/音标（快速 DB 查询，不生成新 TTS）
                 for (const w of words) {
                     const [wRow] = await query(
                         'SELECT audio_url_female, audio_url_male, phonetic FROM words WHERE LOWER(word) = LOWER(?) LIMIT 1',
@@ -1033,9 +1032,6 @@ router.post('/api/:id/analyze-vocab', async (req, res) => {
                     if (wRow) {
                         w.audio_url = wRow.audio_url_female || wRow.audio_url_male || null;
                         if (!w.phonetic && wRow.phonetic) w.phonetic = wRow.phonetic;
-                    } else {
-                        const wTts = await voiceService.googleTextToSpeech(w.word, 'female', speed).catch(() => ({ success: false }));
-                        if (wTts.success) w.audio_url = wTts.audioUrl;
                     }
                 }
 
