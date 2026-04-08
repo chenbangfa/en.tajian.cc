@@ -73,6 +73,7 @@ app.get('/', requireAuth, (req, res) => res.render('index', { page: 'dashboard',
 app.get('/users', requireAuth, (req, res) => res.render('users/index', { page: 'users', title: '用户管理', user: req.session.adminUser }));
 app.get('/categories', requireAuth, (req, res) => res.render('categories', { page: 'categories', title: '分类管理', user: req.session.adminUser }));
 app.get('/words', requireAuth, (req, res) => res.render('words', { page: 'words', title: '单词管理', user: req.session.adminUser }));
+app.get('/words/batch-tts', requireAuth, (req, res) => res.render('words/batch-tts', { page: 'words-batch-tts', title: '批量语音合成', user: req.session.adminUser }));
 app.get('/podcast/categories', requireAuth, (req, res) => res.render('podcast/categories', { page: 'podcast-cat', title: '磨耳朵分类', user: req.session.adminUser }));
 app.get('/podcast/contents', requireAuth, (req, res) => res.render('podcast/contents', { page: 'podcast-content', title: '磨耳朵内容', user: req.session.adminUser }));
 app.get('/prompts', requireAuth, (req, res) => res.render('prompts', { page: 'prompts', title: '提示词管理', user: req.session.adminUser }));

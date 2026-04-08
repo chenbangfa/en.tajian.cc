@@ -1005,9 +1005,6 @@ router.post('/api/:id/analyze-vocab', async (req, res) => {
 
         let analyzed = 0;
         const failedPages = [];
-        const speed = voiceService.getGoogleTtsSpeed('picture_book');
-        // 收集本轮新词，分析完所有页后统一生成 TTS（避免拖慢逐页分析）
-        const newWordsToTts = [];
 
         for (let i = 0; i < targetPages.length; i++) {
             const page = targetPages[i];
@@ -1036,16 +1033,15 @@ router.post('/api/:id/analyze-vocab', async (req, res) => {
                         w.audio_url = wRow.audio_url_female || wRow.audio_url_male || null;
                         if (!w.phonetic && wRow.phonetic) w.phonetic = wRow.phonetic;
                     } else {
-                        // 新词：立即插入 words 表（音频稍后补）
+                        // 新词：插入 words 表（语音在 words 批量合成页单独处理）
                         const contentType = w.word.includes(' ') ? 'phrase' : 'word';
                         const wordType = _posToWordType(w.pos);
                         try {
-                            const insertResult = await query(
+                            await query(
                                 `INSERT INTO words (word, phonetic, translation, content_type, word_type, difficulty_level)
                                  VALUES (?, ?, ?, ?, ?, 1)`,
                                 [w.word, w.phonetic || null, w.translation || null, contentType, wordType]
                             );
-                            newWordsToTts.push({ id: insertResult.insertId, word: w.word });
                         } catch (insertErr) {
                             // 忽略重复插入等错误
                         }
@@ -1060,12 +1056,6 @@ router.post('/api/:id/analyze-vocab', async (req, res) => {
             }
         }
 
-        // 4. 异步为新词批量生成 TTS（不阻塞响应，后台静默执行）
-        if (newWordsToTts.length > 0) {
-            _batchGenerateWordTts(newWordsToTts, speed).catch(e => {
-                console.error('[PictureBooks] 新词 TTS 批量生成出错:', e.message);
-            });
-        }
 
         const allFailed = analyzed === 0 && failedPages.length > 0;
         if (allFailed) {
@@ -1100,26 +1090,6 @@ function _posToWordType(pos) {
     if (p.startsWith('pron')) return 'pron';
     if (p.startsWith('phr')) return 'other';
     return 'other';
-}
-
-// 后台静默为新词生成 TTS 并回写 words 表（不阻塞 HTTP 响应）
-async function _batchGenerateWordTts(wordList, speed) {
-    console.log(`[PictureBooks] 开始为 ${wordList.length} 个新词生成 TTS...`);
-    let success = 0;
-    for (let i = 0; i < wordList.length; i++) {
-        const { id, word } = wordList[i];
-        if (i > 0) await new Promise(r => setTimeout(r, 3000)); // 避免 429
-        try {
-            const result = await voiceService.googleTextToSpeech(word, 'female', speed);
-            if (result.success && result.audioUrl) {
-                await query('UPDATE words SET audio_url_female = ? WHERE id = ?', [result.audioUrl, id]);
-                success++;
-            }
-        } catch (e) {
-            // 单个失败不影响其他
-        }
-    }
-    console.log(`[PictureBooks] 新词 TTS 完成: ${success}/${wordList.length} 成功`);
 }
 
 module.exports = router;

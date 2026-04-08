@@ -1,0 +1,266 @@
+<div class="space-y-6">
+    <div class="flex justify-between items-center bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+        <div>
+            <h2 class="text-2xl font-bold bg-gradient-to-r from-blue-700 to-cyan-600 bg-clip-text text-transparent">
+                批量语音合成
+            </h2>
+            <p class="text-gray-500 mt-1">为 words 表中缺少音频的单词/短语批量生成男声和女声</p>
+        </div>
+        <a href="/words"
+            class="flex items-center gap-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 px-5 py-3 rounded-xl transition-all duration-300">
+            <i class="fas fa-arrow-left"></i>
+            <span>返回单词管理</span>
+        </a>
+    </div>
+
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+            <div class="text-sm text-gray-500">待处理</div>
+            <div class="text-3xl font-bold text-gray-800 mt-2" id="stat-pending">0</div>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+            <div class="text-sm text-gray-500">已完成</div>
+            <div class="text-3xl font-bold text-green-600 mt-2" id="stat-success">0</div>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+            <div class="text-sm text-gray-500">失败</div>
+            <div class="text-3xl font-bold text-red-500 mt-2" id="stat-failed">0</div>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+            <div class="text-sm text-gray-500">总任务数</div>
+            <div class="text-3xl font-bold text-blue-600 mt-2" id="stat-total">0</div>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="p-5 border-b border-gray-100 bg-gray-50 space-y-4">
+            <div class="flex flex-wrap items-center gap-3">
+                <select id="sel-engine"
+                    class="px-4 py-2 border border-gray-200 rounded-lg outline-none focus:border-blue-500 bg-white text-sm">
+                    <option value="google">Google TTS</option>
+                    <option value="youdao">有道 TTS</option>
+                </select>
+
+                <select id="sel-voice"
+                    class="px-4 py-2 border border-gray-200 rounded-lg outline-none focus:border-blue-500 bg-white text-sm">
+                    <option value="both">男声 + 女声</option>
+                    <option value="female">仅女声</option>
+                    <option value="male">仅男声</option>
+                </select>
+
+                <select id="sel-filter" onchange="loadCandidates()"
+                    class="px-4 py-2 border border-gray-200 rounded-lg outline-none focus:border-blue-500 bg-white text-sm">
+                    <option value="all">缺少任意音频</option>
+                    <option value="female">缺少女声</option>
+                    <option value="male">缺少男声</option>
+                </select>
+
+                <input id="sel-limit" type="number" value="200" min="10" max="2000" onchange="loadCandidates()"
+                    class="w-24 px-4 py-2 border border-gray-200 rounded-lg outline-none focus:border-blue-500 bg-white text-sm"
+                    placeholder="数量">
+
+                <button onclick="loadCandidates()"
+                    class="px-4 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-lg text-sm font-medium">
+                    <i class="fas fa-rotate-right mr-1"></i>刷新
+                </button>
+
+                <button id="btn-start" onclick="startBatch()"
+                    class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium">
+                    <i class="fas fa-volume-up mr-1"></i>开始合成
+                </button>
+
+                <button id="btn-stop" onclick="stopBatch()"
+                    class="hidden px-5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium animate-pulse">
+                    <i class="fas fa-stop mr-1"></i>停止
+                </button>
+            </div>
+
+            <div id="batch-progress" class="hidden">
+                <div class="flex justify-between text-sm mb-2 font-medium">
+                    <span id="progress-text" class="text-blue-600">准备中...</span>
+                    <span id="progress-count" class="text-gray-500">0/0</span>
+                </div>
+                <div class="h-2 bg-gray-100 rounded-full overflow-hidden">
+                    <div id="progress-bar" class="h-full bg-blue-600 transition-all duration-300" style="width:0%"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-0">
+            <div class="p-5 border-r border-gray-100 min-h-[480px]">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="font-bold text-gray-800">待处理单词</h3>
+                    <span class="text-xs text-gray-400" id="queue-hint">加载中...</span>
+                </div>
+                <div id="candidate-list" class="space-y-2 max-h-[600px] overflow-y-auto">
+                    <div class="text-center py-16 text-gray-400"><i class="fas fa-spinner fa-spin text-2xl mb-3"></i><p>正在加载...</p></div>
+                </div>
+            </div>
+            <div class="p-5 bg-gray-50/60 min-h-[480px]">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="font-bold text-gray-800">失败列表</h3>
+                    <button onclick="retryFailed()"
+                        class="px-3 py-1.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-lg text-xs font-medium">
+                        重试失败项
+                    </button>
+                </div>
+                <div id="failed-list" class="space-y-2 max-h-[600px] overflow-y-auto">
+                    <div class="text-center py-16 text-gray-400 text-sm">暂无失败项</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let queue = [], failedItems = [], isRunning = false;
+let progress = { total: 0, success: 0, failed: 0 };
+
+function escapeHtml(v = '') {
+    return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+async function loadCandidates() {
+    const filter = document.getElementById('sel-filter').value;
+    const limit = document.getElementById('sel-limit').value || 200;
+    const list = document.getElementById('candidate-list');
+    list.innerHTML = '<div class="text-center py-16 text-gray-400"><i class="fas fa-spinner fa-spin text-2xl mb-3"></i><p>正在加载...</p></div>';
+
+    try {
+        const res = await fetch(`/api/admin/words/batch-tts/candidates?voice=${encodeURIComponent(filter)}&limit=${limit}`);
+        const r = await res.json();
+        if (!r.success) throw new Error(r.message);
+        queue = r.data || [];
+        failedItems = [];
+        progress = { total: queue.length, success: 0, failed: 0 };
+        renderQueue(); renderFailed(); updateStats();
+    } catch(e) {
+        list.innerHTML = `<div class="text-center py-16 text-red-400">${escapeHtml(e.message)}</div>`;
+    }
+}
+
+function renderQueue() {
+    const list = document.getElementById('candidate-list');
+    document.getElementById('queue-hint').textContent = `剩余 ${queue.length} 个`;
+    if (!queue.length) {
+        list.innerHTML = '<div class="text-center py-16 text-gray-400 bg-white rounded-xl border border-dashed border-gray-200"><i class="fas fa-circle-check text-3xl mb-3 text-green-500"></i><p>没有待处理单词</p></div>';
+        return;
+    }
+    list.innerHTML = queue.slice(0, 100).map((w, i) => `
+        <div class="flex items-center justify-between bg-white rounded-lg border border-gray-100 px-4 py-2.5" id="tts-${w.id}">
+            <div class="min-w-0">
+                <span class="font-bold text-gray-800">${escapeHtml(w.word)}</span>
+                <span class="text-xs text-gray-400 ml-2">${w.content_type || 'word'}</span>
+            </div>
+            <div class="flex gap-2 text-xs shrink-0">
+                <span class="${w.audio_url_female ? 'text-green-500' : 'text-red-400'}">
+                    <i class="fas fa-venus mr-0.5"></i>${w.audio_url_female ? '有' : '无'}
+                </span>
+                <span class="${w.audio_url_male ? 'text-green-500' : 'text-red-400'}">
+                    <i class="fas fa-mars mr-0.5"></i>${w.audio_url_male ? '有' : '无'}
+                </span>
+            </div>
+        </div>
+    `).join('') + (queue.length > 100 ? `<div class="text-center text-xs text-gray-400 py-2">...还有 ${queue.length - 100} 个</div>` : '');
+}
+
+function renderFailed() {
+    const list = document.getElementById('failed-list');
+    if (!failedItems.length) { list.innerHTML = '<div class="text-center py-16 text-gray-400 text-sm">暂无失败项</div>'; return; }
+    list.innerHTML = failedItems.map(item => `
+        <div class="rounded-lg border border-red-100 bg-white px-4 py-2.5">
+            <div class="font-bold text-gray-800 text-sm">${escapeHtml(item.word)}</div>
+            <div class="text-xs text-red-500 mt-0.5">${escapeHtml(item.error)}</div>
+        </div>
+    `).join('');
+}
+
+function updateStats() {
+    document.getElementById('stat-total').textContent = progress.total;
+    document.getElementById('stat-success').textContent = progress.success;
+    document.getElementById('stat-failed').textContent = progress.failed;
+    document.getElementById('stat-pending').textContent = queue.length;
+}
+
+function updateProgressUI(text) {
+    document.getElementById('progress-text').textContent = text;
+    const done = progress.success + progress.failed;
+    document.getElementById('progress-count').textContent = `${done}/${progress.total}`;
+    document.getElementById('progress-bar').style.width = `${(done / Math.max(progress.total, 1)) * 100}%`;
+}
+
+async function generateOne(wordItem, engine, voice) {
+    const res = await fetch('/api/admin/words/batch-tts/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ word_id: wordItem.id, engine, voice })
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || '合成失败');
+    return data;
+}
+
+async function startBatch() {
+    if (!queue.length) { showToast('没有待处理单词', 'error'); return; }
+    isRunning = true;
+    document.getElementById('btn-start').classList.add('hidden');
+    document.getElementById('btn-stop').classList.remove('hidden');
+    document.getElementById('batch-progress').classList.remove('hidden');
+
+    const engine = document.getElementById('sel-engine').value;
+    const voiceMode = document.getElementById('sel-voice').value;
+    // 构建任务列表：每个单词可能需要生成 1-2 个声音
+    const voices = voiceMode === 'both' ? ['female', 'male'] : [voiceMode];
+
+    while (isRunning && queue.length) {
+        const item = queue[0];
+        updateProgressUI(`正在合成：${item.word}`);
+
+        let itemFailed = false;
+        for (const v of voices) {
+            // 跳过已有音频的
+            if (v === 'female' && item.audio_url_female) continue;
+            if (v === 'male' && item.audio_url_male) continue;
+
+            try {
+                await generateOne(item, engine, v);
+            } catch(e) {
+                itemFailed = true;
+                failedItems.push({ ...item, error: `${v}: ${e.message}` });
+                break;
+            }
+            // 间隔避免 429 限流
+            await new Promise(r => setTimeout(r, 3000));
+        }
+
+        if (itemFailed) {
+            progress.failed++;
+        } else {
+            progress.success++;
+        }
+
+        queue.shift();
+        renderQueue(); renderFailed(); updateStats();
+
+        // 每个词之间额外间隔
+        if (queue.length && isRunning) await new Promise(r => setTimeout(r, 1000));
+    }
+
+    isRunning = false;
+    document.getElementById('btn-start').classList.remove('hidden');
+    document.getElementById('btn-stop').classList.add('hidden');
+    updateProgressUI(queue.length === 0 ? '本轮已完成' : '已停止');
+}
+
+function stopBatch() { isRunning = false; showToast('已停止'); }
+
+function retryFailed() {
+    if (!failedItems.length || isRunning) return;
+    queue = [...failedItems]; failedItems = [];
+    progress = { total: queue.length, success: 0, failed: 0 };
+    renderQueue(); renderFailed(); updateStats();
+    showToast(`已载入 ${queue.length} 个，可重新开始`);
+}
+
+document.addEventListener('DOMContentLoaded', () => loadCandidates());
+</script>

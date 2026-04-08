@@ -2,6 +2,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const { query } = require('../../src/config/database');
+const voiceService = require('../../src/services/voice.service');
 
 const router = express.Router();
 
@@ -286,6 +287,61 @@ router.post('/:id/antonym', async (req, res) => {
     } catch (error) {
         console.error('设置反义词错误:', error);
         res.status(500).json({ success: false, message: '设置反义词失败' });
+    }
+});
+
+// ===== 批量语音合成 =====
+
+// 获取缺少音频的单词列表
+router.get('/batch-tts/candidates', async (req, res) => {
+    try {
+        const { voice = 'all', limit = 200 } = req.query;
+        let where = '1=1';
+        if (voice === 'female') where = "(audio_url_female IS NULL OR audio_url_female = '')";
+        else if (voice === 'male') where = "(audio_url_male IS NULL OR audio_url_male = '')";
+        else where = "(audio_url_female IS NULL OR audio_url_female = '' OR audio_url_male IS NULL OR audio_url_male = '')";
+
+        const words = await query(
+            `SELECT id, word, content_type, audio_url_female, audio_url_male
+               FROM words WHERE ${where}
+              ORDER BY id DESC LIMIT ?`,
+            [parseInt(limit, 10)]
+        );
+        res.json({ success: true, data: words, total: words.length });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// 为单个词生成 TTS
+router.post('/batch-tts/generate', async (req, res) => {
+    try {
+        const { word_id, engine = 'google', voice = 'female' } = req.body;
+        if (!word_id) return res.status(400).json({ success: false, message: '缺少 word_id' });
+
+        const [word] = await query('SELECT id, word FROM words WHERE id = ?', [word_id]);
+        if (!word) return res.status(404).json({ success: false, message: '单词不存在' });
+
+        const speed = 1.0;
+        let result;
+
+        if (engine === 'google') {
+            result = await voiceService.googleTextToSpeech(word.word, voice, speed);
+        } else {
+            // youdao 通过统一入口（会自动 fallback）
+            result = await voiceService.textToSpeech(word.word, voice, speed);
+        }
+
+        if (!result.success || !result.audioUrl) {
+            return res.status(500).json({ success: false, message: result.error || '合成失败' });
+        }
+
+        const col = voice === 'male' ? 'audio_url_male' : 'audio_url_female';
+        await query(`UPDATE words SET ${col} = ? WHERE id = ?`, [result.audioUrl, word_id]);
+
+        res.json({ success: true, audio_url: result.audioUrl });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
     }
 });
 
