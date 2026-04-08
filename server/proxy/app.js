@@ -599,6 +599,64 @@ app.post('/proxy/analyze-podcast', auth, async (req, res) => {
     }
 });
 
+// ==================== 绘本全词分析 ====================
+/**
+ * POST /proxy/analyze-picturebook-words
+ * body: { text } - 绘本某页的英文文本（通常1-2句）
+ * response: { success, words: [...] }
+ */
+function buildPictureBookWordsPrompt(text) {
+    return `You are an English language learning assistant for Chinese children (ages 4-8).
+Analyze EVERY word and phrase in the following English text from a children's picture book.
+
+Rules:
+1. STEP 1: Identify multi-word phrases first (phrasal verbs like "wake up", collocations like "ice cream", "every day", "a lot of").
+2. STEP 2: List ALL remaining individual words NOT already inside a phrase — including articles (the/a/an), prepositions (in/on/at), pronouns (I/he/she), conjunctions (and/but), auxiliary verbs (is/are/was), etc.
+3. A word already inside a phrase MUST NOT appear again separately.
+4. The "word" field must use the EXACT spelling/capitalization from the text.
+5. Order the words array by their first appearance position in the text.
+
+For each entry provide:
+- word: exact text from the sentence
+- phonetic: IPA pronunciation (for phrases, give the full phrase pronunciation)
+- pos: abbreviated part of speech (n./v./adj./adv./prep./art./pron./conj./phr.v./phr./num./det./aux./interj.)
+- translation: Chinese translation appropriate for this sentence context
+
+Return ONLY valid JSON (no markdown, no explanation):
+{"words":[{"word":"...","phonetic":"...","pos":"...","translation":"..."}]}
+
+Text:
+${text}`;
+}
+
+app.post('/proxy/analyze-picturebook-words', auth, async (req, res) => {
+    const { text } = req.body;
+    if (!text) return res.status(400).json({ success: false, error: '缺少 text 参数' });
+    if (!vertexAuth.isConfigured) return res.status(500).json({ success: false, error: '未配置 Vertex AI' });
+
+    try {
+        const headers = await vertexAuth.getAuthHeaders();
+        const response = await axios.post(
+            vertexAuth.getUrl('gemini-2.5-flash'),
+            {
+                contents: [{ role: 'user', parts: [{ text: buildPictureBookWordsPrompt(text) }] }],
+                generationConfig: { temperature: 0.2, maxOutputTokens: 4096 }
+            },
+            { headers, timeout: 60000 }
+        );
+        let raw = response.data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        raw = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed.words)) throw new Error('AI返回格式错误: 缺少 words 数组');
+
+        console.log(`[Proxy] 绘本词汇分析成功, ${parsed.words.length} 词`);
+        res.json({ success: true, words: parsed.words });
+    } catch (error) {
+        console.error('[Proxy] analyze-picturebook-words error:', error.response?.data || error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // ==================== WAV 工具函数 ====================
 
 function addWavHeader(samples, sampleRate, numChannels, bitDepth) {

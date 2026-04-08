@@ -2,6 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const axios = require('axios');
 const { query } = require('../../src/config/database');
 const voiceService = require('../../src/services/voice.service');
 const aiService = require('../../src/services/ai.service');
@@ -932,6 +933,135 @@ router.post('/api/:id/generate-cover', async (req, res) => {
         } else {
             res.status(500).json({ success: false, message: result.error || '生成失败' });
         }
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// ===== 批量词汇分析页面 =====
+
+router.get('/batch-vocab', (req, res) => {
+    res.render('picturebooks/batch-vocab', { page: 'pb-batch-vocab', title: '绘本批量词汇分析', user: req.session.adminUser });
+});
+
+// 获取待分析候选列表
+router.get('/api/batch/vocab-candidates', async (req, res) => {
+    try {
+        const { category_id, mode = 'missing' } = req.query;
+        let sql = `
+            SELECT b.id, b.title, b.title_en, b.cover_url, b.category_id,
+                   c.name AS category_name,
+                   COUNT(p.id) AS total_text_pages,
+                   SUM(CASE WHEN p.text_en IS NOT NULL AND TRIM(p.text_en) <> '' AND (p.words_data IS NULL OR p.words_data = '') THEN 1 ELSE 0 END) AS missing_vocab_pages,
+                   SUM(CASE WHEN p.text_en IS NOT NULL AND TRIM(p.text_en) <> '' AND p.words_data IS NOT NULL AND p.words_data <> '' THEN 1 ELSE 0 END) AS done_vocab_pages
+              FROM picture_books b
+         LEFT JOIN picture_book_pages p ON p.book_id = b.id AND p.text_en IS NOT NULL AND TRIM(p.text_en) <> ''
+         LEFT JOIN picture_book_categories c ON b.category_id = c.id
+             WHERE 1=1`;
+        const params = [];
+        if (category_id) {
+            sql += ' AND b.category_id = ?';
+            params.push(parseInt(category_id, 10));
+        }
+        sql += ' GROUP BY b.id, b.title, b.title_en, b.cover_url, b.category_id, c.name';
+        if (mode === 'all') {
+            sql += ' HAVING total_text_pages > 0';
+        } else {
+            sql += ' HAVING missing_vocab_pages > 0';
+        }
+        sql += ' ORDER BY missing_vocab_pages DESC, b.id ASC';
+        const books = await query(sql, params);
+        res.json({ success: true, data: books });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// 单本绘本词汇分析
+router.post('/api/:id/analyze-vocab', async (req, res) => {
+    try {
+        const bookId = parseInt(req.params.id, 10);
+        const mode = req.body?.mode === 'all' ? 'all' : 'missing';
+
+        const [book] = await query('SELECT id, title FROM picture_books WHERE id = ?', [bookId]);
+        if (!book) return res.status(404).json({ success: false, message: '绘本不存在' });
+
+        const pages = await query(
+            `SELECT id, page_number, text_en, words_data
+               FROM picture_book_pages
+              WHERE book_id = ? AND text_en IS NOT NULL AND TRIM(text_en) <> ''
+              ORDER BY page_number ASC`,
+            [bookId]
+        );
+
+        const targetPages = pages.filter(p => mode === 'all' || !p.words_data);
+        if (targetPages.length === 0) {
+            return res.json({ success: true, analyzed: 0, total: pages.length, message: '无需分析' });
+        }
+
+        const proxyUrl = process.env.PROXY_BASE_URL;
+        const proxyKey = process.env.PROXY_API_KEY;
+        if (!proxyUrl) return res.status(500).json({ success: false, message: '未配置 PROXY_BASE_URL' });
+
+        let analyzed = 0;
+        const failedPages = [];
+        const speed = voiceService.getGoogleTtsSpeed('picture_book');
+
+        for (let i = 0; i < targetPages.length; i++) {
+            const page = targetPages[i];
+            if (i > 0) await new Promise(r => setTimeout(r, 2000));
+
+            try {
+                // 1. AI 分析全部单词
+                const resp = await axios.post(
+                    `${proxyUrl}/proxy/analyze-picturebook-words`,
+                    { text: page.text_en },
+                    { headers: { 'Content-Type': 'application/json', 'X-Proxy-Key': proxyKey || '' }, timeout: 60000 }
+                );
+                if (!resp.data.success || !Array.isArray(resp.data.words)) {
+                    throw new Error(resp.data.error || 'AI 分析失败');
+                }
+
+                const words = resp.data.words;
+
+                // 2. 为每个词查找/生成音频
+                for (const w of words) {
+                    const [wRow] = await query(
+                        'SELECT audio_url_female, audio_url_male, phonetic FROM words WHERE LOWER(word) = LOWER(?) LIMIT 1',
+                        [w.word]
+                    );
+                    if (wRow) {
+                        w.audio_url = wRow.audio_url_female || wRow.audio_url_male || null;
+                        if (!w.phonetic && wRow.phonetic) w.phonetic = wRow.phonetic;
+                    } else {
+                        const wTts = await voiceService.googleTextToSpeech(w.word, 'female', speed).catch(() => ({ success: false }));
+                        if (wTts.success) w.audio_url = wTts.audioUrl;
+                    }
+                }
+
+                // 3. 保存
+                await query('UPDATE picture_book_pages SET words_data = ? WHERE id = ?', [JSON.stringify({ words }), page.id]);
+                analyzed++;
+            } catch (err) {
+                failedPages.push({ page_number: page.page_number, error: err.message || '分析失败' });
+            }
+        }
+
+        const allFailed = analyzed === 0 && failedPages.length > 0;
+        if (allFailed) {
+            return res.status(500).json({
+                success: false,
+                message: `${book.title} 全部 ${failedPages.length} 页分析失败`,
+                analyzed, total: targetPages.length, failed_pages: failedPages
+            });
+        }
+
+        res.json({
+            success: true, analyzed, total: targetPages.length, failed_pages: failedPages,
+            message: failedPages.length > 0
+                ? `${book.title} 完成 ${analyzed}/${targetPages.length} 页，${failedPages.length} 页失败`
+                : undefined
+        });
     } catch (e) {
         res.status(500).json({ success: false, message: e.message });
     }

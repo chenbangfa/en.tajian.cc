@@ -1,0 +1,244 @@
+<div class="space-y-6">
+    <div class="flex justify-between items-center bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+        <div>
+            <h2 class="text-2xl font-bold bg-gradient-to-r from-indigo-700 to-blue-600 bg-clip-text text-transparent">
+                绘本批量词汇分析
+            </h2>
+            <p class="text-gray-500 mt-1">AI 分析每页所有单词/短语的音标、词性、中文释义，供小程序端点击查词</p>
+        </div>
+        <a href="/picture-books"
+            class="flex items-center gap-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 px-5 py-3 rounded-xl transition-all duration-300">
+            <i class="fas fa-arrow-left"></i>
+            <span>返回绘本管理</span>
+        </a>
+    </div>
+
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+            <div class="text-sm text-gray-500">待处理绘本</div>
+            <div class="text-3xl font-bold text-gray-800 mt-2" id="stat-pending">0</div>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+            <div class="text-sm text-gray-500">已完成</div>
+            <div class="text-3xl font-bold text-green-600 mt-2" id="stat-success">0</div>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+            <div class="text-sm text-gray-500">失败</div>
+            <div class="text-3xl font-bold text-red-500 mt-2" id="stat-failed">0</div>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+            <div class="text-sm text-gray-500">总任务数</div>
+            <div class="text-3xl font-bold text-blue-600 mt-2" id="stat-total">0</div>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="p-5 border-b border-gray-100 bg-gray-50 space-y-4">
+            <div class="flex flex-wrap items-center gap-3">
+                <select id="batch-category" onchange="loadCandidates()"
+                    class="px-4 py-2 border border-gray-200 rounded-lg outline-none focus:border-indigo-500 bg-white text-sm">
+                    <option value="">全部分类</option>
+                </select>
+
+                <select id="batch-mode" onchange="loadCandidates()"
+                    class="px-4 py-2 border border-gray-200 rounded-lg outline-none focus:border-indigo-500 bg-white text-sm">
+                    <option value="missing">仅缺少词汇分析</option>
+                    <option value="all">全部重新分析</option>
+                </select>
+
+                <button onclick="loadCandidates()"
+                    class="px-4 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-lg text-sm font-medium">
+                    <i class="fas fa-rotate-right mr-1"></i>刷新列表
+                </button>
+
+                <button id="btn-start" onclick="startBatch()"
+                    class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium">
+                    <i class="fas fa-brain mr-1"></i>开始批量分析
+                </button>
+
+                <button id="btn-stop" onclick="stopBatch()"
+                    class="hidden px-5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium animate-pulse">
+                    <i class="fas fa-stop mr-1"></i>停止
+                </button>
+            </div>
+
+            <div id="batch-progress" class="hidden">
+                <div class="flex justify-between text-sm mb-2 font-medium">
+                    <span id="batch-progress-text" class="text-indigo-600">准备中...</span>
+                    <span id="batch-progress-count" class="text-gray-500">0/0</span>
+                </div>
+                <div class="h-2 bg-gray-100 rounded-full overflow-hidden">
+                    <div id="batch-progress-bar" class="h-full bg-indigo-600 transition-all duration-300" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-0">
+            <div class="p-5 border-r border-gray-100 min-h-[480px]">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="font-bold text-gray-800">待处理绘本</h3>
+                    <span class="text-xs text-gray-400" id="queue-hint">加载中...</span>
+                </div>
+                <div id="candidate-list" class="space-y-3">
+                    <div class="text-center py-16 text-gray-400">
+                        <i class="fas fa-spinner fa-spin text-2xl mb-3"></i>
+                        <p>正在加载...</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-5 bg-gray-50/60 min-h-[480px]">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="font-bold text-gray-800">失败列表</h3>
+                    <button onclick="retryFailed()"
+                        class="px-3 py-1.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-lg text-xs font-medium">
+                        重试失败项
+                    </button>
+                </div>
+                <div id="failed-list" class="space-y-3">
+                    <div class="text-center py-16 text-gray-400 text-sm">暂无失败项</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let queue = [], failedItems = [], isRunning = false;
+let progress = { total: 0, success: 0, failed: 0 };
+
+function escapeHtml(v = '') {
+    return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+async function loadCategories() {
+    try {
+        const res = await fetch('/picture-books/categories/api/list');
+        const r = await res.json();
+        if (!r.success) return;
+        const sel = document.getElementById('batch-category');
+        r.data.forEach(c => { if (c.is_active) sel.innerHTML += `<option value="${c.id}">${c.icon||''} ${c.name}</option>`; });
+    } catch(e) { console.error(e); }
+}
+
+async function loadCandidates() {
+    const catId = document.getElementById('batch-category').value;
+    const mode = document.getElementById('batch-mode').value;
+    const list = document.getElementById('candidate-list');
+    list.innerHTML = '<div class="text-center py-16 text-gray-400"><i class="fas fa-spinner fa-spin text-2xl mb-3"></i><p>正在加载...</p></div>';
+
+    try {
+        const res = await fetch(`/picture-books/api/batch/vocab-candidates?category_id=${encodeURIComponent(catId)}&mode=${encodeURIComponent(mode)}`);
+        const r = await res.json();
+        if (!r.success) throw new Error(r.message || '加载失败');
+
+        queue = r.data || [];
+        failedItems = [];
+        progress = { total: queue.length, success: 0, failed: 0 };
+        renderQueue(); renderFailed(); updateStats();
+    } catch(e) {
+        list.innerHTML = `<div class="text-center py-16 text-red-400">${escapeHtml(e.message)}</div>`;
+    }
+}
+
+function renderQueue() {
+    const list = document.getElementById('candidate-list');
+    document.getElementById('queue-hint').textContent = `剩余 ${queue.length} 本`;
+    if (!queue.length) {
+        list.innerHTML = '<div class="text-center py-16 text-gray-400 bg-white rounded-xl border border-dashed border-gray-200"><i class="fas fa-circle-check text-3xl mb-3 text-green-500"></i><p>当前没有待处理绘本</p></div>';
+        return;
+    }
+    list.innerHTML = queue.map((item, i) => `
+        <div class="rounded-xl border border-gray-100 bg-white p-4 flex items-center gap-4" id="vq-${item.id}">
+            <div class="w-16 h-20 rounded-lg bg-gray-100 overflow-hidden shrink-0 flex items-center justify-center text-gray-300">
+                ${item.cover_url ? `<img src="${item.cover_url}" class="w-full h-full object-cover">` : '<i class="fas fa-book-open text-xl"></i>'}
+            </div>
+            <div class="flex-1 min-w-0">
+                <div class="font-bold text-gray-800 truncate">${escapeHtml(item.title)}</div>
+                <div class="text-sm text-gray-500 truncate">${escapeHtml(item.title_en || '')}</div>
+                <div class="text-xs text-gray-400 mt-1">
+                    ${escapeHtml(item.category_name || '未分类')} · 共 ${item.total_text_pages||0} 页文本 · 缺少 ${item.missing_vocab_pages||0} 页词汇
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+function renderFailed() {
+    const list = document.getElementById('failed-list');
+    if (!failedItems.length) { list.innerHTML = '<div class="text-center py-16 text-gray-400 text-sm">暂无失败项</div>'; return; }
+    list.innerHTML = failedItems.map(item => `
+        <div class="rounded-xl border border-red-100 bg-white p-4">
+            <div class="font-bold text-gray-800 truncate">${escapeHtml(item.title)}</div>
+            <div class="text-xs text-red-500 mt-1">${escapeHtml(item.error)}</div>
+        </div>
+    `).join('');
+}
+
+function updateStats() {
+    document.getElementById('stat-total').textContent = progress.total;
+    document.getElementById('stat-success').textContent = progress.success;
+    document.getElementById('stat-failed').textContent = progress.failed;
+    document.getElementById('stat-pending').textContent = queue.length;
+}
+
+function updateProgressUI(text) {
+    document.getElementById('batch-progress-text').textContent = text;
+    const done = progress.success + progress.failed;
+    document.getElementById('batch-progress-count').textContent = `${done}/${progress.total}`;
+    document.getElementById('batch-progress-bar').style.width = `${(done / Math.max(progress.total, 1)) * 100}%`;
+}
+
+async function startBatch() {
+    if (!queue.length) { showToast('没有待处理绘本', 'error'); return; }
+    isRunning = true;
+    document.getElementById('btn-start').classList.add('hidden');
+    document.getElementById('btn-stop').classList.remove('hidden');
+    document.getElementById('batch-progress').classList.remove('hidden');
+
+    while (isRunning && queue.length) {
+        const item = queue[0];
+        updateProgressUI(`正在分析：${item.title}`);
+
+        try {
+            const mode = document.getElementById('batch-mode').value;
+            const res = await fetch(`/picture-books/api/${item.id}/analyze-vocab`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode })
+            });
+            const data = await res.json();
+            if (!data.success) throw new Error(data.message || '分析失败');
+            if (data.failed_pages && data.failed_pages.length > 0) {
+                const nums = data.failed_pages.map(p => p.page_number).join(', ');
+                throw new Error(`${data.analyzed}/${data.total} 页成功，第 ${nums} 页失败`);
+            }
+            progress.success++;
+        } catch(e) {
+            progress.failed++;
+            failedItems.push({ ...item, error: e.message || '分析失败' });
+        }
+
+        queue.shift();
+        renderQueue(); renderFailed(); updateStats();
+        await new Promise(r => setTimeout(r, 800));
+    }
+
+    isRunning = false;
+    document.getElementById('btn-start').classList.remove('hidden');
+    document.getElementById('btn-stop').classList.add('hidden');
+    updateProgressUI(queue.length === 0 ? '本轮已完成' : '已停止');
+}
+
+function stopBatch() { isRunning = false; showToast('已停止'); }
+
+function retryFailed() {
+    if (!failedItems.length || isRunning) return;
+    queue = [...failedItems]; failedItems = [];
+    progress = { total: queue.length, success: 0, failed: 0 };
+    renderQueue(); renderFailed(); updateStats();
+    showToast(`已载入 ${queue.length} 本，可重新开始`);
+}
+
+document.addEventListener('DOMContentLoaded', async () => { await loadCategories(); await loadCandidates(); });
+</script>

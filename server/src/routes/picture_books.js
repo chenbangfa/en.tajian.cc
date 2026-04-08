@@ -3,6 +3,7 @@ const { query } = require('../config/database');
 const { authMiddleware, optionalAuth } = require('../middlewares/auth');
 const voiceService = require('../services/voice.service');
 const rewardService = require('../services/reward.service');
+const { ensurePictureBookPromptColumns } = require('../services/picturebookPrompt.service');
 
 const router = express.Router();
 
@@ -26,6 +27,9 @@ const router = express.Router();
             title VARCHAR(200) NOT NULL COMMENT '绘本标题',
             title_en VARCHAR(200) DEFAULT NULL COMMENT '英文标题',
             cover_url VARCHAR(500) DEFAULT NULL COMMENT '封面图URL',
+            cover_prompt TEXT DEFAULT NULL COMMENT '封面图AI提示词',
+            cover_prompt_source_text TEXT DEFAULT NULL COMMENT '封面提示词对应的整本内容快照',
+            cover_prompt_mode VARCHAR(20) DEFAULT 'auto' COMMENT '封面提示词模式 auto/manual',
             description TEXT DEFAULT NULL COMMENT '简介',
             category_id INT DEFAULT 0 COMMENT '分类ID',
             difficulty_level TINYINT DEFAULT 1 COMMENT '难度等级 1-5',
@@ -47,6 +51,9 @@ const router = express.Router();
             book_id INT NOT NULL COMMENT '绘本ID',
             page_number INT NOT NULL COMMENT '页码',
             image_url VARCHAR(500) DEFAULT NULL COMMENT '页面插图URL',
+            image_prompt TEXT DEFAULT NULL COMMENT '页面插图AI提示词',
+            image_prompt_source_text TEXT DEFAULT NULL COMMENT '图片提示词对应的英文正文快照',
+            image_prompt_mode VARCHAR(20) DEFAULT 'auto' COMMENT '页面图片提示词模式 auto/manual',
             text_en TEXT DEFAULT NULL COMMENT '英文文本',
             text_cn TEXT DEFAULT NULL COMMENT '中文翻译',
             audio_url VARCHAR(500) DEFAULT NULL COMMENT '朗读音频（女声）',
@@ -77,6 +84,8 @@ const router = express.Router();
             KEY idx_page (page_id),
             KEY idx_book (book_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='绘本页面点读热点'`);
+
+        await ensurePictureBookPromptColumns(query);
 
         await query(`CREATE TABLE IF NOT EXISTS picture_book_progress (
             id INT NOT NULL AUTO_INCREMENT,
@@ -141,7 +150,7 @@ router.get('/:id', async (req, res) => {
         if (!book) return res.status(404).json({ success: false, message: '绘本不存在' });
 
         const pages = await query(
-            'SELECT id, page_number, image_url, text_en, text_cn, audio_url, audio_url_male FROM picture_book_pages WHERE book_id = ? ORDER BY page_number ASC',
+            'SELECT id, page_number, image_url, text_en, text_cn, audio_url, audio_url_male, words_data FROM picture_book_pages WHERE book_id = ? ORDER BY page_number ASC',
             [bookId]
         );
 
@@ -156,10 +165,17 @@ router.get('/:id', async (req, res) => {
             if (!hotspotMap[h.page_id]) hotspotMap[h.page_id] = [];
             hotspotMap[h.page_id].push(h);
         }
-        const pagesWithHotspots = pages.map(p => ({
-            ...p,
-            hotspots: hotspotMap[p.id] || []
-        }));
+        const pagesWithHotspots = pages.map(p => {
+            let wordsData = null;
+            if (p.words_data) {
+                try { wordsData = typeof p.words_data === 'string' ? JSON.parse(p.words_data) : p.words_data; } catch (e) {}
+            }
+            return {
+                ...p,
+                words_data: wordsData,
+                hotspots: hotspotMap[p.id] || []
+            };
+        });
 
         // 增加阅读次数
         await query('UPDATE picture_books SET read_count = read_count + 1 WHERE id = ?', [bookId]);
@@ -212,8 +228,8 @@ router.post('/hotspots/:id/tts', authMiddleware, async (req, res) => {
         );
         if (!hotspot) return res.status(404).json({ success: false, message: '热点不存在' });
 
-        // 已有音频直接返回
-        if (hotspot.audio_url_female && hotspot.audio_url_male) {
+        // 已有女声音频直接返回
+        if (hotspot.audio_url_female) {
             return res.json({
                 success: true,
                 data: { audio_url_female: hotspot.audio_url_female, audio_url_male: hotspot.audio_url_male }
@@ -236,23 +252,14 @@ router.post('/hotspots/:id/tts', authMiddleware, async (req, res) => {
             audioMale = audioMale || wordRow.audio_url_male;
         }
 
-        // 缺失的音频用 voiceService 生成
-        const tasks = [];
+        // 缺失的女声音频用 Google 代理生成
         if (!audioFemale) {
-            tasks.push(
-                voiceService.textToSpeech(text, 'female').then(r => {
-                    if (r.success) audioFemale = r.audioUrl;
-                })
-            );
+            const hotspotSpeed = voiceService.getGoogleTtsSpeed('picture_book');
+            const result = await voiceService.googleTextToSpeech(text, 'female', hotspotSpeed);
+            if (result.success) {
+                audioFemale = result.audioUrl;
+            }
         }
-        if (!audioMale) {
-            tasks.push(
-                voiceService.textToSpeech(text, 'male').then(r => {
-                    if (r.success) audioMale = r.audioUrl;
-                })
-            );
-        }
-        if (tasks.length > 0) await Promise.all(tasks);
 
         // 更新数据库
         await query(
