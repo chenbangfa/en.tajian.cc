@@ -1,6 +1,9 @@
 const express = require('express');
+const path = require('path');
+const fs = require('fs');
 const { query } = require('../../src/config/database');
 const aiService = require('../../src/services/ai.service');
+const videoService = require('../../src/services/video.service');
 
 const router = express.Router();
 
@@ -351,6 +354,168 @@ router.put('/api/batch-status', async (req, res) => {
         if (!ids || !ids.length) return res.status(400).json({ success: false, message: '请选择内容' });
         await query(`UPDATE marketing_contents SET status = ? WHERE id IN (${ids.map(() => '?').join(',')})`, [status, ...ids]);
         res.json({ success: true, message: '已更新' });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// ===== 视频任务表 =====
+
+(async () => {
+    try {
+        await query(`CREATE TABLE IF NOT EXISTS marketing_video_jobs (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            word_id INT NOT NULL COMMENT '单词ID',
+            word_text VARCHAR(200) NOT NULL DEFAULT '' COMMENT '单词文本(冗余)',
+            template VARCHAR(50) DEFAULT 'daily_word' COMMENT '视频模板',
+            status ENUM('pending', 'processing', 'done', 'failed') DEFAULT 'pending',
+            progress INT DEFAULT 0 COMMENT '进度0-100',
+            video_url VARCHAR(500) DEFAULT '' COMMENT '视频文件路径',
+            error_message TEXT COMMENT '错误信息',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_status (status),
+            INDEX idx_word (word_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='视频生成任务'`);
+        console.log('[Marketing] video_jobs 表初始化完成');
+    } catch (e) {
+        console.error('[Marketing] video_jobs 建表失败:', e.message);
+    }
+})();
+
+// ===== 视频页面 =====
+
+router.get('/videos', (req, res) => {
+    res.render('marketing/videos', { page: 'marketing-videos', title: '视频工坊', user: req.session.adminUser });
+});
+
+// ===== Video API: 候选单词列表(有完整素材) =====
+
+router.get('/api/video/candidates', async (req, res) => {
+    try {
+        const { keyword, page = 1, page_size = 30 } = req.query;
+        let sql = `SELECT id, word, phonetic, translation, image_url, audio_url_female, audio_url_male
+                    FROM words WHERE image_url IS NOT NULL AND image_url != ''
+                    AND (audio_url_female IS NOT NULL AND audio_url_female != '' OR audio_url_male IS NOT NULL AND audio_url_male != '')`;
+        const params = [];
+
+        if (keyword) {
+            sql += ' AND (word LIKE ? OR translation LIKE ?)';
+            params.push(`%${keyword}%`, `%${keyword}%`);
+        }
+
+        // 总数
+        const countSql = sql.replace(/SELECT .+ FROM/, 'SELECT COUNT(*) as total FROM');
+        const [{ total }] = await query(countSql, params);
+
+        sql += ' ORDER BY id DESC LIMIT ? OFFSET ?';
+        const limit = parseInt(page_size);
+        const offset = (parseInt(page) - 1) * limit;
+        params.push(limit, offset);
+
+        const list = await query(sql, params);
+        res.json({ success: true, data: { list, total, page: parseInt(page), page_size: limit } });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// ===== Video API: 生成视频 =====
+
+router.post('/api/video/generate', async (req, res) => {
+    try {
+        const { word_id } = req.body;
+        if (!word_id) return res.status(400).json({ success: false, message: '请选择单词' });
+
+        // 检查单词存在
+        const [word] = await query('SELECT id, word, image_url, audio_url_female FROM words WHERE id = ?', [word_id]);
+        if (!word) return res.status(404).json({ success: false, message: '单词不存在' });
+
+        // 创建任务
+        const result = await query(
+            'INSERT INTO marketing_video_jobs (word_id, word_text, template, status) VALUES (?, ?, ?, ?)',
+            [word_id, word.word, 'daily_word', 'pending']
+        );
+
+        const jobId = result.insertId;
+        res.json({ success: true, data: { job_id: jobId }, message: '任务已创建' });
+
+        // 后台启动处理
+        setImmediate(() => videoService.processNextJob());
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// ===== Video API: 批量生成 =====
+
+router.post('/api/video/batch', async (req, res) => {
+    try {
+        const { word_ids } = req.body;
+        if (!word_ids || !word_ids.length) return res.status(400).json({ success: false, message: '请选择单词' });
+
+        const jobIds = [];
+        for (const wid of word_ids) {
+            const [word] = await query('SELECT id, word FROM words WHERE id = ?', [wid]);
+            if (!word) continue;
+            const result = await query(
+                'INSERT INTO marketing_video_jobs (word_id, word_text, template, status) VALUES (?, ?, ?, ?)',
+                [wid, word.word, 'daily_word', 'pending']
+            );
+            jobIds.push(result.insertId);
+        }
+
+        res.json({ success: true, data: { job_ids: jobIds }, message: `已创建 ${jobIds.length} 个任务` });
+
+        // 启动队列处理
+        setImmediate(() => videoService.processNextJob());
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// ===== Video API: 任务列表 =====
+
+router.get('/api/video/jobs', async (req, res) => {
+    try {
+        const { status, page = 1, page_size = 20 } = req.query;
+        let sql = 'SELECT * FROM marketing_video_jobs WHERE 1=1';
+        const params = [];
+
+        if (status) { sql += ' AND status = ?'; params.push(status); }
+
+        const countSql = sql.replace('SELECT *', 'SELECT COUNT(*) as total');
+        const [{ total }] = await query(countSql, params);
+
+        sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+        const limit = parseInt(page_size);
+        const offset = (parseInt(page) - 1) * limit;
+        params.push(limit, offset);
+
+        const list = await query(sql, params);
+        res.json({ success: true, data: { list, total, page: parseInt(page), page_size: limit } });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// ===== Video API: 删除任务 =====
+
+router.delete('/api/video/job/:id', async (req, res) => {
+    try {
+        const [job] = await query('SELECT * FROM marketing_video_jobs WHERE id = ?', [req.params.id]);
+        if (!job) return res.status(404).json({ success: false, message: '任务不存在' });
+
+        // 删除视频文件
+        if (job.video_url && job.video_url.startsWith('/uploads/')) {
+            const filePath = path.join(__dirname, '../..', job.video_url);
+            if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+            }
+        }
+
+        await query('DELETE FROM marketing_video_jobs WHERE id = ?', [req.params.id]);
+        res.json({ success: true, message: '已删除' });
     } catch (e) {
         res.status(500).json({ success: false, message: e.message });
     }
