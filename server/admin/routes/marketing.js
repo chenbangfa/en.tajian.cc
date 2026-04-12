@@ -378,6 +378,8 @@ router.put('/api/batch-status', async (req, res) => {
             INDEX idx_word (word_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='视频生成任务'`);
         console.log('[Marketing] video_jobs 表初始化完成');
+        // words 表新增例句图片字段
+        await query(`ALTER TABLE words ADD COLUMN example_image_url VARCHAR(500) DEFAULT NULL COMMENT '例句配图URL' AFTER example_translation`).catch(() => {});
     } catch (e) {
         console.error('[Marketing] video_jobs 建表失败:', e.message);
     }

@@ -1,4 +1,4 @@
-const { spawn } = require('child_process');
+const { spawn, execFileSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -9,17 +9,16 @@ const { query } = require('../config/database');
 const SERVER_ROOT = path.join(__dirname, '../..');
 const OUTPUT_DIR = path.join(SERVER_ROOT, 'uploads/marketing/videos');
 
-// 视频尺寸
 const W = 1080;
 const H = 1920;
+const GAP = 1.5; // 段间静音间隔（秒）
 
-// 自动检测可用的 H.264 编码器
+// 检测 H.264 编码器
 let H264_ENCODER = 'libx264';
-const { execFileSync } = require('child_process');
 try {
-    const encoders = execFileSync('ffmpeg', ['-encoders'], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
-    if (encoders.includes('libx264')) H264_ENCODER = 'libx264';
-    else if (encoders.includes('libopenh264')) H264_ENCODER = 'libopenh264';
+    const enc = execFileSync('ffmpeg', ['-encoders'], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+    if (enc.includes('libx264')) H264_ENCODER = 'libx264';
+    else if (enc.includes('libopenh264')) H264_ENCODER = 'libopenh264';
     console.log(`[Video] H.264 编码器: ${H264_ENCODER}`);
 } catch (e) {
     console.warn('[Video] FFmpeg 编码器检测失败');
@@ -33,7 +32,7 @@ class VideoService {
         fs.mkdirSync(OUTPUT_DIR, { recursive: true });
     }
 
-    // ==================== 公共方法 ====================
+    // ==================== 主流程 ====================
 
     async generateDailyWord(wordId, jobId) {
         const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'video-'));
@@ -44,87 +43,86 @@ class VideoService {
             const [word] = await query('SELECT * FROM words WHERE id = ?', [wordId]);
             if (!word) throw new Error(`单词 ID ${wordId} 不存在`);
 
-            // 解析素材
-            const assets = await this._resolveWordAssets(word, tempDir);
+            // 1. 解析素材
+            const a = await this._resolveWordAssets(word, tempDir);
             await this._updateJob(jobId, { progress: 10 });
 
-            // 用 sharp 生成每一帧的静态图片（所有文字都在图片上）
+            // 2. 获取各音频时长
+            const durFemale = a.audioFemale ? await this._getAudioDuration(a.audioFemale) : 0;
+            const durMale = a.audioMale ? await this._getAudioDuration(a.audioMale) : 0;
+            const durExFemale = a.exampleAudioFemale ? await this._getAudioDuration(a.exampleAudioFemale) : 0;
+            const durExMale = a.exampleAudioMale ? await this._getAudioDuration(a.exampleAudioMale) : 0;
+            await this._updateJob(jobId, { progress: 15 });
+
+            // 3. 渲染所有帧图片
             const frames = {};
 
-            frames.title = path.join(tempDir, 'frame_title.png');
-            await this._renderTitleFrame(frames.title, word.word);
-            await this._updateJob(jobId, { progress: 20 });
+            // 开场帧：物体图片 + 提问
+            frames.intro = path.join(tempDir, 'f_intro.png');
+            await this._renderIntroFrame(frames.intro, a.image);
 
-            frames.wordFemale = path.join(tempDir, 'frame_word_female.png');
-            await this._renderWordFrame(frames.wordFemale, assets.image, word, false);
+            // 单词帧：物体图片 + 单词 + 音标
+            frames.word = path.join(tempDir, 'f_word.png');
+            await this._renderWordFrame(frames.word, a.image, word);
+
+            // 单词+翻译帧：物体图片 + 单词 + 音标 + 中文
+            frames.wordTrans = path.join(tempDir, 'f_word_trans.png');
+            await this._renderWordFrame(frames.wordTrans, a.image, word, true);
+
+            // 例句帧：例句图片(或物体图片) + 例句
+            frames.example = path.join(tempDir, 'f_example.png');
+            const exImage = a.exampleImage || a.image;
+            await this._renderExampleFrame(frames.example, exImage, word);
+
+            // Your turn 帧
+            frames.yourTurn = path.join(tempDir, 'f_yourturn.png');
+            await this._renderYourTurnFrame(frames.yourTurn, a.image);
+
             await this._updateJob(jobId, { progress: 30 });
 
-            frames.wordMale = path.join(tempDir, 'frame_word_male.png');
-            await this._renderWordFrame(frames.wordMale, assets.image, word, true);
-            await this._updateJob(jobId, { progress: 40 });
-
-            frames.example = path.join(tempDir, 'frame_example.png');
-            await this._renderExampleFrame(frames.example, word);
-            await this._updateJob(jobId, { progress: 45 });
-
-            frames.followMe = path.join(tempDir, 'frame_follow.png');
-            await this._renderFollowMeFrame(frames.followMe);
-            await this._updateJob(jobId, { progress: 50 });
-
-            frames.endCard = path.join(tempDir, 'frame_end.png');
-            await this._renderEndCardFrame(frames.endCard);
-            await this._updateJob(jobId, { progress: 55 });
-
-            // 生成视频段（FFmpeg 只做 图片+音频→mp4，无需任何滤镜）
+            // 4. 生成视频段（时长由音频驱动）
             const segDir = path.join(tempDir, 'seg');
             fs.mkdirSync(segDir);
             const segments = [];
+            let segIdx = 0;
 
-            // Seg1: 标题 3s 静音
-            const seg1 = path.join(segDir, 's1.mp4');
-            await this._imgToVideo(frames.title, null, 3, seg1);
-            segments.push(seg1);
-            await this._updateJob(jobId, { progress: 60 });
+            const addSeg = async (framePath, audioPath, dur, progress) => {
+                const out = path.join(segDir, `s${segIdx++}.mp4`);
+                await this._imgToVideo(framePath, audioPath, dur, out);
+                segments.push(out);
+                await this._updateJob(jobId, { progress });
+            };
 
-            // Seg2: 单词+女声×2  5s
-            const seg2 = path.join(segDir, 's2.mp4');
-            let femaleAudio = assets.audioFemale;
-            if (femaleAudio) {
-                const doubled = path.join(tempDir, 'female_x2.wav');
-                await this._concatAudio([femaleAudio, femaleAudio], doubled);
-                femaleAudio = doubled;
+            // Seg: 开场 — 图片 + "Do you know..." (2.5s)
+            await addSeg(frames.intro, null, 2.5, 35);
+
+            // Seg: 单词 + 女声发音
+            if (a.audioFemale) {
+                await addSeg(frames.word, a.audioFemale, durFemale + GAP, 45);
             }
-            await this._imgToVideo(frames.wordFemale, femaleAudio, 5, seg2);
-            segments.push(seg2);
-            await this._updateJob(jobId, { progress: 70 });
 
-            // Seg3: 单词+翻译+男声 5s
-            const seg3 = path.join(segDir, 's3.mp4');
-            await this._imgToVideo(frames.wordMale, assets.audioMale, 5, seg3);
-            segments.push(seg3);
-            await this._updateJob(jobId, { progress: 75 });
-
-            // Seg4: 例句 7s（如果有例句）
-            if (word.example_sentence) {
-                const seg4 = path.join(segDir, 's4.mp4');
-                await this._imgToVideo(frames.example, assets.exampleAudio, 7, seg4);
-                segments.push(seg4);
+            // Seg: 单词+翻译 + 男声发音
+            if (a.audioMale) {
+                await addSeg(frames.wordTrans, a.audioMale, durMale + GAP, 55);
             }
-            await this._updateJob(jobId, { progress: 80 });
 
-            // Seg5: Follow me 5s
-            const seg5 = path.join(segDir, 's5.mp4');
-            await this._imgToVideo(frames.followMe, null, 5, seg5);
-            segments.push(seg5);
-            await this._updateJob(jobId, { progress: 85 });
+            // Seg: 例句 + 女声
+            if (word.example_sentence && a.exampleAudioFemale) {
+                await addSeg(frames.example, a.exampleAudioFemale, durExFemale + GAP, 65);
+            }
 
-            // Seg6: 结尾 3s
-            const seg6 = path.join(segDir, 's6.mp4');
-            await this._imgToVideo(frames.endCard, null, 3, seg6);
-            segments.push(seg6);
-            await this._updateJob(jobId, { progress: 90 });
+            // Seg: 例句 + 男声
+            if (word.example_sentence && a.exampleAudioMale) {
+                await addSeg(frames.example, a.exampleAudioMale, durExMale + GAP, 75);
+            } else if (word.example_sentence && !a.exampleAudioFemale && !a.exampleAudioMale) {
+                // 没有例句音频，静音展示 3 秒
+                await addSeg(frames.example, null, 3, 75);
+            }
 
-            // Concat
+            // Seg: Your turn! (2s)
+            await addSeg(frames.yourTurn, null, 2, 85);
+
+            // 5. Concat
             const outputName = `daily_word_${word.word.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}.mp4`;
             const outputPath = path.join(OUTPUT_DIR, outputName);
             await this._concatVideos(segments, outputPath, tempDir);
@@ -151,148 +149,123 @@ class VideoService {
             ['pending']
         );
         if (!job) return;
-
         isProcessing = true;
-        try {
-            await this.generateDailyWord(job.word_id, job.id);
-        } catch (e) { /* logged */ }
-        finally {
-            isProcessing = false;
-            setImmediate(() => this.processNextJob());
-        }
+        try { await this.generateDailyWord(job.word_id, job.id); } catch (e) { /* logged */ }
+        finally { isProcessing = false; setImmediate(() => this.processNextJob()); }
     }
 
-    // ==================== 帧渲染（sharp SVG，所有文字在这里） ====================
+    // ==================== 帧渲染 ====================
 
-    /** 标题帧：大字单词 + "Can you say this?" */
-    async _renderTitleFrame(outputPath, wordText) {
-        const esc = this._svgEsc;
-        const svg = `<svg width="${W}" height="${H}">
-            <defs><linearGradient id="bg" x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stop-color="#1a1a2e"/>
-                <stop offset="100%" stop-color="#16213e"/>
-            </linearGradient></defs>
-            <rect width="${W}" height="${H}" fill="url(#bg)"/>
-            <text x="${W / 2}" y="${H / 2 - 40}" text-anchor="middle" font-size="120" font-weight="bold" fill="white" font-family="sans-serif">${esc(wordText)}</text>
-            <text x="${W / 2}" y="${H / 2 + 80}" text-anchor="middle" font-size="48" fill="#FFD700" font-family="sans-serif">Can you say this?</text>
-        </svg>`;
-        await sharp(Buffer.from(svg)).png().toFile(outputPath);
+    /** 渐变背景 SVG */
+    _bgSvg(topColor = '#1a1a2e', bottomColor = '#16213e') {
+        return `<defs><linearGradient id="bg" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stop-color="${topColor}"/>
+            <stop offset="100%" stop-color="${bottomColor}"/>
+        </linearGradient></defs>
+        <rect width="${W}" height="${H}" fill="url(#bg)"/>`;
     }
 
-    /** 单词帧：背景+图片+单词+音标（+可选翻译） */
-    async _renderWordFrame(outputPath, imagePath, word, showTranslation) {
-        const esc = this._svgEsc;
-        // 先生成渐变背景
-        const bgSvg = `<svg width="${W}" height="${H}">
-            <defs><linearGradient id="bg" x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stop-color="#1a1a2e"/>
-                <stop offset="100%" stop-color="#16213e"/>
-            </linearGradient></defs>
-            <rect width="${W}" height="${H}" fill="url(#bg)"/>
-        </svg>`;
+    /** 把图片合成到背景上（居中偏上） */
+    async _composeBgWithImage(imagePath, maxSize = 700, topOffset = -200) {
+        const bgSvg = `<svg width="${W}" height="${H}">${this._bgSvg()}</svg>`;
         let base = await sharp(Buffer.from(bgSvg)).png().toBuffer();
 
-        // 合成单词图片
         if (imagePath && fs.existsSync(imagePath)) {
             const img = await sharp(imagePath)
-                .resize(700, 700, { fit: 'inside', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+                .resize(maxSize, maxSize, { fit: 'inside', background: { r: 0, g: 0, b: 0, alpha: 0 } })
                 .png().toBuffer();
             const meta = await sharp(img).metadata();
             base = await sharp(base)
-                .composite([{ input: img, left: Math.round((W - meta.width) / 2), top: Math.round(H / 2 - meta.height / 2 - 250) }])
+                .composite([{
+                    input: img,
+                    left: Math.round((W - meta.width) / 2),
+                    top: Math.round(H / 2 - meta.height / 2 + topOffset)
+                }])
                 .png().toBuffer();
         }
+        return base;
+    }
 
-        // 文字层
-        const textParts = [];
-        textParts.push(`<text x="${W / 2}" y="1380" text-anchor="middle" font-size="90" font-weight="bold" fill="white" font-family="sans-serif">${esc(word.word)}</text>`);
+    /** 生成带文字层的帧 */
+    async _composeTextOnBase(base, textSvgContent) {
+        const textSvg = `<svg width="${W}" height="${H}">${textSvgContent}</svg>`;
+        const textLayer = await sharp(Buffer.from(textSvg)).png().toBuffer();
+        return sharp(base).composite([{ input: textLayer, left: 0, top: 0 }]).png().toBuffer();
+    }
+
+    /** 开场帧：物体图片 + 提问文字 */
+    async _renderIntroFrame(outputPath, imagePath) {
+        const e = this._svgEsc;
+        const base = await this._composeBgWithImage(imagePath);
+        const text = `
+            <text x="${W / 2}" y="1400" text-anchor="middle" font-size="46" fill="#FFD700" font-family="sans-serif">Do you know how to say</text>
+            <text x="${W / 2}" y="1470" text-anchor="middle" font-size="46" fill="#FFD700" font-family="sans-serif">this in English?</text>
+        `;
+        const result = await this._composeTextOnBase(base, text);
+        await sharp(result).toFile(outputPath);
+    }
+
+    /** 单词帧：物体图片 + 单词 + 音标 (+ 可选翻译) */
+    async _renderWordFrame(outputPath, imagePath, word, showTranslation = false) {
+        const e = this._svgEsc;
+        const base = await this._composeBgWithImage(imagePath);
+        const parts = [];
+        parts.push(`<text x="${W / 2}" y="1380" text-anchor="middle" font-size="88" font-weight="bold" fill="white" font-family="sans-serif">${e(word.word)}</text>`);
         if (word.phonetic) {
-            textParts.push(`<text x="${W / 2}" y="1470" text-anchor="middle" font-size="42" fill="#BBBBBB" font-family="sans-serif">${esc(word.phonetic)}</text>`);
+            parts.push(`<text x="${W / 2}" y="1460" text-anchor="middle" font-size="42" fill="#BBBBBB" font-family="sans-serif">${e(word.phonetic)}</text>`);
         }
         if (showTranslation && word.translation) {
-            textParts.push(`<text x="${W / 2}" y="1560" text-anchor="middle" font-size="60" fill="#FFD700" font-family="sans-serif">${esc(word.translation)}</text>`);
+            parts.push(`<text x="${W / 2}" y="1550" text-anchor="middle" font-size="58" fill="#FFD700" font-family="sans-serif">${e(word.translation)}</text>`);
         }
-
-        const textSvg = `<svg width="${W}" height="${H}">${textParts.join('')}</svg>`;
-        const textLayer = await sharp(Buffer.from(textSvg)).png().toBuffer();
-
-        await sharp(base)
-            .composite([{ input: textLayer, left: 0, top: 0 }])
-            .png().toFile(outputPath);
+        const result = await this._composeTextOnBase(base, parts.join(''));
+        await sharp(result).toFile(outputPath);
     }
 
-    /** 例句帧 */
-    async _renderExampleFrame(outputPath, word) {
-        const esc = this._svgEsc;
+    /** 例句帧：例句图片 + 例句文本 */
+    async _renderExampleFrame(outputPath, imagePath, word) {
+        const e = this._svgEsc;
+        const base = await this._composeBgWithImage(imagePath);
+
         const sentence = word.example_sentence || '';
         const translation = word.example_translation || '';
+        const sentenceLines = this._wrapLines(sentence, 28);
+        const transLines = this._wrapLines(translation, 16);
 
-        // 自动换行
-        const sentenceLines = this._wrapLines(sentence, 30);
-        const transLines = this._wrapLines(translation, 18);
-
-        let sentenceSvg = '';
-        sentenceLines.forEach((line, i) => {
-            sentenceSvg += `<text x="${W / 2}" y="${820 + i * 70}" text-anchor="middle" font-size="50" fill="white" font-family="sans-serif">${esc(line)}</text>`;
+        let svgParts = '';
+        let y = 1360;
+        sentenceLines.forEach(line => {
+            svgParts += `<text x="${W / 2}" y="${y}" text-anchor="middle" font-size="46" fill="white" font-family="sans-serif">${e(line)}</text>`;
+            y += 64;
+        });
+        y += 10;
+        transLines.forEach(line => {
+            svgParts += `<text x="${W / 2}" y="${y}" text-anchor="middle" font-size="38" fill="#BBBBBB" font-family="sans-serif">${e(line)}</text>`;
+            y += 54;
         });
 
-        let transSvg = '';
-        const transStartY = 820 + sentenceLines.length * 70 + 40;
-        transLines.forEach((line, i) => {
-            transSvg += `<text x="${W / 2}" y="${transStartY + i * 60}" text-anchor="middle" font-size="40" fill="#BBBBBB" font-family="sans-serif">${esc(line)}</text>`;
-        });
-
-        const svg = `<svg width="${W}" height="${H}">
-            <defs><linearGradient id="bg" x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stop-color="#1a1a2e"/>
-                <stop offset="100%" stop-color="#16213e"/>
-            </linearGradient></defs>
-            <rect width="${W}" height="${H}" fill="url(#bg)"/>
-            <text x="${W / 2}" y="720" text-anchor="middle" font-size="44" fill="#FFD700" font-family="sans-serif">Example</text>
-            ${sentenceSvg}
-            ${transSvg}
-        </svg>`;
-        await sharp(Buffer.from(svg)).png().toFile(outputPath);
+        const result = await this._composeTextOnBase(base, svgParts);
+        await sharp(result).toFile(outputPath);
     }
 
-    /** Follow Me 帧 */
-    async _renderFollowMeFrame(outputPath) {
-        const svg = `<svg width="${W}" height="${H}">
-            <defs><linearGradient id="bg" x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stop-color="#1a1a2e"/>
-                <stop offset="100%" stop-color="#16213e"/>
-            </linearGradient></defs>
-            <rect width="${W}" height="${H}" fill="url(#bg)"/>
-            <text x="${W / 2}" y="${H / 2 - 60}" text-anchor="middle" font-size="80" font-weight="bold" fill="#FFD700" font-family="sans-serif">Your turn!</text>
-            <text x="${W / 2}" y="${H / 2 + 40}" text-anchor="middle" font-size="40" fill="#BBBBBB" font-family="sans-serif">Follow me and say it</text>
-        </svg>`;
-        await sharp(Buffer.from(svg)).png().toFile(outputPath);
+    /** Your turn 帧 */
+    async _renderYourTurnFrame(outputPath, imagePath) {
+        const base = await this._composeBgWithImage(imagePath);
+        const text = `
+            <text x="${W / 2}" y="1400" text-anchor="middle" font-size="76" font-weight="bold" fill="#FFD700" font-family="sans-serif">Your turn!</text>
+            <text x="${W / 2}" y="1480" text-anchor="middle" font-size="38" fill="#BBBBBB" font-family="sans-serif">Try to say it yourself</text>
+        `;
+        const result = await this._composeTextOnBase(base, text);
+        await sharp(result).toFile(outputPath);
     }
 
-    /** 结尾品牌帧 */
-    async _renderEndCardFrame(outputPath) {
-        const svg = `<svg width="${W}" height="${H}">
-            <defs><linearGradient id="bg" x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stop-color="#0f3460"/>
-                <stop offset="100%" stop-color="#16213e"/>
-            </linearGradient></defs>
-            <rect width="${W}" height="${H}" fill="url(#bg)"/>
-            <text x="${W / 2}" y="${H / 2 - 40}" text-anchor="middle" font-size="56" fill="white" font-family="sans-serif">Learn English with Fun!</text>
-            <text x="${W / 2}" y="${H / 2 + 40}" text-anchor="middle" font-size="40" fill="#FFD700" font-family="sans-serif">Follow for more</text>
-        </svg>`;
-        await sharp(Buffer.from(svg)).png().toFile(outputPath);
-    }
+    // ==================== FFmpeg ====================
 
-    // ==================== FFmpeg（极简，不用任何滤镜） ====================
-
-    /** 静态图片 + 可选音频 → mp4 视频段
-     *  所有段统一输出: 44100Hz stereo AAC，确保 concat 兼容 */
+    /** 静态图片 + 可选音频 → mp4，统一 44100Hz stereo */
     async _imgToVideo(imagePath, audioPath, duration, outputPath) {
-        const hasRealAudio = audioPath && fs.existsSync(audioPath);
+        const hasAudio = audioPath && fs.existsSync(audioPath);
 
-        if (hasRealAudio) {
-            // 有真实音频：重采样到 44100Hz stereo + apad 填充静音到指定时长
-            const args = [
+        if (hasAudio) {
+            await this._runFFmpeg([
                 '-loop', '1', '-i', imagePath,
                 '-i', audioPath,
                 '-filter_complex',
@@ -302,35 +275,17 @@ class VideoService {
                 '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2',
                 '-t', String(duration),
                 '-y', outputPath
-            ];
-            await this._runFFmpeg(args);
+            ]);
         } else {
-            // 无音频：44100Hz stereo 静音
-            const args = [
+            await this._runFFmpeg([
                 '-loop', '1', '-i', imagePath,
                 '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo',
                 '-c:v', H264_ENCODER, '-pix_fmt', 'yuv420p', '-r', '30',
                 '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2',
                 '-t', String(duration),
                 '-y', outputPath
-            ];
-            await this._runFFmpeg(args);
+            ]);
         }
-    }
-
-    /** 拼接多段音频，统一输出 44100Hz stereo */
-    async _concatAudio(audioPaths, outputPath) {
-        const inputs = [];
-        audioPaths.forEach(p => { inputs.push('-i', p); });
-
-        // 先把每段重采样到统一格式，再 concat
-        const resampled = audioPaths.map((_, i) => `[${i}:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo[r${i}]`).join(';');
-        const concatInputs = audioPaths.map((_, i) => `[r${i}]`).join('');
-        await this._runFFmpeg([
-            ...inputs,
-            '-filter_complex', `${resampled};${concatInputs}concat=n=${audioPaths.length}:v=0:a=1[a]`,
-            '-map', '[a]', '-ar', '44100', '-ac', '2', '-y', outputPath
-        ]);
     }
 
     /** 合并视频段 */
@@ -338,6 +293,19 @@ class VideoService {
         const listFile = path.join(tempDir, 'concat.txt');
         fs.writeFileSync(listFile, segPaths.map(p => `file '${p}'`).join('\n'));
         await this._runFFmpeg(['-f', 'concat', '-safe', '0', '-i', listFile, '-c', 'copy', '-y', outputPath]);
+    }
+
+    /** 获取音频文件时长（秒） */
+    async _getAudioDuration(filePath) {
+        try {
+            const out = execFileSync('ffprobe', [
+                '-v', 'error', '-show_entries', 'format=duration',
+                '-of', 'csv=p=0', filePath
+            ], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+            return parseFloat(out.trim()) || 2;
+        } catch (e) {
+            return 2; // 默认 2 秒
+        }
     }
 
     /** 执行 FFmpeg */
@@ -357,16 +325,18 @@ class VideoService {
     // ==================== 素材解析 ====================
 
     async _resolveWordAssets(word, tempDir) {
-        const resolve = async (url, name) => {
+        const r = async (url, name) => {
             if (!url) return null;
             try { return await this._resolveUrl(url, tempDir, name); }
-            catch (e) { console.warn(`[Video] 素材解析失败 (${name}): ${e.message}`); return null; }
+            catch (e) { console.warn(`[Video] 素材 (${name}): ${e.message}`); return null; }
         };
         return {
-            image: await resolve(word.image_url, 'image'),
-            audioFemale: await resolve(word.audio_url_female || word.audio_url, 'audio_female'),
-            audioMale: await resolve(word.audio_url_male, 'audio_male'),
-            exampleAudio: await resolve(word.example_audio_female || word.example_audio_male, 'example_audio')
+            image: await r(word.image_url, 'image'),
+            exampleImage: await r(word.example_image_url, 'example_image'),
+            audioFemale: await r(word.audio_url_female || word.audio_url, 'audio_female'),
+            audioMale: await r(word.audio_url_male, 'audio_male'),
+            exampleAudioFemale: await r(word.example_audio_female, 'ex_audio_f'),
+            exampleAudioMale: await r(word.example_audio_male, 'ex_audio_m'),
         };
     }
 
@@ -389,21 +359,17 @@ class VideoService {
 
     // ==================== 工具 ====================
 
-    /** SVG 文字转义 */
     _svgEsc(text) {
         if (!text) return '';
         return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
     }
 
-    /** 文本按字数换行 */
     _wrapLines(text, max) {
         if (!text) return [];
         if (text.length <= max) return [text];
-        // 英文按空格分词
         const words = text.split(' ');
         if (words.length > 1) {
-            const lines = [];
-            let cur = '';
+            const lines = []; let cur = '';
             for (const w of words) {
                 if (cur.length + w.length + 1 > max && cur) { lines.push(cur); cur = w; }
                 else { cur = cur ? cur + ' ' + w : w; }
@@ -411,7 +377,6 @@ class VideoService {
             if (cur) lines.push(cur);
             return lines;
         }
-        // 中文按字符切
         const lines = [];
         for (let i = 0; i < text.length; i += max) lines.push(text.substring(i, i + max));
         return lines;
