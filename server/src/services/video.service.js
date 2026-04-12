@@ -285,33 +285,32 @@ class VideoService {
 
     // ==================== FFmpeg（极简，不用任何滤镜） ====================
 
-    /** 静态图片 + 可选音频 → mp4 视频段 */
+    /** 静态图片 + 可选音频 → mp4 视频段
+     *  所有段统一输出: 44100Hz stereo AAC，确保 concat 兼容 */
     async _imgToVideo(imagePath, audioPath, duration, outputPath) {
         const hasRealAudio = audioPath && fs.existsSync(audioPath);
 
         if (hasRealAudio) {
-            // 有真实音频：用 amerge 把真实音频 + 静音拼成固定时长的音轨
-            // 这样音频播完后剩余时间是静音，而不是被 -shortest 截断
+            // 有真实音频：重采样到 44100Hz stereo + apad 填充静音到指定时长
             const args = [
                 '-loop', '1', '-i', imagePath,
                 '-i', audioPath,
-                '-f', 'lavfi', '-i', `anullsrc=r=44100:cl=stereo`,
                 '-filter_complex',
-                `[1:a]apad=whole_dur=${duration}[a]`,
+                `[1:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo,apad=whole_dur=${duration}[a]`,
                 '-map', '0:v', '-map', '[a]',
                 '-c:v', H264_ENCODER, '-pix_fmt', 'yuv420p', '-r', '30',
-                '-c:a', 'aac', '-b:a', '128k',
+                '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2',
                 '-t', String(duration),
                 '-y', outputPath
             ];
             await this._runFFmpeg(args);
         } else {
-            // 无音频：纯静音
+            // 无音频：44100Hz stereo 静音
             const args = [
                 '-loop', '1', '-i', imagePath,
                 '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo',
                 '-c:v', H264_ENCODER, '-pix_fmt', 'yuv420p', '-r', '30',
-                '-c:a', 'aac', '-b:a', '128k',
+                '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2',
                 '-t', String(duration),
                 '-y', outputPath
             ];
@@ -319,16 +318,18 @@ class VideoService {
         }
     }
 
-    /** 拼接多段音频 */
+    /** 拼接多段音频，统一输出 44100Hz stereo */
     async _concatAudio(audioPaths, outputPath) {
         const inputs = [];
         audioPaths.forEach(p => { inputs.push('-i', p); });
 
-        const filterParts = audioPaths.map((_, i) => `[${i}:a]`).join('');
+        // 先把每段重采样到统一格式，再 concat
+        const resampled = audioPaths.map((_, i) => `[${i}:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo[r${i}]`).join(';');
+        const concatInputs = audioPaths.map((_, i) => `[r${i}]`).join('');
         await this._runFFmpeg([
             ...inputs,
-            '-filter_complex', `${filterParts}concat=n=${audioPaths.length}:v=0:a=1[a]`,
-            '-map', '[a]', '-y', outputPath
+            '-filter_complex', `${resampled};${concatInputs}concat=n=${audioPaths.length}:v=0:a=1[a]`,
+            '-map', '[a]', '-ar', '44100', '-ac', '2', '-y', outputPath
         ]);
     }
 
