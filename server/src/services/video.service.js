@@ -287,22 +287,36 @@ class VideoService {
 
     /** 静态图片 + 可选音频 → mp4 视频段 */
     async _imgToVideo(imagePath, audioPath, duration, outputPath) {
-        const args = ['-loop', '1', '-i', imagePath];
+        const hasRealAudio = audioPath && fs.existsSync(audioPath);
 
-        if (audioPath && fs.existsSync(audioPath)) {
-            args.push('-i', audioPath);
+        if (hasRealAudio) {
+            // 有真实音频：用 amerge 把真实音频 + 静音拼成固定时长的音轨
+            // 这样音频播完后剩余时间是静音，而不是被 -shortest 截断
+            const args = [
+                '-loop', '1', '-i', imagePath,
+                '-i', audioPath,
+                '-f', 'lavfi', '-i', `anullsrc=r=44100:cl=stereo`,
+                '-filter_complex',
+                `[1:a]apad=whole_dur=${duration}[a]`,
+                '-map', '0:v', '-map', '[a]',
+                '-c:v', H264_ENCODER, '-pix_fmt', 'yuv420p', '-r', '30',
+                '-c:a', 'aac', '-b:a', '128k',
+                '-t', String(duration),
+                '-y', outputPath
+            ];
+            await this._runFFmpeg(args);
         } else {
-            args.push('-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo');
+            // 无音频：纯静音
+            const args = [
+                '-loop', '1', '-i', imagePath,
+                '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo',
+                '-c:v', H264_ENCODER, '-pix_fmt', 'yuv420p', '-r', '30',
+                '-c:a', 'aac', '-b:a', '128k',
+                '-t', String(duration),
+                '-y', outputPath
+            ];
+            await this._runFFmpeg(args);
         }
-
-        args.push(
-            '-c:v', H264_ENCODER, '-pix_fmt', 'yuv420p', '-r', '30',
-            '-c:a', 'aac', '-b:a', '128k',
-            '-t', String(duration), '-shortest',
-            '-y', outputPath
-        );
-
-        await this._runFFmpeg(args);
     }
 
     /** 拼接多段音频 */
