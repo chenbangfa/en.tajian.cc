@@ -10,6 +10,21 @@ const SERVER_ROOT = path.join(__dirname, '../..');
 const FONT_PATH = path.join(SERVER_ROOT, 'assets/fonts/NotoSansSC-Regular.ttf');
 const OUTPUT_DIR = path.join(SERVER_ROOT, 'uploads/marketing/videos');
 
+// 自动检测可用的 H.264 编码器（libx264 > libopenh264）
+let H264_ENCODER = 'libx264'; // 默认
+const { execFileSync } = require('child_process');
+try {
+    const encoders = execFileSync('ffmpeg', ['-encoders'], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+    if (encoders.includes('libx264')) {
+        H264_ENCODER = 'libx264';
+    } else if (encoders.includes('libopenh264')) {
+        H264_ENCODER = 'libopenh264';
+    }
+    console.log(`[Video] 使用 H.264 编码器: ${H264_ENCODER}`);
+} catch (e) {
+    console.warn('[Video] FFmpeg 编码器检测失败，将使用默认 libx264');
+}
+
 // 并发控制：同时只跑 1 个 FFmpeg
 let isProcessing = false;
 
@@ -164,7 +179,7 @@ class VideoService {
                 `drawtext=fontfile='${FONT_PATH}':text='${word}':fontsize=130:fontcolor=white:x=(w-tw)/2:y=(h-th)/2-60`,
                 `drawtext=fontfile='${FONT_PATH}':text='Can you say this?':fontsize=48:fontcolor=#FFD700:x=(w-tw)/2:y=(h-th)/2+100`
             ].join(','),
-            '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-r', '30',
+            '-c:v', H264_ENCODER, '-pix_fmt', 'yuv420p', '-r', '30',
             '-c:a', 'aac', '-b:a', '128k',
             '-y', outputPath
         ]);
@@ -194,7 +209,7 @@ class VideoService {
                 `drawtext=fontfile='${FONT_PATH}':text='${wordEsc}':fontsize=96:fontcolor=white:x=(w-tw)/2:y=1380`,
                 phoneticEsc ? `drawtext=fontfile='${FONT_PATH}':text='${phoneticEsc}':fontsize=44:fontcolor=#BBBBBB:x=(w-tw)/2:y=1490` : null
             ].filter(Boolean).join(','),
-            '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-r', '30',
+            '-c:v', H264_ENCODER, '-pix_fmt', 'yuv420p', '-r', '30',
             '-c:a', 'aac', '-b:a', '128k',
             '-shortest', '-t', '5',
             '-y', outputPath
@@ -224,7 +239,7 @@ class VideoService {
                 phoneticEsc ? `drawtext=fontfile='${FONT_PATH}':text='${phoneticEsc}':fontsize=44:fontcolor=#BBBBBB:x=(w-tw)/2:y=1490` : null,
                 `drawtext=fontfile='${FONT_PATH}':text='${translationEsc}':fontsize=64:fontcolor=#FFD700:x=(w-tw)/2:y=1570`
             ].filter(Boolean).join(','),
-            '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-r', '30',
+            '-c:v', H264_ENCODER, '-pix_fmt', 'yuv420p', '-r', '30',
             '-c:a', 'aac', '-b:a', '128k',
             '-shortest', '-t', '5',
             '-y', outputPath
@@ -256,7 +271,7 @@ class VideoService {
                 `drawtext=fontfile='${FONT_PATH}':text='${wrappedSentence}':fontsize=52:fontcolor=white:x=(w-tw)/2:y=850:line_spacing=20`,
                 `drawtext=fontfile='${FONT_PATH}':text='${wrappedTranslation}':fontsize=40:fontcolor=#BBBBBB:x=(w-tw)/2:y=1050:line_spacing=16`
             ].join(','),
-            '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-r', '30',
+            '-c:v', H264_ENCODER, '-pix_fmt', 'yuv420p', '-r', '30',
             '-c:a', 'aac', '-b:a', '128k',
             '-shortest', '-t', '7',
             '-y', outputPath
@@ -274,7 +289,7 @@ class VideoService {
                 `drawtext=fontfile='${FONT_PATH}':text='Your turn!':fontsize=80:fontcolor=#FFD700:x=(w-tw)/2:y=(h-th)/2+30`,
                 `drawtext=fontfile='${FONT_PATH}':text='Follow me and say it':fontsize=40:fontcolor=#BBBBBB:x=(w-tw)/2:y=(h-th)/2+140`
             ].join(','),
-            '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-r', '30',
+            '-c:v', H264_ENCODER, '-pix_fmt', 'yuv420p', '-r', '30',
             '-c:a', 'aac', '-b:a', '128k',
             '-y', outputPath
         ]);
@@ -286,7 +301,7 @@ class VideoService {
             '-loop', '1', '-i', endCardPath,
             '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo',
             '-t', '3',
-            '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-r', '30',
+            '-c:v', H264_ENCODER, '-pix_fmt', 'yuv420p', '-r', '30',
             '-c:a', 'aac', '-b:a', '128k',
             '-y', outputPath
         ]);
@@ -454,7 +469,7 @@ class VideoService {
                 `drawtext=fontfile='${FONT_PATH}':text='${wordEsc}':fontsize=96:fontcolor=white:x=(w-tw)/2:y=1380`,
                 phoneticEsc ? `drawtext=fontfile='${FONT_PATH}':text='${phoneticEsc}':fontsize=44:fontcolor=#BBBBBB:x=(w-tw)/2:y=1490` : null
             ].filter(Boolean).join(','),
-            '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-r', '30',
+            '-c:v', H264_ENCODER, '-pix_fmt', 'yuv420p', '-r', '30',
             '-c:a', 'aac', '-b:a', '128k',
             '-y', outputPath
         ]);
