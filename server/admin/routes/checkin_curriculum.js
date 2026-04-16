@@ -37,7 +37,7 @@ async function ensureCurriculumTables() {
         id INT AUTO_INCREMENT PRIMARY KEY,
         course_id INT NOT NULL,
         chapter_id INT DEFAULT NULL,
-        task_type ENUM('word','scene','podcast') NOT NULL,
+        task_type ENUM('word','scene','podcast','picture_book_page') NOT NULL,
         target_id INT NOT NULL,
         sort_order INT DEFAULT 0,
         is_active TINYINT(1) DEFAULT 1,
@@ -67,6 +67,9 @@ async function ensureCurriculumTables() {
         await query(`ALTER TABLE checkin_course_items ADD KEY idx_chapter (chapter_id)`);
         await query(`ALTER TABLE checkin_course_items ADD CONSTRAINT fk_checkin_course_items_chapter FOREIGN KEY (chapter_id) REFERENCES checkin_course_chapters(id) ON DELETE SET NULL`);
     } catch (e) { /* 列已存在，忽略 */ }
+    try {
+        await query(`ALTER TABLE checkin_course_items MODIFY COLUMN task_type ENUM('word','scene','podcast','picture_book_page') NOT NULL`);
+    } catch (e) { /* 枚举已兼容则忽略 */ }
 
     // 兼容旧 checkin_courses：尝试加 is_vip / category_id 列
     try { await query(`ALTER TABLE checkin_courses ADD COLUMN is_vip TINYINT(1) DEFAULT 0 AFTER is_active`); } catch (e) {}
@@ -91,12 +94,24 @@ router.use(async (req, res, next) => {
 
 router.get('/courses', async (req, res) => {
     try {
+        const categoryId = req.query.categoryId ? Number(req.query.categoryId) : null;
+        const where = [];
+        const params = [];
+
+        if (categoryId) {
+            where.push('c.category_id = ?');
+            params.push(categoryId);
+        }
+
         const courses = await query(
             `SELECT c.*,
                     (SELECT COUNT(*) FROM checkin_course_items i WHERE i.course_id = c.id) AS item_count,
                     (SELECT COUNT(*) FROM checkin_course_chapters ch WHERE ch.course_id = c.id) AS chapter_count
              FROM checkin_courses c
+             ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
              ORDER BY c.level ASC, c.sort_order ASC, c.id ASC`
+            ,
+            params
         );
         res.json({ success: true, data: courses });
     } catch (error) {
@@ -232,11 +247,22 @@ router.get('/courses/:courseId/items', async (req, res) => {
                     WHEN 'word'    THEN (SELECT w.word        FROM words w           WHERE w.id  = i.target_id)
                     WHEN 'scene'   THEN (SELECT so.custom_label FROM scene_objects so WHERE so.id = i.target_id)
                     WHEN 'podcast' THEN (SELECT pc.title       FROM podcast_contents pc WHERE pc.id = i.target_id)
+                    WHEN 'picture_book_page' THEN (
+                        SELECT CONCAT(pb.title, ' · 第', p.page_number, '页')
+                        FROM picture_book_pages p
+                        JOIN picture_books pb ON pb.id = p.book_id
+                        WHERE p.id = i.target_id
+                    )
                 END AS target_title,
                 CASE i.task_type
                     WHEN 'word'    THEN (SELECT w.translation   FROM words w           WHERE w.id  = i.target_id)
                     WHEN 'scene'   THEN (SELECT so.translation  FROM scene_objects so  WHERE so.id = i.target_id)
                     WHEN 'podcast' THEN (SELECT pc.translation  FROM podcast_contents pc WHERE pc.id = i.target_id)
+                    WHEN 'picture_book_page' THEN (
+                        SELECT LEFT(COALESCE(NULLIF(p.text_cn, ''), p.text_en, ''), 120)
+                        FROM picture_book_pages p
+                        WHERE p.id = i.target_id
+                    )
                 END AS target_subtitle
              FROM checkin_course_items i
              WHERE i.course_id = ? ${chapterCondition}
@@ -255,7 +281,7 @@ router.post('/courses/:courseId/items', async (req, res) => {
         const { courseId } = req.params;
         const { task_type, target_id, chapter_id = null, sort_order = 0, is_active = 1, note = null } = req.body;
 
-        if (!['word', 'scene', 'podcast'].includes(task_type))
+        if (!['word', 'scene', 'podcast', 'picture_book_page'].includes(task_type))
             return res.status(400).json({ success: false, message: '任务类型不合法' });
 
         const targetId = Number(target_id);
@@ -281,7 +307,7 @@ router.put('/items/:id', async (req, res) => {
     try {
         const { task_type, target_id, chapter_id = null, sort_order = 0, is_active = 1, note = null } = req.body;
 
-        if (!['word', 'scene', 'podcast'].includes(task_type))
+        if (!['word', 'scene', 'podcast', 'picture_book_page'].includes(task_type))
             return res.status(400).json({ success: false, message: '任务类型不合法' });
 
         const targetId = Number(target_id);
@@ -355,6 +381,37 @@ router.get('/sources/:taskType', async (req, res) => {
                    AND (? IS NULL OR difficulty_level = ?)
                  ORDER BY difficulty_level ASC, id DESC LIMIT 100`,
                 [keyword, `%${keyword}%`, `%${keyword}%`, difficulty || null, difficulty || null]
+            );
+        } else if (taskType === 'picture_book_page') {
+            rows = await query(
+                `SELECT p.id,
+                        CONCAT(pb.title, ' · 第', p.page_number, '页') AS title,
+                        LEFT(
+                            CONCAT(
+                                COALESCE(NULLIF(p.text_cn, ''), ''),
+                                CASE
+                                    WHEN p.text_cn IS NOT NULL AND p.text_cn != '' AND p.text_en IS NOT NULL AND p.text_en != ''
+                                    THEN ' / '
+                                    ELSE ''
+                                END,
+                                COALESCE(NULLIF(p.text_en, ''), '')
+                            ),
+                            160
+                        ) AS subtitle,
+                        pb.difficulty_level AS difficulty_level
+                 FROM picture_book_pages p
+                 JOIN picture_books pb ON pb.id = p.book_id
+                 WHERE pb.is_active = 1
+                   AND p.text_en IS NOT NULL AND p.text_en != ''
+                   AND (? = ''
+                        OR pb.title LIKE ?
+                        OR pb.title_en LIKE ?
+                        OR p.text_en LIKE ?
+                        OR p.text_cn LIKE ?)
+                   AND (? IS NULL OR pb.difficulty_level = ?)
+                 ORDER BY pb.id DESC, p.page_number ASC
+                 LIMIT 100`,
+                [keyword, `%${keyword}%`, `%${keyword}%`, `%${keyword}%`, `%${keyword}%`, difficulty || null, difficulty || null]
             );
         } else {
             return res.status(400).json({ success: false, message: '不支持的任务类型' });
@@ -444,6 +501,15 @@ async function assertTargetExists(taskType, targetId) {
     } else if (taskType === 'podcast') {
         const [row] = await query('SELECT id FROM podcast_contents WHERE id = ?', [targetId]);
         if (!row) throw new Error('播客内容不存在');
+    } else if (taskType === 'picture_book_page') {
+        const [row] = await query(
+            `SELECT p.id
+             FROM picture_book_pages p
+             JOIN picture_books pb ON pb.id = p.book_id
+             WHERE p.id = ? AND pb.is_active = 1`,
+            [targetId]
+        );
+        if (!row) throw new Error('绘本分页不存在或所属绘本未启用');
     }
 }
 

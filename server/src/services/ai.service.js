@@ -19,6 +19,82 @@ class AIService {
         this.vertexAuth = vertexAuth;
     }
 
+    _sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    _isRetryableProxyError(error) {
+        const status = error?.response?.status;
+        const code = String(error?.code || '').toUpperCase();
+        const msg = error?.response?.data?.error || error?.message || '';
+        return status === 429
+            || status >= 500
+            || ['ECONNABORTED', 'ETIMEDOUT', 'ECONNRESET', 'EPIPE'].includes(code)
+            || /timeout|resource exhausted|quota exceeded|try again later/i.test(String(msg));
+    }
+
+    _extractProxyError(error) {
+        const status = error?.response?.status;
+        const body = error?.response?.data;
+        const bodyError = body?.error;
+        const code = body?.code || bodyError?.code || bodyError?.status || '';
+        const msg = (typeof bodyError === 'string' ? bodyError : bodyError?.message) || body?.message || error?.message || '代理请求失败';
+        const retryAfterMs = Number(body?.retryAfterMs || error?.retryAfterMs || 0);
+        return {
+            status,
+            code: String(code || ''),
+            message: String(msg),
+            retryAfterMs: retryAfterMs > 0 ? retryAfterMs : undefined
+        };
+    }
+
+    _readProxyImageData(body) {
+        if (!body || typeof body !== 'object') return '';
+        if (body.imageData && typeof body.imageData === 'string') return body.imageData;
+        if (body.data?.imageData && typeof body.data.imageData === 'string') return body.data.imageData;
+        if (body.image_base64 && typeof body.image_base64 === 'string') return body.image_base64;
+        return '';
+    }
+
+    async _postProxyWithRetry(pathname, payload, options = {}) {
+        const {
+            timeout = 90000,
+            maxAttempts = 3,
+            baseDelayMs = 1500,
+            retryOnRateLimit = true
+        } = options;
+
+        let lastError = null;
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                return await axios.post(
+                    `${process.env.PROXY_BASE_URL}${pathname}`,
+                    payload,
+                    {
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Proxy-Key': process.env.PROXY_API_KEY || ''
+                        },
+                        timeout
+                    }
+                );
+            } catch (error) {
+                lastError = error;
+                const extracted = this._extractProxyError(error);
+                if (!retryOnRateLimit && (extracted.status === 429 || /resource exhausted|quota exceeded|try again later/i.test(extracted.message))) {
+                    throw error;
+                }
+                if (!this._isRetryableProxyError(error) || attempt >= maxAttempts) {
+                    throw error;
+                }
+                const waitMs = baseDelayMs * Math.pow(2, attempt - 1);
+                console.warn(`[AIService] 代理请求重试 ${pathname} attempt=${attempt}/${maxAttempts}, wait=${waitMs}ms`);
+                await this._sleep(waitMs);
+            }
+        }
+        throw lastError || new Error('代理请求失败');
+    }
+
     /**
      * 生成单词图片 - 使用数据库提示词模板
      * @param {string} word - 要生成图片的单词
@@ -88,41 +164,237 @@ IMPORTANT:
     }
 
     /**
+     * 例句场景图片生成 - 结合单词 + 例句，面向 3-8 岁儿童
+     * 目标：通过画面帮助小朋友理解例句含义，单词所指对象视觉高亮
+     *
+     * @param {string} word - 目标单词（英文）
+     * @param {Object} options
+     * @param {string} options.translation - 单词中文翻译
+     * @param {string} options.example_sentence - 例句（英文）
+     * @param {string} options.example_translation - 例句中文翻译
+     * @param {string} options.category - 一级分类
+     * @param {string} options.image_hint - 可选额外视觉提示
+     */
+    async generateExampleImage(word, options = {}) {
+        try {
+            const {
+                translation = '',
+                example_sentence = '',
+                example_translation = '',
+                category = '',
+                image_hint = ''
+            } = options;
+
+            if (!example_sentence) {
+                return { success: false, error: '例句为空，无法生成例句图' };
+            }
+
+            // 优先从 DB 取模板；无则用内置儿童友好提示词
+            let prompt;
+            const template = await this.getPromptTemplate('example_image_generate');
+            if (template) {
+                prompt = this.replaceTemplateVariables(template, {
+                    word,
+                    translation,
+                    example_sentence,
+                    example_translation,
+                    category,
+                    image_hint
+                });
+            } else {
+                const hintLine = image_hint ? `\nExtra visual hint: ${image_hint}` : '';
+                const catLine = category ? `\nTopic context: ${category}.` : '';
+                prompt = `Create a warm, friendly cartoon illustration for a children's English learning app (audience: ages 3-8).
+
+STORY TO ILLUSTRATE:
+- English: "${example_sentence}"
+- Chinese meaning: "${example_translation || '(see English)'}"
+
+KEY VOCABULARY TO HIGHLIGHT: "${word}"${translation ? ` (${translation})` : ''}
+The "${word}" must be the clear visual focal point — larger, brighter, or center-positioned — so a child can instantly connect the word to the object/action in the picture.${catLine}${hintLine}
+
+STYLE:
+- Soft cartoon / picture-book style, rounded shapes, cheerful atmosphere
+- Bright warm colors, gentle lighting, NOT photorealistic
+- Characters (if any) have big friendly eyes, cute kid-like proportions, visible smiles
+- Simple uncluttered background that supports comprehension, not distracts
+- Show the action/scene literally from the sentence so the meaning is obvious without words
+
+STRICT RULES:
+- NO text, letters, numbers, speech bubbles, or captions anywhere in the image
+- NO watermarks, signatures, or logos
+- Kid-safe: no scary, violent, sad, or inappropriate content
+- Square format (1:1 aspect ratio), high resolution`;
+            }
+
+            console.log('[AIService] 生成例句图提示词:', prompt.substring(0, 160) + '...');
+            const result = await this.generateImage(prompt);
+            return result;
+        } catch (error) {
+            console.error('生成例句图错误:', error.response?.data || error.message);
+            return {
+                success: false,
+                error: error.response?.data?.error?.message || '例句图生成失败'
+            };
+        }
+    }
+
+    /**
+     * 场景图片生成 - 带服务端 prompt 增强
+     * @param {string} userPrompt - 用户输入的场景描述
+     * @param {Object} options - 场景上下文 { ai_style, name, name_en, category_name, category_name_en, difficulty_level, items }
+     */
+    async generateSceneImage(userPrompt, options = {}) {
+        try {
+            const cleanPrompt = String(userPrompt || '').trim();
+            if (!cleanPrompt) {
+                return {
+                    success: false,
+                    error: '提示词不能为空'
+                };
+            }
+
+            const styleRaw = String(options.ai_style || options.style || 'scene').toLowerCase();
+            const aiStyle = ['poster', 'scene', 'custom'].includes(styleRaw) ? styleRaw : 'scene';
+
+            // poster/custom 模式：按用户提示词直出，不走场景模板增强，避免风格串用
+            if (aiStyle === 'poster') {
+                console.log('[AIService] 词汇海报提示词:', cleanPrompt.substring(0, 200) + '...');
+                // 按用户要求回退到 Gemini 生图链路（不传 aspectRatio，避免走 Imagen）
+                return this.generateImage(cleanPrompt);
+            }
+            if (aiStyle === 'custom') {
+                console.log('[AIService] 自定义提示词:', cleanPrompt.substring(0, 200) + '...');
+                return this.generateImage(cleanPrompt);
+            }
+
+            const {
+                name = '',
+                name_en = '',
+                category_name = '',
+                category_name_en = '',
+                difficulty_level = '',
+                items = ''
+            } = options;
+
+            // 从数据库获取提示词模板
+            let promptTemplate = await this.getPromptTemplate('scene_image_generate');
+
+            let prompt;
+            if (promptTemplate) {
+                prompt = this.replaceTemplateVariables(promptTemplate, {
+                    user_prompt: cleanPrompt,
+                    name,
+                    name_en,
+                    category_name,
+                    category_name_en,
+                    difficulty_level: String(difficulty_level),
+                    items
+                });
+            } else {
+                // 默认提示词（兜底）
+                const sceneLabel = name_en ? `${name_en}${name ? ` (${name})` : ''}` : (name || 'a scene');
+                const categoryLine = category_name ? `\nCategory: ${category_name_en || ''} (${category_name})` : '';
+                const itemsLine = items ? `\nObjects that should appear in the scene: ${items}` : '';
+                const difficultyLine = difficulty_level ? `\n- Detail level: ${difficulty_level}/5 (1=very simple with few objects, 5=rich scene with many details)` : '';
+
+                prompt = `Create a children's educational scene illustration for an English learning app.
+
+Scene: ${sceneLabel}${categoryLine}${itemsLine}
+
+User description: ${cleanPrompt}
+
+Style Requirements:
+- Colorful, cheerful illustration style suitable for children ages 3-10
+- Bright, warm color palette with soft lighting
+- Clean composition with clearly recognizable objects
+- Friendly, inviting atmosphere that makes children want to explore
+- Each object should be clearly distinct and easy to identify by tapping
+- Slight cartoon/illustration style but objects should be realistic enough for children to recognize in real life${difficultyLine}
+
+STRICT RULES:
+- NO text, words, letters, numbers, or labels anywhere in the image
+- NO watermarks, signatures, or logos
+- NO scary, violent, or inappropriate content
+- Safe and friendly for young children
+- Square format (1:1 aspect ratio)`;
+            }
+
+            console.log('[AIService] 场景图片提示词:', prompt.substring(0, 200) + '...');
+
+            const result = await this.generateImage(prompt, { aspectRatio: '1:1' });
+            return result;
+        } catch (error) {
+            console.error('生成场景图片错误:', error.response?.data || error.message);
+            return {
+                success: false,
+                error: error.response?.data?.error?.message || '图片生成服务暂不可用'
+            };
+        }
+    }
+
+    /**
      * 通用图片生成方法 - 优先走代理（腾讯云），直连作为降级
      * @param {string} prompt - 完整的图片生成提示词
      */
-    async generateImage(prompt) {
+    async generateImage(prompt, options = {}) {
+        const { aspectRatio = '' } = options || {};
+
         // 配置了 PROXY_BASE_URL 时，走美国服务器代理
         if (process.env.PROXY_BASE_URL) {
-            return this._generateImageViaProxy(prompt);
+            return this._generateImageViaProxy(prompt, { aspectRatio });
         }
 
         try {
             console.log('[AIService] 开始生成图片 (Vertex AI)...');
             console.log('[AIService] Prompt:', prompt.substring(0, 100) + '...');
 
-            const headers = await this.vertexAuth.getAuthHeaders();
-            const response = await axios.post(
-                this.vertexAuth.getUrl('gemini-3-pro-image-preview'),
-                {
-                    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-                    generationConfig: { responseModalities: ['image', 'text'] }
-                },
-                { headers, timeout: 120000 }
-            );
+            // 需要指定画幅比例时，走 Imagen（支持 aspectRatio）
+            if (aspectRatio) {
+                return await this._generateImageDirectWithAspect(prompt, aspectRatio);
+            }
 
-            const candidates = response.data.candidates;
-            if (candidates && candidates.length > 0) {
-                const parts = candidates[0].content?.parts || [];
-                for (const part of parts) {
-                    if (part.inlineData && part.inlineData.mimeType?.startsWith('image/')) {
-                        const imageData = part.inlineData.data;
-                        const imagePath = await this.saveBase64Image(imageData, `gen_${Date.now()}`);
-                        console.log('[AIService] 图片生成成功:', imagePath);
-                        return { success: true, imageUrl: imagePath };
+            const headers = await this.vertexAuth.getAuthHeaders();
+            const modelIds = [
+                'gemini-3.1-flash-image-preview',
+                'gemini-3-pro-image-preview'
+            ];
+
+            let lastError = null;
+            for (let i = 0; i < modelIds.length; i++) {
+                const modelId = modelIds[i];
+                try {
+                    const response = await axios.post(
+                        this.vertexAuth.getUrl(modelId),
+                        {
+                            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                            generationConfig: { responseModalities: ['image', 'text'] }
+                        },
+                        { headers, timeout: 120000 }
+                    );
+
+                    const candidates = response.data.candidates;
+                    if (candidates && candidates.length > 0) {
+                        const parts = candidates[0].content?.parts || [];
+                        for (const part of parts) {
+                            if (part.inlineData && part.inlineData.mimeType?.startsWith('image/')) {
+                                const imageData = part.inlineData.data;
+                                const imagePath = await this.saveBase64Image(imageData, `gen_${Date.now()}`);
+                                console.log(`[AIService] 图片生成成功(${modelId}):`, imagePath);
+                                return { success: true, imageUrl: imagePath };
+                            }
+                        }
+                    }
+                } catch (e) {
+                    lastError = e;
+                    console.warn(`[AIService] 模型 ${modelId} 生图失败:`, e.response?.data?.error?.message || e.message);
+                    if (i < modelIds.length - 1) {
+                        console.warn(`[AIService] 切换到备选模型: ${modelIds[i + 1]}`);
                     }
                 }
             }
+
+            if (lastError) throw lastError;
 
             return {
                 success: false,
@@ -138,51 +410,32 @@ IMPORTANT:
         }
     }
 
-    /**
-     * 生成场景图片
-     * @param {string} sceneName - 场景名称
-     * @param {string} description - 场景描述
-     */
-    async generateSceneImage(sceneName, description = '') {
-        try {
-            const prompt = `A detailed illustration of ${sceneName} scene for children's English learning. ${description}. 
-        The image should contain various clearly visible objects that children can learn English words from. 
-        Educational, colorful, engaging, with labeled objects. High quality, suitable for young learners.`;
+    async _generateImageDirectWithAspect(prompt, aspectRatio = '16:9') {
+        const headers = await this.vertexAuth.getAuthHeaders();
+        const response = await axios.post(
+            this.vertexAuth.getUrl('imagen-3.0-generate-002', 'predict'),
+            {
+                instances: [{ prompt }],
+                parameters: {
+                    sampleCount: 1,
+                    aspectRatio
+                }
+            },
+            { headers, timeout: 120000 }
+        );
 
-            const headers = await this.vertexAuth.getAuthHeaders();
-            const response = await axios.post(
-                this.vertexAuth.getUrl('imagen-3.0-generate-002', 'predict'),
-                {
-                    instances: [{ prompt }],
-                    parameters: {
-                        sampleCount: 1,
-                        aspectRatio: '16:9',
-                        safetyFilterLevel: 'block_some'
-                    }
-                },
-                { headers }
-            );
-
-            if (response.data.predictions && response.data.predictions.length > 0) {
-                const imageData = response.data.predictions[0].bytesBase64Encoded;
-                const imagePath = await this.saveBase64Image(imageData, `scene_${sceneName}`);
-
-                return {
-                    success: true,
-                    imageUrl: imagePath,
-                    sceneName
-                };
-            }
-
-            return { success: false, error: '场景图片生成失败' };
-        } catch (error) {
-            console.error('生成场景图片错误:', error.response?.data || error.message);
-            return {
-                success: false,
-                error: error.response?.data?.error?.message || '场景图片生成服务暂不可用'
-            };
+        const imageData = response.data?.predictions?.[0]?.bytesBase64Encoded;
+        if (!imageData) {
+            return { success: false, error: '图片生成未返回有效数据，请稍后重试' };
         }
+
+        const imagePath = await this.saveBase64Image(imageData, `gen_${Date.now()}`);
+        console.log(`[AIService] Imagen(${aspectRatio}) 图片生成成功:`, imagePath);
+        return { success: true, imageUrl: imagePath };
     }
+
+    // [已删除] 旧版 generateSceneImage - 直连 Vertex AI，已被新版替代（line 156）
+    // 新版走代理 + prompt 模板增强
 
     /**
      * 智能文本识别 (OCR) - 支持 Gemini Vision 和 有道 OCR
@@ -532,31 +785,58 @@ Only return the JSON array, no other text.`
     /**
      * 通过美国代理服务器生成图片
      */
-    async _generateImageViaProxy(prompt) {
+    async _generateImageViaProxy(prompt, options = {}) {
         try {
             console.log('[AIService] 通过代理生成图片...');
-            const response = await axios.post(
-                `${process.env.PROXY_BASE_URL}/proxy/generate-image`,
-                { prompt, aspectRatio: '9:16' },
-                {
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Proxy-Key': process.env.PROXY_API_KEY || ''
-                    },
-                    timeout: 130000
-                }
-            );
+            const runGenerate = async (withAspect = true) => {
+                const payload = { prompt };
+                if (withAspect && options.aspectRatio) payload.aspectRatio = options.aspectRatio;
+                const response = await this._postProxyWithRetry(
+                    '/proxy/generate-image',
+                    payload,
+                    { timeout: 210000, maxAttempts: 2, baseDelayMs: 30000, retryOnRateLimit: false }
+                );
+                return response?.data || {};
+            };
 
-            if (response.data.success && response.data.imageData) {
-                const imageUrl = await this.saveBase64Image(response.data.imageData, `gen_${Date.now()}`);
+            const primary = await runGenerate(true);
+            const primaryImageData = this._readProxyImageData(primary);
+            if (primary.success && primaryImageData) {
+                const imageUrl = await this.saveBase64Image(primaryImageData, `gen_${Date.now()}`);
                 console.log('[AIService] 代理图片生成成功:', imageUrl);
                 return { success: true, imageUrl };
             }
 
-            return { success: false, error: response.data.error || '代理返回失败' };
+            // 指定画幅比例时，Imagen 可能因配额限制失败；降级一次走 Gemini 生图，避免流程直接中断
+            if (options.aspectRatio) {
+                const msg = String(primary?.error || primary?.message || '');
+                const code = String(primary?.code || '');
+                const shouldFallbackNoAspect = !primaryImageData || /quota exceeded|resource exhausted|429|imagen/i.test(`${msg} ${code}`);
+                if (shouldFallbackNoAspect) {
+                    console.warn('[AIService] 代理图片生成降级重试: fallback to no-aspect request');
+                    const fallback = await runGenerate(false);
+                    const fallbackImageData = this._readProxyImageData(fallback);
+                    if (fallback.success && fallbackImageData) {
+                        const imageUrl = await this.saveBase64Image(fallbackImageData, `gen_${Date.now()}`);
+                        console.log('[AIService] 代理图片生成降级成功:', imageUrl);
+                        return { success: true, imageUrl };
+                    }
+                    const fallbackError = fallback?.error || fallback?.message || '';
+                    const joinedError = [msg, fallbackError].filter(Boolean).join('；');
+                    return { success: false, error: joinedError || '代理返回失败' };
+                }
+            }
+
+            return { success: false, error: primary.error || primary.message || '代理返回失败' };
         } catch (error) {
-            console.error('[AIService] 代理图片生成失败:', error.message);
-            return { success: false, error: `代理服务不可用: ${error.message}` };
+            const proxyErr = this._extractProxyError(error);
+            console.error('[AIService] 代理图片生成失败:', proxyErr.status, proxyErr.code, proxyErr.message);
+            return {
+                success: false,
+                error: `代理服务不可用: ${proxyErr.message}`,
+                statusCode: proxyErr.status,
+                retryAfterMs: proxyErr.retryAfterMs
+            };
         }
     }
 
@@ -677,20 +957,18 @@ Only return the JSON array, no other text.`
         // 优先走代理（国内服务器无法直连 Google API）
         if (process.env.PROXY_BASE_URL) {
             try {
-                const resp = await axios.post(
-                    `${process.env.PROXY_BASE_URL}/proxy/gemini-text`,
+                const resp = await this._postProxyWithRetry(
+                    '/proxy/gemini-text',
                     { prompt },
-                    {
-                        headers: { 'Content-Type': 'application/json', 'X-Proxy-Key': process.env.PROXY_API_KEY || '' },
-                        timeout: 65000
-                    }
+                    { timeout: 65000, maxAttempts: 3, baseDelayMs: 1500 }
                 );
                 if (resp.data.success && resp.data.text) return { success: true, text: resp.data.text };
                 console.warn('[AIService] 代理文本生成返回失败:', resp.data.error);
                 return { success: false, error: resp.data.error || '代理文本生成失败' };
             } catch (e) {
-                console.error('[AIService] 代理文本生成异常:', e.code, e.message);
-                return { success: false, error: `代理不可用: ${e.message}` };
+                const proxyErr = this._extractProxyError(e);
+                console.error('[AIService] 代理文本生成异常:', e.code, proxyErr.status, proxyErr.message);
+                return { success: false, error: `代理不可用: ${proxyErr.message}` };
             }
         }
 
@@ -701,6 +979,191 @@ Only return the JSON array, no other text.`
             console.error('[AIService] Gemini文本生成失败:', error.response?.data || error.message);
             return { success: false, error: error.response?.data?.error?.message || error.message };
         }
+    }
+
+    /**
+     * 发起 Veo 视频生成长任务（支持 text-to-video / image-to-video）
+     */
+    async startVeoVideoTask({
+        prompt,
+        referenceImageUrl = '',
+        modelId = (process.env.VEO_MODEL_ID || 'veo-3.1-fast-generate-001'),
+        durationSeconds = 4,
+        aspectRatio = '16:9',
+        resolution = '720p'
+    }) {
+        if (!prompt) return { success: false, error: '缺少 prompt' };
+
+        // 优先走代理（中国机通常无法稳定直连 Google API）
+        if (process.env.PROXY_BASE_URL) {
+            try {
+                const resp = await axios.post(
+                    `${process.env.PROXY_BASE_URL}/proxy/veo/start`,
+                    { prompt, referenceImageUrl, modelId, durationSeconds, aspectRatio, resolution },
+                    {
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Proxy-Key': process.env.PROXY_API_KEY || ''
+                        },
+                        timeout: 90000
+                    }
+                );
+                return resp.data;
+            } catch (e) {
+                return { success: false, error: `Veo代理不可用: ${e.message}` };
+            }
+        }
+
+        try {
+            const headers = await this.vertexAuth.getAuthHeaders();
+            const instance = { prompt };
+
+            if (referenceImageUrl) {
+                const ref = await this._fetchRemoteFileAsBase64(referenceImageUrl);
+                if (ref.success) {
+                    instance.image = {
+                        bytesBase64Encoded: ref.base64,
+                        mimeType: ref.mimeType
+                    };
+                } else {
+                    return { success: false, error: ref.error || '参考图读取失败' };
+                }
+            }
+
+            const payload = {
+                instances: [instance],
+                parameters: {
+                    sampleCount: 1,
+                    durationSeconds,
+                    aspectRatio,
+                    resolution,
+                    generateAudio: false
+                }
+            };
+
+            const response = await axios.post(
+                this.vertexAuth.getUrl(modelId, 'predictLongRunning'),
+                payload,
+                { headers, timeout: 90000 }
+            );
+
+            const operationName = response.data?.name;
+            if (!operationName) return { success: false, error: 'Veo 未返回 operationName' };
+
+            return {
+                success: true,
+                operationName,
+                modelId
+            };
+        } catch (error) {
+            return {
+                success: false,
+                error: error.response?.data?.error?.message || error.message || '发起 Veo 任务失败'
+            };
+        }
+    }
+
+    /**
+     * 轮询 Veo 长任务
+     */
+    async pollVeoVideoTask({
+        operationName,
+        modelId = (process.env.VEO_MODEL_ID || 'veo-3.1-fast-generate-001')
+    }) {
+        if (!operationName) return { success: false, error: '缺少 operationName' };
+
+        if (process.env.PROXY_BASE_URL) {
+            try {
+                const resp = await axios.post(
+                    `${process.env.PROXY_BASE_URL}/proxy/veo/poll`,
+                    { operationName, modelId },
+                    {
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Proxy-Key': process.env.PROXY_API_KEY || ''
+                        },
+                        timeout: 90000
+                    }
+                );
+                const data = resp.data || {};
+                if (data.success && data.done && data.video?.bytesBase64Encoded) {
+                    const saved = await this.saveBase64Video(data.video.bytesBase64Encoded, `veo_${Date.now()}`, data.video.mimeType || 'video/mp4');
+                    return { success: true, done: true, videoUrl: saved, mimeType: data.video.mimeType || 'video/mp4' };
+                }
+                return data;
+            } catch (e) {
+                return { success: false, error: `Veo代理轮询失败: ${e.message}` };
+            }
+        }
+
+        try {
+            const headers = await this.vertexAuth.getAuthHeaders();
+            const response = await axios.post(
+                this.vertexAuth.getUrl(modelId, 'fetchPredictOperation'),
+                { operationName },
+                { headers, timeout: 90000 }
+            );
+
+            const op = response.data || {};
+            if (!op.done) return { success: true, done: false };
+
+            if (op.error) {
+                const msg = op.error.message || op.error.code || 'Veo 任务失败';
+                return { success: false, done: true, error: msg };
+            }
+
+            const videos = op.response?.videos || [];
+            const first = videos[0];
+            if (!first) return { success: false, done: true, error: 'Veo 未返回视频数据' };
+
+            if (first.bytesBase64Encoded) {
+                const saved = await this.saveBase64Video(first.bytesBase64Encoded, `veo_${Date.now()}`, first.mimeType || 'video/mp4');
+                return { success: true, done: true, videoUrl: saved, mimeType: first.mimeType || 'video/mp4' };
+            }
+
+            if (first.gcsUri) {
+                return { success: false, done: true, error: `Veo 返回 GCS 结果(${first.gcsUri})，当前未配置自动拉取` };
+            }
+
+            return { success: false, done: true, error: 'Veo 返回格式不支持' };
+        } catch (error) {
+            return {
+                success: false,
+                error: error.response?.data?.error?.message || error.message || '轮询 Veo 任务失败'
+            };
+        }
+    }
+
+    async _fetchRemoteFileAsBase64(fileUrl) {
+        try {
+            const response = await axios.get(fileUrl, { responseType: 'arraybuffer', timeout: 30000 });
+            const buffer = Buffer.from(response.data);
+            const mimeType = response.headers['content-type'] || 'image/jpeg';
+            return { success: true, base64: buffer.toString('base64'), mimeType };
+        } catch (error) {
+            return { success: false, error: `下载参考图失败: ${error.message}` };
+        }
+    }
+
+    async saveBase64Video(base64Data, prefix = 'veo', mimeType = 'video/mp4') {
+        const extMap = {
+            'video/mp4': 'mp4',
+            'video/mpeg': 'mpeg',
+            'video/mov': 'mov',
+            'video/quicktime': 'mov',
+            'video/webm': 'webm'
+        };
+        const ext = extMap[String(mimeType || '').toLowerCase()] || 'mp4';
+
+        const uploadsDir = path.join(__dirname, '../../uploads/pet-stages');
+        if (!fs.existsSync(uploadsDir)) {
+            fs.mkdirSync(uploadsDir, { recursive: true });
+        }
+
+        const filename = `${prefix}_${Date.now()}.${ext}`;
+        const filePath = path.join(uploadsDir, filename);
+        fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
+        return `/uploads/pet-stages/${filename}`;
     }
 
     /**
@@ -917,16 +1380,10 @@ Respond ONLY with a valid JSON object in this exact format:
                 }
             }
 
-            const response = await axios.post(
-                `${process.env.PROXY_BASE_URL}/proxy/enhance-word`,
+            const response = await this._postProxyWithRetry(
+                '/proxy/enhance-word',
                 { word, translation, prompt },
-                {
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Proxy-Key': process.env.PROXY_API_KEY || ''
-                    },
-                    timeout: 35000
-                }
+                { timeout: 35000, maxAttempts: 3, baseDelayMs: 1200 }
             );
 
             if (response.data.success && response.data.data) {
@@ -948,8 +1405,9 @@ Respond ONLY with a valid JSON object in this exact format:
 
             return { success: false, error: response.data.error || '代理返回失败', word };
         } catch (error) {
-            console.error(`[AIService] 代理增强失败 [${word}]:`, error.message);
-            return { success: false, error: `代理服务不可用: ${error.message}`, word };
+            const proxyErr = this._extractProxyError(error);
+            console.error(`[AIService] 代理增强失败 [${word}]:`, proxyErr.status, proxyErr.message);
+            return { success: false, error: `代理服务不可用: ${proxyErr.message}`, word };
         }
     }
 

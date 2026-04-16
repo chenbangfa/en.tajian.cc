@@ -98,6 +98,7 @@
                     <th class="px-4 py-3 font-semibold w-16 text-center">女声</th>
                     <th class="px-4 py-3 font-semibold w-16 text-center">男声</th>
                     <th class="px-4 py-3 font-semibold" style="max-width: 150px;">例句</th>
+                    <th class="px-4 py-3 font-semibold w-16 text-center">例图</th>
                     <th class="px-4 py-3 font-semibold w-14 text-center">例♀</th>
                     <th class="px-4 py-3 font-semibold w-14 text-center">例♂</th>
                     <th class="px-3 py-3 font-semibold w-16 text-center cursor-pointer select-none hover:text-blue-600" onclick="toggleSort('view_count')" title="按浏览量排序">
@@ -154,6 +155,9 @@
                 <button type="button" class="ai-btn ai-btn-green" onclick="generateExVoice('male')" id="btn-ai-ex-m">
                     📝 例句男声
                 </button>
+                <button type="button" class="ai-btn ai-btn-orange" onclick="regenerateExampleImage()" id="btn-ai-ex-img">
+                    🖼️ 生成例句图
+                </button>
             </div>
 
             <div class="grid grid-cols-2 gap-4">
@@ -208,6 +212,14 @@
                     class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
                     onchange="previewImage()">
                 <img id="word-image-preview" src=""
+                    class="mt-2 max-w-[200px] rounded-lg border border-gray-200" style="display: none;">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">例句图URL <span class="text-gray-400 font-normal">(AI 根据例句+单词生成)</span></label>
+                <input type="text" id="word-example-image-url"
+                    class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                    onchange="previewExampleImage()">
+                <img id="word-example-image-preview" src=""
                     class="mt-2 max-w-[200px] rounded-lg border border-gray-200" style="display: none;">
             </div>
 
@@ -322,7 +334,7 @@
         updateBatchActions();
 
         if (words.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="14" class="px-6 py-8 text-center text-gray-500">暂无单词数据</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="15" class="px-6 py-8 text-center text-gray-500">暂无单词数据</td></tr>';
             return;
         }
 
@@ -358,6 +370,13 @@
                 : `<button class="text-gray-300 hover:text-blue-600 text-xs" onclick="quickGenAudio(${w.id}, '${jsw}', 'male', this)">♂+</button>`}
                 </td>
                 <td class="px-4 py-3 text-xs text-gray-600" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${se}">${se || '-'}</td>
+                <td class="px-4 py-3 text-center">
+                    ${w.example_image_url
+                ? `<img src="${escHtml(w.example_image_url)}" style="width:40px;height:40px;min-width:40px;object-fit:cover;margin:0 auto;" class="rounded border border-gray-200 cursor-pointer hover:border-orange-400" onclick="previewFullImage('${escJs(w.example_image_url)}')" title="点击查看大图">`
+                : w.example_sentence
+                    ? `<button class="text-gray-300 hover:text-orange-600 text-xs" onclick="quickGenExImage(${w.id}, this)" title="AI生成例句图">🎨+</button>`
+                    : '<span class="text-gray-300">-</span>'}
+                </td>
                 <td class="px-4 py-3 text-center">
                     ${w.example_audio_female
                 ? `<button class="text-pink-500 hover:text-pink-700" onclick="playAudio('${escJs(w.example_audio_female)}')"><i class="fas fa-volume-up text-xs"></i></button>`
@@ -603,6 +622,8 @@
         document.getElementById('word-id').value = '';
         document.getElementById('word-grammar').value = '';
         document.getElementById('word-image-preview').style.display = 'none';
+        const exPrev = document.getElementById('word-example-image-preview');
+        if (exPrev) { exPrev.src = ''; exPrev.style.display = 'none'; }
         document.getElementById('word-audio-status').style.display = 'none';
         currentEditWord = null;
 
@@ -646,10 +667,17 @@
             document.getElementById('word-grammar').value = w.grammar_explanation || '';
             document.getElementById('word-image-hint').value = w.image_hint || '';
             document.getElementById('word-image-url').value = w.image_url || '';
+            document.getElementById('word-example-image-url').value = w.example_image_url || '';
 
             if (w.image_url) {
                 document.getElementById('word-image-preview').src = w.image_url;
                 document.getElementById('word-image-preview').style.display = 'block';
+            }
+            if (w.example_image_url) {
+                document.getElementById('word-example-image-preview').src = w.example_image_url;
+                document.getElementById('word-example-image-preview').style.display = 'block';
+            } else {
+                document.getElementById('word-example-image-preview').style.display = 'none';
             }
 
             // Show AI actions
@@ -690,6 +718,18 @@
         else { preview.style.display = 'none'; }
     }
 
+    function previewExampleImage() {
+        const url = document.getElementById('word-example-image-url').value;
+        const preview = document.getElementById('word-example-image-preview');
+        if (url) { preview.src = url; preview.style.display = 'block'; }
+        else { preview.style.display = 'none'; }
+    }
+
+    // 点击缩略图在新窗口查看大图
+    function previewFullImage(url) {
+        if (url) window.open(url, '_blank');
+    }
+
     // ==================== Save Word ====================
 
     async function saveWord(e) {
@@ -705,6 +745,7 @@
             grammar_explanation: document.getElementById('word-grammar').value,
             image_hint: document.getElementById('word-image-hint').value,
             image_url: document.getElementById('word-image-url').value,
+            example_image_url: document.getElementById('word-example-image-url').value,
             difficulty_level: 1,
             word_type: 'noun',
             display_mode: 'image'
@@ -804,6 +845,73 @@
         }
     }
 
+    // 生成例句图（弹窗内按钮）：必须先有 word_id 和 example_sentence
+    async function regenerateExampleImage() {
+        const example = document.getElementById('word-example').value.trim();
+        if (!example) { showToast('请先填写例句', 'error'); return; }
+
+        const btn = document.getElementById('btn-ai-ex-img');
+        btn.disabled = true;
+        btn.textContent = '🖼️ 生成中...';
+
+        try {
+            // 确保有 word_id（未保存时先创建）
+            const wordId = await ensureWordIdBeforeAudio();
+            if (!wordId) return;
+
+            const image_hint = document.getElementById('word-image-hint').value;
+            const res = await fetch(`${API_BASE}/words/${wordId}/generate-example-image`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image_hint })
+            });
+            const result = await res.json();
+
+            if (result.success && result.data.example_image_url) {
+                const url = result.data.example_image_url;
+                document.getElementById('word-example-image-url').value = url;
+                const preview = document.getElementById('word-example-image-preview');
+                preview.src = url;
+                preview.style.display = 'block';
+                showToast('例句图生成成功');
+            } else {
+                showToast(result.message || '生成失败', 'error');
+            }
+        } catch (e) {
+            showToast('生成失败: ' + e.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '🖼️ 生成例句图';
+        }
+    }
+
+    // 列表中的快速生成例句图（无需打开弹窗）
+    async function quickGenExImage(wordId, btn) {
+        const original = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '⏳';
+        try {
+            const res = await fetch(`${API_BASE}/words/${wordId}/generate-example-image`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            });
+            const result = await res.json();
+            if (result.success && result.data.example_image_url) {
+                showToast('例句图生成成功');
+                loadWords(currentPage);
+            } else {
+                showToast(result.message || '生成失败', 'error');
+                btn.disabled = false;
+                btn.innerHTML = original;
+            }
+        } catch (e) {
+            showToast('生成失败: ' + e.message, 'error');
+            btn.disabled = false;
+            btn.innerHTML = original;
+        }
+    }
+
     /**
      * 新增模式下，如果没有 word_id，先自动保存单词获取 ID，再生成语音
      * 编辑模式下直接生成
@@ -830,6 +938,7 @@
             grammar_explanation: document.getElementById('word-grammar').value,
             image_hint: document.getElementById('word-image-hint').value,
             image_url: document.getElementById('word-image-url').value,
+            example_image_url: document.getElementById('word-example-image-url').value,
             difficulty_level: 1,
             word_type: 'noun',
             display_mode: 'image'

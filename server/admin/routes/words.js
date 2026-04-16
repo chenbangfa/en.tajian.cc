@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { query } = require('../../src/config/database');
 const voiceService = require('../../src/services/voice.service');
+const aiService = require('../../src/services/ai.service');
 
 const router = express.Router();
 
@@ -163,6 +164,7 @@ router.put('/:id', async (req, res) => {
             example_translation: 'example_translation',
             example_audio_female: 'example_audio_female',
             example_audio_male: 'example_audio_male',
+            example_image_url: 'example_image_url',
             grammar_explanation: 'grammar_explanation',
             image_hint: 'image_hint'
         };
@@ -204,10 +206,11 @@ router.delete('/:id', async (req, res) => {
         const { id } = req.params;
 
         // 先查询文件路径
-        const words = await query('SELECT image_url, audio_url_female, audio_url_male, example_audio_female, example_audio_male FROM words WHERE id = ?', [id]);
+        const words = await query('SELECT image_url, example_image_url, audio_url_female, audio_url_male, example_audio_female, example_audio_male FROM words WHERE id = ?', [id]);
         if (words.length > 0) {
             const w = words[0];
             deleteLocalFile(w.image_url);
+            deleteLocalFile(w.example_image_url);
             deleteLocalFile(w.audio_url_female);
             deleteLocalFile(w.audio_url_male);
             deleteLocalFile(w.example_audio_female);
@@ -235,14 +238,14 @@ router.post('/batch-delete', async (req, res) => {
 
         // 查询所有要删除的单词的文件路径
         const words = await query(
-            `SELECT id, image_url, audio_url_female, audio_url_male, example_audio_female, example_audio_male FROM words WHERE id IN (${placeholders})`,
+            `SELECT id, image_url, example_image_url, audio_url_female, audio_url_male, example_audio_female, example_audio_male FROM words WHERE id IN (${placeholders})`,
             ids
         );
 
         // 删除关联的本地文件
         let filesDeleted = 0;
         for (const w of words) {
-            const files = [w.image_url, w.audio_url_female, w.audio_url_male, w.example_audio_female, w.example_audio_male];
+            const files = [w.image_url, w.example_image_url, w.audio_url_female, w.audio_url_male, w.example_audio_female, w.example_audio_male];
             files.forEach(f => {
                 if (f && f.startsWith('/uploads/')) {
                     deleteLocalFile(f);
@@ -295,7 +298,8 @@ router.post('/:id/antonym', async (req, res) => {
 // 获取缺少音频的单词列表
 router.get('/batch-tts/candidates', async (req, res) => {
     try {
-        const { voice = 'all', limit = 200 } = req.query;
+        const { voice = 'all', limit = 30 } = req.query;
+        const safeLimit = Math.min(100, Math.max(10, parseInt(limit, 10) || 30));
         let where = '1=1';
         if (voice === 'female') where = "(audio_url_female IS NULL OR audio_url_female = '')";
         else if (voice === 'male') where = "(audio_url_male IS NULL OR audio_url_male = '')";
@@ -305,7 +309,7 @@ router.get('/batch-tts/candidates', async (req, res) => {
             `SELECT id, word, content_type, audio_url_female, audio_url_male
                FROM words WHERE ${where}
               ORDER BY id DESC LIMIT ?`,
-            [parseInt(limit, 10)]
+            [safeLimit]
         );
         res.json({ success: true, data: words, total: words.length });
     } catch (e) {
@@ -333,7 +337,11 @@ router.post('/batch-tts/generate', async (req, res) => {
         }
 
         if (!result.success || !result.audioUrl) {
-            return res.status(500).json({ success: false, message: result.error || '合成失败' });
+            return res.status(result.statusCode || 500).json({
+                success: false,
+                message: result.error || '合成失败',
+                retryAfterMs: result.retryAfterMs
+            });
         }
 
         const col = voice === 'male' ? 'audio_url_male' : 'audio_url_female';
@@ -342,6 +350,56 @@ router.post('/batch-tts/generate', async (req, res) => {
         res.json({ success: true, audio_url: result.audioUrl });
     } catch (e) {
         res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// ===== 例句图片 AI 生成 =====
+// POST /words/:id/generate-example-image
+// body: { image_hint? } 其余字段从 DB 读取（word, translation, example_sentence, example_translation, category）
+router.post('/:id/generate-example-image', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { image_hint: reqHint = '' } = req.body || {};
+
+        const [w] = await query(
+            `SELECT w.id, w.word, w.translation, w.example_sentence, w.example_translation,
+                    w.image_hint, w.example_image_url,
+                    c.name as category, pc.name as parent_category
+             FROM words w
+             LEFT JOIN word_categories c ON w.category_id = c.id
+             LEFT JOIN word_categories pc ON c.parent_id = pc.id
+             WHERE w.id = ?`,
+            [id]
+        );
+        if (!w) return res.status(404).json({ success: false, message: '单词不存在' });
+        if (!w.example_sentence) return res.status(400).json({ success: false, message: '该单词没有例句，请先补全例句' });
+
+        const category = w.parent_category || w.category || '';
+        const image_hint = reqHint || w.image_hint || '';
+
+        console.log(`[Words] 生成例句图: ${w.word} / 例句: ${w.example_sentence.substring(0, 40)}...`);
+
+        const result = await aiService.generateExampleImage(w.word, {
+            translation: w.translation,
+            example_sentence: w.example_sentence,
+            example_translation: w.example_translation,
+            category,
+            image_hint
+        });
+
+        if (!result.success || !result.imageUrl) {
+            return res.status(500).json({ success: false, message: result.error || '例句图生成失败' });
+        }
+
+        // 删除旧文件（若是本地）
+        if (w.example_image_url) deleteLocalFile(w.example_image_url);
+
+        await query('UPDATE words SET example_image_url = ?, updated_at = NOW() WHERE id = ?', [result.imageUrl, id]);
+
+        res.json({ success: true, data: { example_image_url: result.imageUrl } });
+    } catch (e) {
+        console.error('生成例句图错误:', e);
+        res.status(500).json({ success: false, message: e.message || '生成失败' });
     }
 });
 

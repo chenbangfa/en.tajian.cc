@@ -67,12 +67,12 @@
                 <label class="block text-sm font-medium text-gray-700 mb-1">封面图</label>
                 <div class="flex bg-gray-100 p-1 rounded-lg mb-2 text-xs font-medium">
                     <button type="button" onclick="switchCoverTab('upload')" id="coverTab-upload"
-                        class="flex-1 py-1 rounded-md bg-white shadow-sm text-gray-800">上传</button>
+                        class="flex-1 py-1 rounded-md text-gray-500">上传</button>
                     <button type="button" onclick="switchCoverTab('ai')" id="coverTab-ai"
-                        class="flex-1 py-1 rounded-md text-gray-500">AI生成</button>
+                        class="flex-1 py-1 rounded-md bg-white shadow-sm text-gray-800">AI生成</button>
                 </div>
 
-                <div id="coverPanel-upload">
+                <div id="coverPanel-upload" class="hidden">
                     <div class="border-2 border-dashed border-gray-200 rounded-xl p-3 text-center hover:border-green-300 cursor-pointer"
                         onclick="document.getElementById('coverInput').click()">
                         <input type="file" id="coverInput" accept="image/*" class="hidden" onchange="handleCoverUpload(this)">
@@ -86,27 +86,81 @@
                     </div>
                 </div>
 
-                <div id="coverPanel-ai" class="hidden space-y-2">
+                <div id="coverPanel-ai" class="space-y-2">
+                    <div id="coverPromptSyncBanner" class="hidden rounded-xl border px-3 py-2 text-xs"></div>
                     <textarea id="coverAiPrompt" rows="2"
                         class="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs outline-none focus:border-green-500"
-                        placeholder="描述封面，如：A cute red dog running on green grass, children's book illustration style"></textarea>
-                    <button type="button" onclick="generateCover()"
-                        class="w-full py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-medium">
-                        <i class="fas fa-magic mr-1"></i> AI生成封面
-                    </button>
+                        placeholder="描述封面，如：A cute red dog running on green grass, children's book illustration style"
+                        oninput="saveCoverPromptDebounced()"><%= book ? (book.cover_prompt || '') : '' %></textarea>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button type="button" id="btnRebuildCoverPrompt" onclick="rebuildCoverPrompt()"
+                            class="py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-medium">
+                            <i class="fas fa-rotate-right mr-1"></i>重建封面提示词
+                        </button>
+                        <button type="button" id="btnGenerateCover" onclick="generateCover()"
+                            class="py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-medium">
+                            <i class="fas fa-magic mr-1"></i> AI生成封面
+                        </button>
+                    </div>
+                    <div id="coverAiPreview" class="<%= book && book.cover_url ? '' : 'hidden' %> border border-gray-200 rounded-xl p-2 bg-gray-50">
+                        <img id="coverAiImg" src="<%= book ? (book.cover_url || '') : '' %>" class="w-full h-32 object-cover rounded-lg">
+                        <p class="text-[11px] text-gray-500 mt-1">封面预览（AI）</p>
+                    </div>
                 </div>
 
                 <input type="hidden" name="cover_url" id="coverUrl" value="<%= book ? (book.cover_url || '') : '' %>">
+                <input type="hidden" name="cover_prompt" id="coverPrompt" value="<%= book ? (book.cover_prompt || '') : '' %>">
             </div>
 
-            <div class="pt-3 border-t border-gray-100">
+            <div class="pt-3 border-t border-gray-100 space-y-2">
                 <button type="submit"
                     class="w-full py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl shadow-lg shadow-green-200 font-bold text-sm">
                     保存绘本信息
                 </button>
+                <% if (book && book.id) { %>
+                <button type="button" onclick="openGenVideoDialog()"
+                    class="w-full py-2.5 bg-gradient-to-r from-pink-500 to-purple-500 hover:opacity-90 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2">
+                    <i class="fas fa-film"></i> 生成视频
+                </button>
+                <div id="videoStatusBox" class="hidden text-xs p-2 rounded-lg bg-gray-50 border border-gray-100"></div>
+                <% } %>
             </div>
         </form>
     </div>
+
+    <% if (book && book.id) { %>
+    <!-- 生成视频对话框 -->
+    <div id="genVideoModal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
+            <div class="flex items-center justify-between">
+                <h3 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+                    <i class="fas fa-film text-pink-500"></i> 生成绘本视频
+                </h3>
+                <button onclick="closeGenVideoDialog()" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="text-sm text-gray-500">绘本：<span class="font-medium text-gray-800"><%= book.title_en || book.title %></span></div>
+            <div>
+                <label class="block text-sm text-gray-600 mb-1">字幕模式</label>
+                <select id="cfgSubtitle" class="border rounded-lg px-3 py-2 text-sm w-full">
+                    <option value="bilingual">双语（英文 + 中文）</option>
+                    <option value="english_only">仅英文</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm text-gray-600 mb-1">时长模式</label>
+                <select id="cfgDuration" class="border rounded-lg px-3 py-2 text-sm w-full">
+                    <option value="shorts_60">短视频版 ≤60s（适合全平台）</option>
+                    <option value="full_75">完整版 ≤75s（除 YouTube Shorts 外）</option>
+                </select>
+            </div>
+            <div class="text-xs text-gray-400">配音：使用绘本已有女声音频</div>
+            <div class="flex justify-end gap-3 pt-2 border-t">
+                <button onclick="closeGenVideoDialog()" class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">取消</button>
+                <button id="genVideoSubmit" onclick="submitGenVideo()" class="bg-gradient-to-r from-pink-600 to-purple-600 text-white px-5 py-2 rounded-lg hover:opacity-90">开始生成</button>
+            </div>
+        </div>
+    </div>
+    <% } %>
 
     <!-- Center Column: Page Preview & Edit -->
     <div class="col-span-6 bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-full">
@@ -125,11 +179,8 @@
                     <option value="tencent">腾讯云</option>
                 </select>
                 <div class="w-px h-5 bg-gray-200"></div>
-                <button onclick="generatePageTTS('female')" class="text-xs bg-pink-500 hover:bg-pink-600 text-white px-2 py-1.5 rounded-lg">
-                    <i class="fas fa-volume-up mr-1"></i>女声
-                </button>
-                <button onclick="generatePageTTS('male')" class="text-xs bg-blue-500 hover:bg-blue-600 text-white px-2 py-1.5 rounded-lg">
-                    <i class="fas fa-volume-up mr-1"></i>男声
+                <button onclick="generatePageTTS()" class="text-xs bg-pink-500 hover:bg-pink-600 text-white px-3 py-1.5 rounded-lg">
+                    <i class="fas fa-volume-up mr-1"></i>生成女声
                 </button>
             </div>
         </div>
@@ -162,6 +213,22 @@
                     <input type="file" id="pageImageInput" accept="image/*" class="hidden" onchange="handlePageImageUpload(this)">
                 </div>
 
+                <div id="pagePromptSyncBanner" class="hidden rounded-xl border px-3 py-2 text-xs"></div>
+
+                <div class="grid grid-cols-[1fr_auto_auto] gap-2 items-start">
+                    <textarea id="pageImagePrompt" rows="2"
+                        class="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs outline-none focus:border-purple-500"
+                        placeholder="页面图片 AI 提示词（支持单页单独生成/重生成）" oninput="saveCurrentPageImagePrompt()"></textarea>
+                    <button id="btnRebuildPagePrompt" onclick="rebuildCurrentPagePrompt()"
+                        class="h-full min-h-[64px] px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-medium whitespace-nowrap">
+                        <i class="fas fa-rotate-right mr-1"></i>重建本页提示词
+                    </button>
+                    <button id="btnGeneratePageImage" onclick="generatePageImageAI()"
+                        class="h-full min-h-[64px] px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-medium whitespace-nowrap">
+                        <i class="fas fa-wand-magic-sparkles mr-1"></i>生成内容页图片
+                    </button>
+                </div>
+
                 <!-- Page Text + Audio Row -->
                 <div class="grid grid-cols-2 gap-3">
                     <div>
@@ -184,14 +251,11 @@
 
                 <!-- Audio Row -->
                 <div class="flex items-center space-x-3 bg-gray-50 rounded-xl p-2">
-                    <span class="text-xs text-gray-500">整页音频:</span>
-                    <button id="btnPlayFemale" onclick="playPageAudio('female')" class="hidden text-xs bg-pink-100 text-pink-700 px-3 py-1 rounded-lg hover:bg-pink-200">
-                        <i class="fas fa-play mr-1"></i>女声
+                    <span class="text-xs text-gray-500">整页音频（默认 Google 女声）:</span>
+                    <button id="btnPlayFemale" onclick="playPageAudio()" class="hidden text-xs bg-pink-100 text-pink-700 px-3 py-1 rounded-lg hover:bg-pink-200">
+                        <i class="fas fa-play mr-1"></i>播放
                     </button>
-                    <button id="btnPlayMale" onclick="playPageAudio('male')" class="hidden text-xs bg-blue-100 text-blue-700 px-3 py-1 rounded-lg hover:bg-blue-200">
-                        <i class="fas fa-play mr-1"></i>男声
-                    </button>
-                    <span id="noAudioLabel" class="text-xs text-gray-400">点击顶部TTS按钮生成</span>
+                    <span id="noAudioLabel" class="text-xs text-gray-400">点击顶部按钮生成女声</span>
                 </div>
 
                 <!-- Hotspot List -->
@@ -228,7 +292,12 @@
                 <h3 class="font-bold text-gray-800">
                     页面列表 <span id="pageCount" class="text-xs bg-gray-100 px-2 py-0.5 rounded-full ml-1 text-gray-500">0</span>
                 </h3>
+                <button onclick="rebuildAllPagePrompts()" id="btnRebuildAllPrompts"
+                    class="text-xs bg-amber-100 hover:bg-amber-200 text-amber-700 px-3 py-1.5 rounded-lg font-medium disabled:opacity-50">
+                    <i class="fas fa-repeat mr-1"></i>整本重建提示词
+                </button>
             </div>
+            <div id="pagePromptSyncSummary" class="hidden mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700"></div>
             <button onclick="addPage()" id="btnAddPage"
                 class="w-full py-2 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white rounded-lg text-sm font-medium shadow-sm disabled:opacity-50"
                 <%= book ? '' : 'disabled' %>>
@@ -270,6 +339,281 @@ let currentPageIndex = -1;
 let currentAudio = null;
 let hotspots = [];  // 当前页面的热点
 let activeHotspotIndex = -1;
+let saveImagePromptTimer = null;
+let saveCoverPromptTimer = null;
+let coverPromptState = {
+    cover_prompt_mode: 'auto',
+    cover_prompt_sync_status: 'missing_prompt',
+    cover_prompt_needs_sync: false
+};
+
+function normalizeText(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function containsChinese(value) {
+    return /[\u4e00-\u9fff]/.test(String(value || ''));
+}
+
+function toEnglishText(value) {
+    return String(value || '')
+        .replace(/[\u4e00-\u9fff]/g, ' ')
+        .replace(/[^\x20-\x7E\n]/g, ' ')
+        .replace(/[ \t]{2,}/g, ' ')
+        .replace(/\s+\n/g, '\n')
+        .replace(/\n\s+/g, '\n')
+        .trim();
+}
+
+function firstEnglish(...candidates) {
+    for (const c of candidates) {
+        const t = toEnglishText(c);
+        if (t) return t;
+    }
+    return '';
+}
+
+function buildAutoCoverPrompt() {
+    const title = normalizeText(document.querySelector('input[name="title"]')?.value);
+    const titleEn = firstEnglish(
+        document.querySelector('input[name="title_en"]')?.value,
+        document.querySelector('input[name="title"]')?.value,
+        'Children Picture Book'
+    );
+    const description = normalizeText(document.querySelector('textarea[name="description"]')?.value);
+    const categorySelect = document.getElementById('categorySelect');
+    const selected = categorySelect?.options?.[categorySelect.selectedIndex];
+    const categoryEn = firstEnglish(
+        selected?.getAttribute('data-name-en'),
+        'General Knowledge'
+    );
+    const pageHints = pages
+        .map(p => firstEnglish(p.text_en))
+        .filter(Boolean)
+        .slice(0, 3)
+        .join(' ');
+
+    const theme = firstEnglish(description, categoryEn, 'General science learning for children');
+    const prompt = `Children picture book cover illustration, vertical 9:16 composition, warm natural light, clean scene, expressive kid-friendly characters, educational storytelling, no text watermark, no letters.
+Book title (English): "${titleEn}".
+Category (English): ${categoryEn}.
+Theme: ${theme}.
+Story cues: ${pageHints || 'A child-friendly learning scene with curiosity and discovery.'}
+Create one strong focal cover scene that best represents the whole story for children age 5-10.`;
+    return toEnglishText(prompt);
+}
+
+function getCoverPromptSyncMeta(state = {}) {
+    switch (state.cover_prompt_sync_status) {
+    case 'synced':
+        return {
+            label: state.cover_prompt_mode === 'manual' ? '已同步·手动' : '已同步',
+            className: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+            description: '封面提示词已经和当前标题、分类、简介与正文主线保持同步。'
+        };
+    case 'outdated':
+        return {
+            label: '待同步',
+            className: 'border-amber-200 bg-amber-50 text-amber-700',
+            description: '标题、分类、简介或正文主线已变化，建议先重建封面提示词再生成封面。'
+        };
+    case 'missing_prompt':
+        return {
+            label: '缺少提示词',
+            className: 'border-amber-200 bg-amber-50 text-amber-700',
+            description: '当前还没有封面 AI 提示词，请先重建封面提示词。'
+        };
+    default:
+        return {
+            label: '状态未知',
+            className: 'border-gray-200 bg-gray-50 text-gray-500',
+            description: '封面提示词状态暂不可用。'
+        };
+    }
+}
+
+function renderCoverPromptSyncBanner() {
+    const el = document.getElementById('coverPromptSyncBanner');
+    if (!el) return;
+    const meta = getCoverPromptSyncMeta(coverPromptState);
+    el.className = `rounded-xl border px-3 py-2 text-xs ${meta.className}`;
+    el.textContent = meta.description;
+}
+
+async function loadCoverPromptStatus() {
+    if (!bookId) {
+        const prompt = normalizeText(document.getElementById('coverAiPrompt')?.value);
+        coverPromptState = {
+            cover_prompt_mode: prompt ? 'manual' : 'auto',
+            cover_prompt_sync_status: prompt ? 'synced' : 'missing_prompt',
+            cover_prompt_needs_sync: !prompt
+        };
+        renderCoverPromptSyncBanner();
+        return;
+    }
+
+    try {
+        const res = await fetch(`/picture-books/api/${bookId}/cover-prompt-status`);
+        const data = await res.json();
+        if (!data.success) return;
+        coverPromptState = data.data || coverPromptState;
+        if (document.getElementById('coverAiPrompt') && data.data?.cover_prompt !== undefined) {
+            document.getElementById('coverAiPrompt').value = data.data.cover_prompt || '';
+            document.getElementById('coverPrompt').value = data.data.cover_prompt || '';
+        }
+        renderCoverPromptSyncBanner();
+    } catch (e) {
+        console.error('加载封面提示词状态失败:', e);
+    }
+}
+
+function getPromptSyncMeta(page) {
+    if (!page) {
+        return {
+            label: '未选择页面',
+            listClass: 'bg-gray-100 text-gray-500',
+            bannerClass: 'border-gray-200 bg-gray-50 text-gray-500',
+            description: ''
+        };
+    }
+
+    switch (page.image_prompt_sync_status) {
+    case 'synced':
+        return {
+            label: page.image_prompt_mode === 'manual' ? '已同步·手动' : '已同步',
+            listClass: 'bg-emerald-100 text-emerald-700',
+            bannerClass: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+            description: '当前页面图片提示词已经和英文正文对齐。'
+        };
+    case 'missing_prompt':
+        return {
+            label: '缺少提示词',
+            listClass: 'bg-amber-100 text-amber-700',
+            bannerClass: 'border-amber-200 bg-amber-50 text-amber-700',
+            description: '本页还没有图片提示词，请先重建或手动填写后再生成图片。'
+        };
+    case 'outdated':
+        return {
+            label: '待同步',
+            listClass: 'bg-amber-100 text-amber-700',
+            bannerClass: 'border-amber-200 bg-amber-50 text-amber-700',
+            description: '英文正文已经变更，当前图片提示词仍是旧版本，建议先重建提示词再生成图片。'
+        };
+    case 'missing_text':
+        return {
+            label: '无英文正文',
+            listClass: 'bg-gray-100 text-gray-500',
+            bannerClass: 'border-gray-200 bg-gray-50 text-gray-500',
+            description: '请先填写本页英文正文，系统才能生成与内容呼应的图片提示词。'
+        };
+    default:
+        return {
+            label: '状态未知',
+            listClass: 'bg-gray-100 text-gray-500',
+            bannerClass: 'border-gray-200 bg-gray-50 text-gray-500',
+            description: ''
+        };
+    }
+}
+
+function replacePageData(pageData) {
+    if (!pageData || !pageData.id) return null;
+    const index = pages.findIndex(p => p.id === pageData.id);
+    if (index < 0) return null;
+    pages[index] = { ...pages[index], ...pageData };
+    return pages[index];
+}
+
+function renderPromptSyncSummary() {
+    const summaryEl = document.getElementById('pagePromptSyncSummary');
+    if (!summaryEl) return;
+    const pending = pages.filter(p => p.image_prompt_needs_sync).length;
+    const missingText = pages.filter(p => p.image_prompt_sync_status === 'missing_text').length;
+
+    if (!pages.length) {
+        summaryEl.classList.add('hidden');
+        summaryEl.textContent = '';
+        return;
+    }
+
+    if (pending === 0) {
+        summaryEl.className = 'mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700';
+        summaryEl.textContent = `本书 ${pages.length} 页的图片提示词都已和正文同步。`;
+        return;
+    }
+
+    summaryEl.className = 'mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700';
+    summaryEl.textContent = `本书还有 ${pending} 页提示词待同步${missingText ? `，其中 ${missingText} 页需先补英文正文` : ''}。`;
+}
+
+function renderCurrentPagePromptSync(page) {
+    const banner = document.getElementById('pagePromptSyncBanner');
+    if (!banner) return;
+    if (!page) {
+        banner.classList.add('hidden');
+        banner.textContent = '';
+        return;
+    }
+
+    const meta = getPromptSyncMeta(page);
+    banner.className = `rounded-xl border px-3 py-2 text-xs ${meta.bannerClass}`;
+    banner.textContent = meta.description || meta.label;
+}
+
+async function saveCoverPromptNow(prompt, silent = true) {
+    const text = String(prompt || '').trim();
+    document.getElementById('coverPrompt').value = text;
+    if (!bookId) {
+        coverPromptState = {
+            cover_prompt_mode: text ? 'manual' : 'auto',
+            cover_prompt_sync_status: text ? 'synced' : 'missing_prompt',
+            cover_prompt_needs_sync: !text
+        };
+        renderCoverPromptSyncBanner();
+        return;
+    }
+    try {
+        const res = await fetch(`/picture-books/api/${bookId}/cover-prompt`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cover_prompt: text })
+        });
+        const data = await res.json();
+        if (!silent && !data.success) showToast(data.message || '封面提示词保存失败', 'error');
+        if (data.success) {
+            coverPromptState = {
+                cover_prompt_mode: data.cover_prompt_mode || 'manual',
+                cover_prompt_sync_status: data.cover_prompt_sync_status || 'synced',
+                cover_prompt_needs_sync: !!data.cover_prompt_needs_sync
+            };
+            renderCoverPromptSyncBanner();
+        }
+    } catch (e) {
+        if (!silent) showToast('封面提示词保存失败', 'error');
+    }
+}
+
+function saveCoverPromptDebounced() {
+    const prompt = toEnglishText(document.getElementById('coverAiPrompt').value || '');
+    document.getElementById('coverAiPrompt').value = prompt;
+    document.getElementById('coverPrompt').value = prompt;
+    clearTimeout(saveCoverPromptTimer);
+    saveCoverPromptTimer = setTimeout(() => {
+        saveCoverPromptNow(prompt, true);
+    }, 500);
+}
+
+function ensureAutoCoverPrompt(force = false) {
+    const promptEl = document.getElementById('coverAiPrompt');
+    if (!promptEl) return;
+    if (bookId) return;
+    if (!force && normalizeText(promptEl.value)) return;
+    const prompt = buildAutoCoverPrompt();
+    if (!prompt) return;
+    promptEl.value = prompt;
+    document.getElementById('coverPrompt').value = prompt;
+    saveCoverPromptNow(prompt, true);
+}
 
 // ===== Cover handling =====
 
@@ -278,6 +622,25 @@ function switchCoverTab(tab) {
     document.getElementById('coverTab-ai').className = tab === 'ai' ? 'flex-1 py-1 rounded-md bg-white shadow-sm text-gray-800' : 'flex-1 py-1 rounded-md text-gray-500';
     document.getElementById('coverPanel-upload').className = tab === 'upload' ? '' : 'hidden';
     document.getElementById('coverPanel-ai').className = tab === 'ai' ? 'space-y-2' : 'hidden';
+}
+
+function updateCoverPreview(url) {
+    if (!url) return;
+    document.getElementById('coverUrl').value = url;
+
+    // Upload tab preview
+    const coverImg = document.getElementById('coverImg');
+    const coverPreview = document.getElementById('coverPreview');
+    const coverPlaceholder = document.getElementById('coverPlaceholder');
+    if (coverImg) coverImg.src = url;
+    if (coverPreview) coverPreview.classList.remove('hidden');
+    if (coverPlaceholder) coverPlaceholder.classList.add('hidden');
+
+    // AI tab preview
+    const aiImg = document.getElementById('coverAiImg');
+    const aiPreview = document.getElementById('coverAiPreview');
+    if (aiImg) aiImg.src = url;
+    if (aiPreview) aiPreview.classList.remove('hidden');
 }
 
 async function handleCoverUpload(input) {
@@ -289,10 +652,7 @@ async function handleCoverUpload(input) {
         const res = await fetch('/picture-books/api/upload-cover', { method: 'POST', body: formData });
         const data = await res.json();
         if (data.success) {
-            document.getElementById('coverUrl').value = data.url;
-            document.getElementById('coverImg').src = data.url;
-            document.getElementById('coverPreview').classList.remove('hidden');
-            document.getElementById('coverPlaceholder').classList.add('hidden');
+            updateCoverPreview(data.url);
             showToast('上传成功');
         } else {
             showToast(data.message, 'error');
@@ -303,12 +663,24 @@ async function handleCoverUpload(input) {
 }
 
 async function generateCover() {
-    const prompt = document.getElementById('coverAiPrompt').value;
+    const prompt = toEnglishText((document.getElementById('coverAiPrompt').value || '').trim());
     if (!prompt) return showToast('请输入描述', 'error');
     if (!bookId) return showToast('请先保存绘本', 'error');
+    document.getElementById('coverAiPrompt').value = prompt;
+
+    const btn = document.getElementById('btnGenerateCover');
+    const originalHTML = btn.innerHTML;
+    btn.disabled = true;
+    btn.classList.add('opacity-70', 'cursor-not-allowed');
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> AI 生成中...';
+
+    let seconds = 0;
+    const timer = setInterval(() => {
+        seconds++;
+        btn.innerHTML = `<i class="fas fa-spinner fa-spin mr-1"></i> AI 生成中... (${seconds}s)`;
+    }, 1000);
 
     try {
-        showToast('AI生成中，请耐心等待...', 'info');
         const res = await fetch(`/picture-books/api/${bookId}/generate-cover`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -316,16 +688,66 @@ async function generateCover() {
         });
         const data = await res.json();
         if (data.success) {
-            document.getElementById('coverUrl').value = data.imageUrl;
-            document.getElementById('coverImg').src = data.imageUrl;
-            document.getElementById('coverPreview').classList.remove('hidden');
-            document.getElementById('coverPlaceholder').classList.add('hidden');
+            updateCoverPreview(data.imageUrl);
+            document.getElementById('coverPrompt').value = prompt;
+            await saveCoverPromptNow(prompt, true);
+            await loadCoverPromptStatus();
             showToast('生成成功');
         } else {
             showToast(data.message, 'error');
         }
     } catch (e) {
         showToast('生成出错', 'error');
+    } finally {
+        clearInterval(timer);
+        btn.disabled = false;
+        btn.classList.remove('opacity-70', 'cursor-not-allowed');
+        btn.innerHTML = originalHTML;
+    }
+}
+
+async function rebuildCoverPrompt() {
+    if (!bookId) {
+        const prompt = buildAutoCoverPrompt();
+        if (!prompt) return showToast('请先完善绘本标题、分类或简介', 'error');
+        document.getElementById('coverAiPrompt').value = prompt;
+        await saveCoverPromptNow(prompt, true);
+        showToast('已按当前信息重建封面提示词');
+        return;
+    }
+
+    const btn = document.getElementById('btnRebuildCoverPrompt');
+    const originalHTML = btn.innerHTML;
+    btn.disabled = true;
+    btn.classList.add('opacity-70', 'cursor-not-allowed');
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>重建中';
+
+    try {
+        const res = await fetch(`/picture-books/api/${bookId}/rebuild-cover-prompt`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await res.json();
+        if (!data.success) {
+            showToast(data.message || '重建失败', 'error');
+            return;
+        }
+
+        document.getElementById('coverAiPrompt').value = data.data.cover_prompt || '';
+        document.getElementById('coverPrompt').value = data.data.cover_prompt || '';
+        coverPromptState = {
+            cover_prompt_mode: data.data.cover_prompt_mode || 'auto',
+            cover_prompt_sync_status: data.data.cover_prompt_sync_status || 'synced',
+            cover_prompt_needs_sync: !!data.data.cover_prompt_needs_sync
+        };
+        renderCoverPromptSyncBanner();
+        showToast('封面提示词已重建');
+    } catch (e) {
+        showToast('重建出错: ' + e.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.classList.remove('opacity-70', 'cursor-not-allowed');
+        btn.innerHTML = originalHTML;
     }
 }
 
@@ -333,6 +755,8 @@ async function generateCover() {
 
 document.getElementById('bookForm').addEventListener('submit', async (e) => {
     e.preventDefault();
+    document.getElementById('coverAiPrompt').value = toEnglishText(document.getElementById('coverAiPrompt').value || '');
+    document.getElementById('coverPrompt').value = (document.getElementById('coverAiPrompt').value || '').trim();
     const formData = new FormData(e.target);
     const data = Object.fromEntries(formData.entries());
     data.is_free = e.target.querySelector('input[name="is_free"]').checked ? 1 : 0;
@@ -358,6 +782,8 @@ document.getElementById('bookForm').addEventListener('submit', async (e) => {
             if (!id) {
                 // Redirect to edit page with new ID
                 setTimeout(() => location.href = `/picture-books/edit/${result.id}`, 500);
+            } else {
+                loadCoverPromptStatus();
             }
         } else {
             showToast(result.message, 'error');
@@ -376,6 +802,7 @@ async function loadPages() {
         const data = await res.json();
         if (data.success) {
             pages = data.data;
+            ensureAutoCoverPrompt(false);
             renderPageList();
             if (pages.length > 0 && currentPageIndex < 0) {
                 selectPage(0);
@@ -386,6 +813,7 @@ async function loadPages() {
             } else {
                 showNoPage();
             }
+            loadCoverPromptStatus();
         }
     } catch (e) {
         console.error(e);
@@ -395,6 +823,7 @@ async function loadPages() {
 function renderPageList() {
     const list = document.getElementById('pageList');
     document.getElementById('pageCount').textContent = pages.length;
+    renderPromptSyncSummary();
 
     if (pages.length === 0) {
         list.innerHTML = '<div class="text-center py-8 text-gray-400 text-sm">暂无页面</div>';
@@ -404,7 +833,13 @@ function renderPageList() {
     list.innerHTML = pages.map((p, i) => `
         <div onclick="selectPage(${i})" class="cursor-pointer rounded-xl border-2 p-3 transition-all ${i === currentPageIndex ? 'border-green-500 bg-green-50' : 'border-gray-200 hover:border-green-300'}">
             <div class="flex items-center justify-between mb-1">
-                <span class="text-xs font-bold text-gray-600">第 ${p.page_number} 页</span>
+                <div class="flex items-center gap-2 min-w-0">
+                    <span class="text-xs font-bold text-gray-600">第 ${p.page_number} 页</span>
+                    ${p.image_prompt_sync_status && p.image_prompt_sync_status !== 'synced'
+                        ? `<span class="px-1.5 py-0.5 rounded-full text-[10px] font-medium ${getPromptSyncMeta(p).listClass}">${getPromptSyncMeta(p).label}</span>`
+                        : ''
+                    }
+                </div>
                 <button onclick="event.stopPropagation(); deletePage(${p.id}, ${i})" class="text-gray-400 hover:text-red-500 text-xs p-1">
                     <i class="fas fa-trash-alt"></i>
                 </button>
@@ -415,8 +850,7 @@ function renderPageList() {
             }
             <p class="text-xs text-gray-600 truncate">${p.text_en || '<span class="text-gray-400 italic">无文本</span>'}</p>
             <div class="flex items-center space-x-1 mt-1">
-                ${p.audio_url ? '<span class="w-1.5 h-1.5 rounded-full bg-pink-400" title="有女声音频"></span>' : ''}
-                ${p.audio_url_male ? '<span class="w-1.5 h-1.5 rounded-full bg-blue-400" title="有男声音频"></span>' : ''}
+                ${(p.audio_url || p.audio_url_male) ? '<span class="w-1.5 h-1.5 rounded-full bg-pink-400" title="有朗读音频"></span>' : ''}
             </div>
         </div>
     `).join('');
@@ -426,6 +860,9 @@ function showNoPage() {
     document.getElementById('pageEditor').classList.add('hidden');
     document.getElementById('noPageState').classList.remove('hidden');
     document.getElementById('noPageText').textContent = bookId ? '请点击右侧"添加页面"按钮' : '请先保存绘本信息，然后添加页面';
+    const promptEl = document.getElementById('pageImagePrompt');
+    if (promptEl) promptEl.value = '';
+    renderCurrentPagePromptSync(null);
     currentPageIndex = -1;
 }
 
@@ -451,10 +888,11 @@ function selectPage(index) {
     // Text
     document.getElementById('pageTextEn').value = page.text_en || '';
     document.getElementById('pageTextCn').value = page.text_cn || '';
+    document.getElementById('pageImagePrompt').value = page.image_prompt || '';
+    renderCurrentPagePromptSync(page);
 
     // Audio buttons
-    document.getElementById('btnPlayFemale').classList.toggle('hidden', !page.audio_url);
-    document.getElementById('btnPlayMale').classList.toggle('hidden', !page.audio_url_male);
+    document.getElementById('btnPlayFemale').classList.toggle('hidden', !(page.audio_url || page.audio_url_male));
     document.getElementById('noAudioLabel').classList.toggle('hidden', !!(page.audio_url || page.audio_url_male));
 
     // Load hotspots for this page
@@ -463,6 +901,149 @@ function selectPage(index) {
     loadHotspots();
 
     renderPageList();
+}
+
+// ===== Page Image Prompt & AI Generate =====
+
+async function saveCurrentPageImagePrompt() {
+    if (currentPageIndex < 0) return;
+    const page = pages[currentPageIndex];
+    const imagePrompt = document.getElementById('pageImagePrompt').value || '';
+
+    clearTimeout(saveImagePromptTimer);
+    saveImagePromptTimer = setTimeout(async () => {
+        try {
+            const res = await fetch(`/picture-books/api/${bookId}/pages/${page.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image_prompt: imagePrompt })
+            });
+            const data = await res.json();
+            if (!data.success) return;
+            const updatedPage = replacePageData(data.data);
+            if (updatedPage) {
+                document.getElementById('pageImagePrompt').value = updatedPage.image_prompt || '';
+                renderCurrentPagePromptSync(updatedPage);
+                renderPageList();
+            }
+        } catch (e) {
+            console.error('保存页面图片提示词失败:', e);
+        }
+    }, 500);
+}
+
+async function rebuildCurrentPagePrompt() {
+    if (currentPageIndex < 0) return showToast('请先选择页面', 'error');
+    const page = pages[currentPageIndex];
+    const btn = document.getElementById('btnRebuildPagePrompt');
+    const oldHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.classList.add('opacity-70', 'cursor-not-allowed');
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>重建中';
+
+    try {
+        const res = await fetch(`/picture-books/api/${bookId}/pages/${page.id}/rebuild-prompt`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await res.json();
+        if (!data.success) {
+            showToast(data.message || '重建失败', 'error');
+            return;
+        }
+
+        const updatedPage = replacePageData(data.data);
+        if (updatedPage) {
+            document.getElementById('pageImagePrompt').value = updatedPage.image_prompt || '';
+            renderCurrentPagePromptSync(updatedPage);
+            renderPageList();
+        }
+        showToast('本页图片提示词已重建');
+    } catch (e) {
+        showToast('重建出错: ' + e.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.classList.remove('opacity-70', 'cursor-not-allowed');
+        btn.innerHTML = oldHtml;
+    }
+}
+
+async function rebuildAllPagePrompts() {
+    if (!bookId) return showToast('请先保存绘本', 'error');
+    if (!confirm('将按当前每页英文正文重建整本图片提示词，是否继续？')) return;
+
+    const btn = document.getElementById('btnRebuildAllPrompts');
+    const oldHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.classList.add('opacity-70', 'cursor-not-allowed');
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>重建中';
+
+    try {
+        const res = await fetch(`/picture-books/api/${bookId}/rebuild-page-prompts`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await res.json();
+        if (!data.success) {
+            showToast(data.message || '整本重建失败', 'error');
+            return;
+        }
+
+        await loadPages();
+        showToast(`整本提示词已重建：更新 ${data.updated || 0} 页${data.skipped ? `，跳过 ${data.skipped} 页` : ''}`);
+    } catch (e) {
+        showToast('整本重建出错: ' + e.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.classList.remove('opacity-70', 'cursor-not-allowed');
+        btn.innerHTML = oldHtml;
+    }
+}
+
+async function generatePageImageAI() {
+    if (currentPageIndex < 0) return showToast('请先选择页面', 'error');
+    const page = pages[currentPageIndex];
+    const prompt = (document.getElementById('pageImagePrompt').value || '').trim();
+    if (!prompt) return showToast('请先填写页面图片AI提示词', 'error');
+
+    const btn = document.getElementById('btnGeneratePageImage');
+    const oldHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.classList.add('opacity-70', 'cursor-not-allowed');
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>生成中';
+
+    try {
+        showToast('AI正在生成内容页图片，请稍候...', 'info');
+        const res = await fetch(`/picture-books/api/${bookId}/pages/${page.id}/generate-image`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt })
+        });
+        const data = await res.json();
+        if (!data.success) {
+            showToast(data.message || '生成失败', 'error');
+            return;
+        }
+
+        const updatedPage = replacePageData(data.data || { ...page, image_url: data.imageUrl, image_prompt: data.image_prompt || prompt });
+        page.image_url = data.imageUrl;
+        page.image_prompt = data.image_prompt || prompt;
+        document.getElementById('pageImage').src = data.imageUrl;
+        document.getElementById('imageWrapper').classList.remove('hidden');
+        document.getElementById('pageImagePlaceholder').classList.add('hidden');
+        if (updatedPage) {
+            document.getElementById('pageImagePrompt').value = updatedPage.image_prompt || '';
+            renderCurrentPagePromptSync(updatedPage);
+        }
+        renderPageList();
+        showToast('内容页图片生成成功');
+    } catch (e) {
+        showToast('生成出错: ' + e.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.classList.remove('opacity-70', 'cursor-not-allowed');
+        btn.innerHTML = oldHtml;
+    }
 }
 
 // ===== Hotspot Management =====
@@ -525,12 +1106,8 @@ function renderHotspotList() {
                 </div>
             </div>
             <div class="flex items-center space-x-1 ml-2 shrink-0">
-                ${h.audio_url_female ? `
-                    <button onclick="event.stopPropagation(); playHotspotAudio('${h.audio_url_female}')" class="text-xs text-pink-600 hover:bg-pink-50 p-1 rounded" title="女声">
-                        <i class="fas fa-volume-up"></i>
-                    </button>` : ''}
-                ${h.audio_url_male ? `
-                    <button onclick="event.stopPropagation(); playHotspotAudio('${h.audio_url_male}')" class="text-xs text-blue-600 hover:bg-blue-50 p-1 rounded" title="男声">
+                ${(h.audio_url_female || h.audio_url_male) ? `
+                    <button onclick="event.stopPropagation(); playHotspotAudio('${h.audio_url_female || h.audio_url_male}')" class="text-xs text-pink-600 hover:bg-pink-50 p-1 rounded" title="播放发音">
                         <i class="fas fa-volume-up"></i>
                     </button>` : ''}
                 <button onclick="event.stopPropagation(); generateSingleHotspot(${h.id}, ${i})" class="text-xs bg-purple-100 text-purple-700 hover:bg-purple-200 px-2 py-1 rounded" title="生成翻译+音频">
@@ -645,7 +1222,6 @@ async function generateSingleHotspot(hotspotId, index) {
             hotspots[index].phonetic = data.data.phonetic;
             hotspots[index].translation = data.data.translation;
             hotspots[index].audio_url_female = data.data.audio_url_female;
-            hotspots[index].audio_url_male = data.data.audio_url_male;
             renderHotspotList();
             showToast('生成成功');
         } else {
@@ -679,7 +1255,6 @@ async function batchGenerateHotspots() {
                 hotspots[i].phonetic = data.data.phonetic;
                 hotspots[i].translation = data.data.translation;
                 hotspots[i].audio_url_female = data.data.audio_url_female;
-                hotspots[i].audio_url_male = data.data.audio_url_male;
                 success++;
             } else {
                 fail++;
@@ -778,7 +1353,7 @@ async function saveCurrentPageText() {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(async () => {
         try {
-            await fetch(`/picture-books/api/${bookId}/pages/${page.id}`, {
+            const res = await fetch(`/picture-books/api/${bookId}/pages/${page.id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -786,10 +1361,14 @@ async function saveCurrentPageText() {
                     text_cn: document.getElementById('pageTextCn').value
                 })
             });
-            // Update local data
-            page.text_en = document.getElementById('pageTextEn').value;
-            page.text_cn = document.getElementById('pageTextCn').value;
-            renderPageList();
+            const data = await res.json();
+            if (!data.success) return;
+            const updatedPage = replacePageData(data.data);
+            if (updatedPage) {
+                renderCurrentPagePromptSync(updatedPage);
+                renderPageList();
+            }
+            loadCoverPromptStatus();
         } catch (e) {
             console.error('保存失败:', e);
         }
@@ -832,7 +1411,7 @@ async function handlePageImageUpload(input) {
 
 // ===== TTS =====
 
-async function generatePageTTS(voice) {
+async function generatePageTTS() {
     if (currentPageIndex < 0) return;
     const page = pages[currentPageIndex];
     // Save text first
@@ -847,19 +1426,14 @@ async function generatePageTTS(voice) {
             body: JSON.stringify({ text_en: textEn })
         });
 
-        showToast(`正在生成${voice === 'female' ? '女' : '男'}声音频...`, 'info');
+        showToast('正在生成 Google 女声音频...', 'info');
         const res = await fetch(`/picture-books/api/${bookId}/pages/${page.id}/tts`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ voice })
+            headers: { 'Content-Type': 'application/json' }
         });
         const data = await res.json();
         if (data.success) {
-            if (voice === 'female') {
-                page.audio_url = data.audio_url;
-            } else {
-                page.audio_url_male = data.audio_url;
-            }
+            page.audio_url = data.audio_url;
             selectPage(currentPageIndex);
             showToast('生成成功');
         } else {
@@ -870,10 +1444,10 @@ async function generatePageTTS(voice) {
     }
 }
 
-function playPageAudio(voice) {
+function playPageAudio() {
     if (currentPageIndex < 0) return;
     const page = pages[currentPageIndex];
-    const url = voice === 'female' ? page.audio_url : page.audio_url_male;
+    const url = page.audio_url || page.audio_url_male;
     if (!url) return;
 
     if (currentAudio) currentAudio.pause();
@@ -881,18 +1455,44 @@ function playPageAudio(voice) {
     currentAudio.play();
 }
 
+function bindCoverPromptAutoFillEvents() {
+    const titleEl = document.querySelector('input[name="title"]');
+    const titleEnEl = document.querySelector('input[name="title_en"]');
+    const descEl = document.querySelector('textarea[name="description"]');
+    const catEl = document.getElementById('categorySelect');
+
+    [titleEl, titleEnEl, descEl].forEach(el => {
+        if (!el) return;
+        el.addEventListener('blur', () => {
+            if (bookId) return;
+            ensureAutoCoverPrompt(false);
+        });
+    });
+    if (catEl) {
+        catEl.addEventListener('change', () => {
+            if (bookId) return;
+            ensureAutoCoverPrompt(false);
+        });
+    }
+}
+
 // ===== Init =====
 
 (async function init() {
+    switchCoverTab('ai');
+    const initialCoverUrl = document.getElementById('coverUrl')?.value;
+    if (initialCoverUrl) updateCoverPreview(initialCoverUrl);
+
     // Load categories
     try {
         const res = await fetch('/picture-books/categories/api/list');
         const catData = await res.json();
         if (catData.success) {
             const select = document.getElementById('categorySelect');
+            const escapeAttr = (v = '') => String(v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
             catData.data.forEach(c => {
                 if (c.is_active) {
-                    select.innerHTML += `<option value="${c.id}" ${c.id == initialCategoryId ? 'selected' : ''}>${c.icon || ''} ${c.name}</option>`;
+                    select.innerHTML += `<option value="${c.id}" data-name="${escapeAttr(c.name || '')}" data-name-en="${escapeAttr(c.name_en || '')}" ${c.id == initialCategoryId ? 'selected' : ''}>${c.icon || ''} ${c.name}</option>`;
                 }
             });
         }
@@ -900,9 +1500,82 @@ function playPageAudio(voice) {
         console.error(e);
     }
 
+    const coverPromptEl = document.getElementById('coverAiPrompt');
+    if (bookId) {
+        loadCoverPromptStatus();
+    } else if (!normalizeText(coverPromptEl.value) || containsChinese(coverPromptEl.value)) {
+        ensureAutoCoverPrompt(true);
+    } else {
+        const cleanPrompt = toEnglishText(coverPromptEl.value);
+        coverPromptEl.value = cleanPrompt;
+        document.getElementById('coverPrompt').value = cleanPrompt;
+        renderCoverPromptSyncBanner();
+    }
+    bindCoverPromptAutoFillEvents();
+
     // Load pages
     if (bookId) {
         loadPages();
+        loadVideoStatus();
     }
 })();
+
+// ===== 视频生成对话框 =====
+function openGenVideoDialog() {
+    document.getElementById('genVideoModal').classList.remove('hidden');
+}
+function closeGenVideoDialog() {
+    document.getElementById('genVideoModal').classList.add('hidden');
+}
+async function submitGenVideo() {
+    const subtitle_mode = document.getElementById('cfgSubtitle').value;
+    const duration_mode = document.getElementById('cfgDuration').value;
+    const btn = document.getElementById('genVideoSubmit');
+    btn.disabled = true; btn.innerText = '创建中...';
+    try {
+        const res = await fetch('/picturebook-videos/api/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ book_id: bookId, subtitle_mode, duration_mode, voice: 'female' })
+        }).then(r => r.json());
+        if (res.success) {
+            showToast('任务已创建，请到视频工坊查看进度');
+            closeGenVideoDialog();
+            loadVideoStatus();
+        } else {
+            alert(res.message || '创建失败');
+        }
+    } catch (e) {
+        alert('请求失败: ' + e.message);
+    }
+    btn.disabled = false; btn.innerText = '开始生成';
+}
+
+async function loadVideoStatus() {
+    if (!bookId) return;
+    const box = document.getElementById('videoStatusBox');
+    if (!box) return;
+    try {
+        const res = await fetch(`/picturebook-videos/api/book/${bookId}/status`).then(r => r.json());
+        if (!res.success || !res.data) { box.classList.add('hidden'); return; }
+        const j = res.data;
+        box.classList.remove('hidden');
+        let html = '';
+        if (j.status === 'done') {
+            html = `<div class="text-green-600 flex items-center gap-2"><i class="fas fa-check-circle"></i> 视频已生成
+                <a href="${j.video_url}" target="_blank" class="text-blue-600 underline ml-1">预览</a>
+                <a href="${j.video_url}" download class="text-gray-500 underline ml-1">下载</a>
+                <a href="/picturebook-videos" class="text-gray-500 underline ml-auto">前往工坊</a></div>`;
+        } else if (j.status === 'processing') {
+            html = `<div class="text-yellow-600"><i class="fas fa-spinner fa-spin"></i> 生成中 ${j.progress || 0}%</div>`;
+            setTimeout(loadVideoStatus, 3000);
+        } else if (j.status === 'pending') {
+            html = `<div class="text-gray-500"><i class="fas fa-clock"></i> 排队中</div>`;
+            setTimeout(loadVideoStatus, 3000);
+        } else if (j.status === 'failed') {
+            html = `<div class="text-red-500"><i class="fas fa-times-circle"></i> 生成失败 ${j.error_message || ''}</div>`;
+        }
+        box.innerHTML = html;
+    } catch (e) { /* ignore */ }
+}
 </script>

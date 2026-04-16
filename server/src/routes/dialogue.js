@@ -76,18 +76,29 @@ router.get('/categories', async (req, res) => {
 // ===== GET /dialogue/scenes =====
 router.get('/scenes', optionalAuth, async (req, res) => {
     try {
-        const { category_id, page = 1, limit = 20 } = req.query;
+        const { category_id, group_name = '', page = 1, limit = 20 } = req.query;
         const offset = (parseInt(page) - 1) * parseInt(limit);
-        let sql = 'SELECT id,title,title_en,description,cover_image,category_id,difficulty,guide_role,user_role,is_vip,line_count FROM dialogue_scenes WHERE is_active=1';
+        let sql = `SELECT s.id,s.title,s.title_en,s.description,s.cover_image,s.category_id,s.difficulty,s.guide_role,s.user_role,s.is_vip,s.line_count
+                   FROM dialogue_scenes s
+                   LEFT JOIN dialogue_categories c ON s.category_id = c.id
+                   WHERE s.is_active=1`;
         const params = [];
 
         if (category_id && parseInt(category_id) > 0) {
-            sql += ' AND category_id = ?';
+            sql += ' AND s.category_id = ?';
             params.push(parseInt(category_id));
         }
 
-        const countSql = sql.replace('SELECT id,title,title_en,description,cover_image,category_id,difficulty,guide_role,user_role,is_vip,line_count', 'SELECT COUNT(*) as total');
-        sql += ' ORDER BY sort_order ASC, id DESC LIMIT ? OFFSET ?';
+        if (group_name) {
+            sql += ' AND c.group_name = ?';
+            params.push(group_name);
+        }
+
+        const countSql = sql.replace(
+            `SELECT s.id,s.title,s.title_en,s.description,s.cover_image,s.category_id,s.difficulty,s.guide_role,s.user_role,s.is_vip,s.line_count`,
+            'SELECT COUNT(*) as total'
+        );
+        sql += ' ORDER BY s.sort_order ASC, s.id DESC LIMIT ? OFFSET ?';
         params.push(parseInt(limit), offset);
 
         const [scenes, countResult] = await Promise.all([
@@ -145,7 +156,7 @@ router.get('/scenes/:id', optionalAuth, async (req, res) => {
     }
 });
 
-// ===== POST /dialogue/scenes/:id/tts  生成台词 TTS（guide 女声 / user 男声）=====
+// ===== POST /dialogue/scenes/:id/tts  生成台词 TTS（固定角色发音：guide 女声 / user 男声）=====
 router.post('/scenes/:id/tts', authMiddleware, async (req, res) => {
     try {
         const { id } = req.params;
@@ -158,8 +169,9 @@ router.post('/scenes/:id/tts', authMiddleware, async (req, res) => {
         let generated = 0;
         for (const line of lines) {
             try {
+                const speed = voiceService.getGoogleTtsSpeed('dialogue');
                 const voice = line.role === 'guide' ? 'female' : 'male';
-                const result = await voiceService.textToSpeech(line.line_en, voice, 1.0);
+                const result = await voiceService.googleTextToSpeech(line.line_en, voice, speed);
                 if (result.success && result.audioUrl) {
                     await query('UPDATE dialogue_lines SET audio_url = ? WHERE id = ?', [result.audioUrl, line.id]);
                     generated++;

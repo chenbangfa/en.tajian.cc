@@ -72,13 +72,13 @@
         <label class="block text-sm font-medium text-gray-700 mb-1.5">封面图片</label>
         <div class="flex bg-gray-100 p-1 rounded-xl mb-3 text-sm font-medium">
           <button type="button" onclick="switchCoverTab('upload')" id="tab-upload"
-            class="flex-1 py-1.5 rounded-lg bg-white shadow-sm text-gray-800 transition-all">本地上传</button>
+            class="flex-1 py-1.5 rounded-lg text-gray-500 hover:text-gray-800 transition-all">本地上传</button>
           <button type="button" onclick="switchCoverTab('ai')" id="tab-ai"
-            class="flex-1 py-1.5 rounded-lg text-gray-500 hover:text-gray-800 transition-all">AI生成</button>
+            class="flex-1 py-1.5 rounded-lg bg-white shadow-sm text-gray-800 transition-all">AI生成</button>
         </div>
 
         <!-- 上传面板 -->
-        <div id="panel-upload" class="block">
+        <div id="panel-upload" class="hidden">
           <div class="border-2 border-dashed border-gray-200 rounded-xl p-4 text-center hover:border-blue-300 transition-colors cursor-pointer"
             onclick="document.getElementById('coverFileInput').click()">
             <input type="file" id="coverFileInput" accept="image/*" class="hidden" onchange="handleCoverUpload(this)">
@@ -89,9 +89,18 @@
 
         <!-- AI 面板 -->
         <div id="panel-ai" class="hidden space-y-2">
+          <select id="aiCoverProvider"
+            class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm outline-none focus:border-blue-500 bg-white">
+            <option value="gemini">Gemini 生图</option>
+            <option value="tencent">腾讯混元生图</option>
+          </select>
           <textarea id="aiCoverPrompt" rows="2"
             class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm outline-none focus:border-blue-500"
             placeholder="描述场景封面，例如：A coffee shop with a barista serving coffee..."></textarea>
+          <button type="button" onclick="fillCoverPrompt(true)"
+            class="w-full py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition-colors">
+            <i class="fas fa-wand-magic-sparkles mr-1"></i> 自动填充提示词
+          </button>
           <button type="button" onclick="generateCoverImage()"
             class="w-full py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors">
             <i class="fas fa-magic mr-1"></i> AI 生成封面
@@ -143,7 +152,7 @@
       <div id="emptyLines" class="flex flex-col items-center justify-center py-20 text-gray-400">
         <i class="fas fa-comments text-4xl mb-3 opacity-30"></i>
         <p>暂无台词，点击上方按钮添加</p>
-        <p class="text-xs mt-1">对方台词用女声，我的台词用男声</p>
+        <p class="text-xs mt-1">默认固定发音：对方女声，我方男声</p>
       </div>
     </div>
   </div>
@@ -159,6 +168,8 @@
 <script>
   const sceneId = document.getElementById('sceneId').value;
   let lines = []; // { id?, role, line_en, line_cn, audio_url?, _dirty }
+  let aiCoverPromptTouched = false;
+  let aiCoverPromptLoading = false;
 
   // ===== Cover Image =====
 
@@ -171,12 +182,87 @@
       : 'flex-1 py-1.5 rounded-lg text-gray-500 hover:text-gray-800 transition-all';
     document.getElementById('panel-upload').className = tab === 'upload' ? 'block' : 'hidden';
     document.getElementById('panel-ai').className = tab === 'ai' ? 'block space-y-2' : 'hidden';
+    if (tab === 'ai') fillCoverPrompt(false);
   }
 
   function updateCoverPreview(url) {
     document.getElementById('f_cover_image').value = url;
     document.getElementById('coverImg').src = url;
     document.getElementById('coverPreview').classList.remove('hidden');
+  }
+
+  function getDifficultyLabel(value) {
+    return { 1: 'beginner', 2: 'intermediate', 3: 'advanced' }[Number(value)] || 'beginner';
+  }
+
+  function sanitizeEnglishText(text = '') {
+    return String(text || '')
+      .replace(/[\u4e00-\u9fff]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function buildLocalCoverPrompt() {
+    const promptInput = document.getElementById('aiCoverPrompt');
+    if (!promptInput) return '';
+
+    const titleEn = sanitizeEnglishText(document.getElementById('f_title_en').value);
+    const guideRole = sanitizeEnglishText(document.getElementById('f_guide_role').value) || 'helpful adult';
+    const userRole = sanitizeEnglishText(document.getElementById('f_user_role').value) || 'student';
+    const difficulty = getDifficultyLabel(document.getElementById('f_difficulty').value);
+    const sampleLines = lines
+      .filter(line => line.line_en && line.line_en.trim())
+      .slice(0, 3)
+      .map(line => sanitizeEnglishText(line.line_en))
+      .filter(Boolean)
+      .join(' ');
+
+    if (!titleEn && !sampleLines) return '';
+
+    return [
+      'Create a dialogue scene cover illustration for an English learning app.',
+      titleEn ? `Scene title: "${titleEn}".` : '',
+      `Characters: one ${guideRole} and one ${userRole}, natural face-to-face interaction.`,
+      sampleLines ? `Conversation beat reference: ${sampleLines}` : '',
+      `Level: ${difficulty}.`,
+      'Show a clear real-life setting that matches the topic.',
+      'Warm light, clean composition, expressive characters, suitable for learners, medium shot, realistic illustration.',
+      'No text, no watermark, no speech bubbles, no subtitles.'
+    ].filter(Boolean).join(' ');
+  }
+
+  async function fillCoverPrompt(force = false) {
+    const promptInput = document.getElementById('aiCoverPrompt');
+    if (!promptInput || aiCoverPromptLoading) return;
+    if (!force && (aiCoverPromptTouched || promptInput.value.trim())) return;
+
+    if (sceneId) {
+      try {
+        aiCoverPromptLoading = true;
+        const res = await fetch(`${API_BASE}/dialogue/scenes/${sceneId}/cover-prompt`);
+        const data = await res.json();
+        if (data.success && data.prompt) {
+          promptInput.value = data.prompt;
+          aiCoverPromptTouched = false;
+          if (force) showToast('已自动填充提示词');
+          return;
+        }
+      } catch (e) {
+        console.warn('load cover prompt failed:', e);
+      } finally {
+        aiCoverPromptLoading = false;
+      }
+    }
+
+    const prompt = buildLocalCoverPrompt();
+    if (!prompt) {
+      if (force) showToast('请先填写英文标题或英文台词，再自动生成提示词', 'error');
+      return;
+    }
+
+    promptInput.value = prompt;
+    aiCoverPromptTouched = false;
+    if (force) showToast('已自动填充提示词');
   }
 
   async function handleCoverUpload(input) {
@@ -193,14 +279,17 @@
   }
 
   async function generateCoverImage() {
-    const prompt = document.getElementById('aiCoverPrompt').value.trim();
+    const promptInput = document.getElementById('aiCoverPrompt');
+    if (!promptInput.value.trim()) await fillCoverPrompt(false);
+    const prompt = promptInput.value.trim();
+    const provider = document.getElementById('aiCoverProvider').value;
     if (!prompt) return showToast('请输入描述', 'error');
     try {
       showToast('AI 生成中，请稍候...', 'info');
       const res = await fetch(`${API_BASE}/dialogue/generate-cover`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt })
+        body: JSON.stringify({ prompt, provider })
       });
       const data = await res.json();
       if (data.success) { updateCoverPreview(data.imageUrl); showToast('生成成功'); }
@@ -472,6 +561,14 @@
   // ===== Init =====
 
   (async function init() {
+    const coverPromptInput = document.getElementById('aiCoverPrompt');
+    if (coverPromptInput) {
+      coverPromptInput.addEventListener('input', () => {
+        aiCoverPromptTouched = coverPromptInput.value.trim().length > 0;
+      });
+    }
+    switchCoverTab('ai');
     await loadLines();
+    fillCoverPrompt(true);
   })();
 </script>

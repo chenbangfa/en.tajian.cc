@@ -7,6 +7,11 @@
             <p class="text-gray-500 mt-1">创建和管理绘本故事内容</p>
         </div>
         <div class="flex items-center gap-3">
+            <a href="/picturebook-videos"
+                class="flex items-center space-x-2 bg-white border border-pink-200 text-pink-700 hover:bg-pink-50 px-5 py-3 rounded-xl transition-all duration-300">
+                <i class="fas fa-film"></i>
+                <span>视频工坊</span>
+            </a>
             <a href="/picture-books/batch-audio"
                 class="flex items-center space-x-2 bg-white border border-pink-200 text-pink-700 hover:bg-pink-50 px-5 py-3 rounded-xl transition-all duration-300">
                 <i class="fas fa-headphones"></i>
@@ -54,6 +59,46 @@
             <p>加载绘本中...</p>
         </div>
     </div>
+
+    <!-- 生成视频对话框 -->
+    <div id="genVideoModal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
+            <div class="flex items-center justify-between">
+                <h3 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+                    <i class="fas fa-film text-pink-500"></i> 生成绘本视频
+                </h3>
+                <button onclick="closeGenVideoDialog()" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="text-sm text-gray-500">绘本：<span id="genVideoTitle" class="font-medium text-gray-800"></span></div>
+            <div>
+                <label class="block text-sm text-gray-600 mb-1">字幕模式</label>
+                <select id="cfgSubtitle" class="border rounded-lg px-3 py-2 text-sm w-full">
+                    <option value="bilingual">双语（英文 + 中文）</option>
+                    <option value="english_only">仅英文</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm text-gray-600 mb-1">时长模式</label>
+                <select id="cfgDuration" class="border rounded-lg px-3 py-2 text-sm w-full">
+                    <option value="shorts_60">短视频版 ≤60s（适合全平台）</option>
+                    <option value="full_75">完整版 ≤75s（除 YouTube Shorts 外）</option>
+                </select>
+            </div>
+            <div class="text-xs text-gray-400">配音：使用绘本已有女声音频</div>
+            <div class="flex justify-end gap-3 pt-2 border-t">
+                <button onclick="closeGenVideoDialog()" class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">取消</button>
+                <button id="genVideoSubmit" onclick="submitGenVideo()" class="bg-gradient-to-r from-pink-600 to-purple-600 text-white px-5 py-2 rounded-lg hover:opacity-90">开始生成</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 视频预览 -->
+    <div id="videoPreviewModal" class="hidden fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onclick="if(event.target===this)closeVideoPreview()">
+        <div class="rounded-xl overflow-hidden bg-black" style="max-height: 85vh; aspect-ratio: 9/16;">
+            <video id="videoPreviewPlayer" controls class="w-full h-full"></video>
+        </div>
+        <button onclick="closeVideoPreview()" class="absolute top-6 right-6 text-white/80 hover:text-white text-2xl"><i class="fas fa-times"></i></button>
+    </div>
 </div>
 
 <script>
@@ -74,6 +119,9 @@ async function loadCategories() {
     }
 }
 
+// 缓存视频任务状态：{book_id: {status, video_url, cover_url, ...}}
+let _videoStatusMap = {};
+
 async function loadBooks() {
     const categoryId = document.getElementById('categoryFilter').value;
     const keyword = document.getElementById('searchInput').value;
@@ -85,7 +133,19 @@ async function loadBooks() {
     try {
         const res = await fetch(url);
         const result = await res.json();
-        renderBooks(result.data || []);
+        const books = result.data || [];
+        // 批量查询视频状态
+        if (books.length) {
+            try {
+                const st = await fetch('/picturebook-videos/api/books/status-batch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ book_ids: books.map(b => b.id) })
+                }).then(r => r.json());
+                _videoStatusMap = (st && st.success) ? (st.data || {}) : {};
+            } catch (e) { _videoStatusMap = {}; }
+        }
+        renderBooks(books);
     } catch (err) {
         showToast('加载失败', 'error');
     }
@@ -101,7 +161,21 @@ function renderBooks(books) {
         return;
     }
 
-    container.innerHTML = books.map(book => `
+    container.innerHTML = books.map(book => {
+        const vs = _videoStatusMap[book.id];
+        let videoBadge = '';
+        if (vs) {
+            if (vs.status === 'done') {
+                videoBadge = `<button onclick="previewBookVideo(${book.id})" class="absolute bottom-2 left-2 bg-green-500/90 text-white text-xs px-2 py-1 rounded-full hover:bg-green-600 flex items-center gap-1" title="点击预览"><i class="fas fa-play"></i> 视频已生成</button>`;
+            } else if (vs.status === 'processing') {
+                videoBadge = `<div class="absolute bottom-2 left-2 bg-yellow-500/90 text-white text-xs px-2 py-1 rounded-full animate-pulse"><i class="fas fa-spinner fa-spin"></i> 生成中 ${vs.progress || 0}%</div>`;
+            } else if (vs.status === 'pending') {
+                videoBadge = `<div class="absolute bottom-2 left-2 bg-gray-500/90 text-white text-xs px-2 py-1 rounded-full"><i class="fas fa-clock"></i> 排队中</div>`;
+            } else if (vs.status === 'failed') {
+                videoBadge = `<div class="absolute bottom-2 left-2 bg-red-500/90 text-white text-xs px-2 py-1 rounded-full" title="${(vs.error_message||'').replace(/"/g,'&quot;')}"><i class="fas fa-times-circle"></i> 生成失败</div>`;
+            }
+        }
+        return `
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden group hover:shadow-lg transition-all duration-300">
             <!-- Cover -->
             <div class="relative h-48 bg-gradient-to-br from-green-50 to-emerald-50 overflow-hidden">
@@ -119,6 +193,7 @@ function renderBooks(books) {
                 </div>
                 ${!book.is_active ? '<div class="absolute top-2 right-2 bg-red-500 text-white text-xs px-2 py-1 rounded-full">已下架</div>' : ''}
                 ${!book.is_free ? '<div class="absolute top-2 left-2 bg-yellow-500 text-white text-xs px-2 py-1 rounded-full">VIP</div>' : ''}
+                ${videoBadge}
             </div>
 
             <!-- Content -->
@@ -130,6 +205,9 @@ function renderBooks(books) {
                         <i class="fas fa-folder mr-1"></i> ${book.category_name || '未分类'}
                     </span>
                     <div class="flex space-x-2">
+                        <button onclick="openGenVideoDialog(${book.id}, '${(book.title||'').replace(/'/g,"\\'")}')" class="p-2 text-pink-600 hover:bg-pink-50 rounded-lg transition-colors" title="生成视频">
+                            <i class="fas fa-film"></i>
+                        </button>
                         <a href="/picture-books/edit/${book.id}" class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="编辑">
                             <i class="fas fa-edit"></i>
                         </a>
@@ -140,7 +218,68 @@ function renderBooks(books) {
                 </div>
             </div>
         </div>
-    `).join('');
+    `}).join('');
+}
+
+// ===== 视频生成对话框 =====
+function openGenVideoDialog(bookId, title) {
+    const modal = document.getElementById('genVideoModal');
+    modal.dataset.bookId = bookId;
+    document.getElementById('genVideoTitle').textContent = title || `绘本 #${bookId}`;
+    modal.classList.remove('hidden');
+}
+
+function closeGenVideoDialog() {
+    document.getElementById('genVideoModal').classList.add('hidden');
+}
+
+async function submitGenVideo() {
+    const modal = document.getElementById('genVideoModal');
+    const bookId = parseInt(modal.dataset.bookId);
+    const subtitle_mode = document.getElementById('cfgSubtitle').value;
+    const duration_mode = document.getElementById('cfgDuration').value;
+    const btn = document.getElementById('genVideoSubmit');
+    btn.disabled = true;
+    btn.innerText = '创建中...';
+    try {
+        const res = await fetch('/picturebook-videos/api/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ book_id: bookId, subtitle_mode, duration_mode, voice: 'female' })
+        }).then(r => r.json());
+        if (res.success) {
+            showToast('任务已创建');
+            closeGenVideoDialog();
+            loadBooks();
+        } else {
+            alert(res.message || '创建失败');
+        }
+    } catch (e) {
+        alert('请求失败: ' + e.message);
+    }
+    btn.disabled = false;
+    btn.innerText = '开始生成';
+}
+
+// ===== 视频预览 =====
+async function previewBookVideo(bookId) {
+    const vs = _videoStatusMap[bookId];
+    if (!vs || !vs.video_url) {
+        showToast('视频不存在', 'error');
+        return;
+    }
+    const modal = document.getElementById('videoPreviewModal');
+    const player = document.getElementById('videoPreviewPlayer');
+    player.src = vs.video_url;
+    modal.classList.remove('hidden');
+    try { await player.play(); } catch (e) { /* autoplay blocked */ }
+}
+
+function closeVideoPreview() {
+    const player = document.getElementById('videoPreviewPlayer');
+    player.pause();
+    player.src = '';
+    document.getElementById('videoPreviewModal').classList.add('hidden');
 }
 
 async function deleteBook(id) {

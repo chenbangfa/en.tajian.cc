@@ -21,6 +21,169 @@ const CHECKIN_STRATEGY = {
     random: 'random',
     curriculum: 'curriculum'
 };
+const CURRICULUM_TASK_TYPES = ['word', 'scene', 'podcast', 'picture_book_page'];
+
+function inferAssessmentContentType(referenceText = '', taskType = 'word') {
+    const text = String(referenceText || '').trim();
+    const wordCount = text ? text.split(/\s+/).length : 0;
+    if (taskType === 'scene') return 'sentence';
+    if (taskType === 'podcast' || taskType === 'picture_book_page') {
+        return wordCount > 20 ? 'paragraph' : 'sentence';
+    }
+    if (wordCount > 20) return 'paragraph';
+    if (wordCount > 2) return 'sentence';
+    return 'word';
+}
+
+function parseExtraInfo(extraInfo) {
+    if (!extraInfo) return {};
+    if (typeof extraInfo === 'object') return extraInfo;
+    try {
+        return JSON.parse(extraInfo);
+    } catch (e) {
+        return {};
+    }
+}
+
+async function hydrateCourseItems(rows) {
+    if (!rows.length) return [];
+
+    const byType = rows.reduce((acc, row) => {
+        if (!acc[row.task_type]) acc[row.task_type] = [];
+        acc[row.task_type].push(row);
+        return acc;
+    }, {});
+
+    const payloadMap = new Map();
+
+    if (byType.word && byType.word.length) {
+        const ids = byType.word.map(r => r.target_id);
+        const list = await query(
+            `SELECT id, word, phonetic, translation, image_url,
+                    audio_url_female, audio_url_male,
+                    example_sentence, example_translation,
+                    example_audio_female, example_audio_male,
+                    grammar_explanation, content_type
+             FROM words WHERE id IN (${ids.map(() => '?').join(',')})`,
+            ids
+        );
+        list.forEach(w => {
+            payloadMap.set(`word:${w.id}`, {
+                task_type: 'word',
+                target_id: w.id,
+                reference_text: w.word,
+                extra_info: {
+                    word: w.word,
+                    phonetic: w.phonetic,
+                    translation: w.translation,
+                    image_url: w.image_url,
+                    audio_url_female: w.audio_url_female,
+                    audio_url_male: w.audio_url_male,
+                    example_sentence: w.example_sentence,
+                    example_translation: w.example_translation,
+                    example_audio_female: w.example_audio_female,
+                    example_audio_male: w.example_audio_male,
+                    grammar_explanation: w.grammar_explanation,
+                    content_type: w.content_type || 'word'
+                }
+            });
+        });
+    }
+
+    if (byType.scene && byType.scene.length) {
+        const ids = byType.scene.map(r => r.target_id);
+        const list = await query(
+            `SELECT so.id, so.custom_label, so.phonetic, so.translation,
+                    so.audio_url_female, so.audio_url_male,
+                    s.name as scene_name, s.image_url as scene_image
+             FROM scene_objects so
+             JOIN scenes s ON s.id = so.scene_id AND s.is_active = 1
+             WHERE so.id IN (${ids.map(() => '?').join(',')})`,
+            ids
+        );
+        list.forEach(o => {
+            payloadMap.set(`scene:${o.id}`, {
+                task_type: 'scene',
+                target_id: o.id,
+                reference_text: o.custom_label,
+                extra_info: {
+                    label: o.custom_label,
+                    phonetic: o.phonetic,
+                    translation: o.translation,
+                    scene_name: o.scene_name,
+                    scene_image: o.scene_image,
+                    audio_url_female: o.audio_url_female,
+                    audio_url_male: o.audio_url_male
+                }
+            });
+        });
+    }
+
+    if (byType.podcast && byType.podcast.length) {
+        const ids = byType.podcast.map(r => r.target_id);
+        const list = await query(
+            `SELECT id, title, title_en, content_text, translation,
+                    difficulty_level, male_audio_url, female_audio_url, chinese_audio_url
+             FROM podcast_contents
+             WHERE id IN (${ids.map(() => '?').join(',')})`,
+            ids
+        );
+        list.forEach(c => {
+            payloadMap.set(`podcast:${c.id}`, {
+                task_type: 'podcast',
+                target_id: c.id,
+                reference_text: c.content_text,
+                extra_info: {
+                    title: c.title,
+                    title_en: c.title_en,
+                    content_text: c.content_text,
+                    translation: c.translation,
+                    difficulty_level: c.difficulty_level,
+                    male_audio_url: c.male_audio_url,
+                    female_audio_url: c.female_audio_url,
+                    chinese_audio_url: c.chinese_audio_url
+                }
+            });
+        });
+    }
+
+    if (byType.picture_book_page && byType.picture_book_page.length) {
+        const ids = byType.picture_book_page.map(r => r.target_id);
+        const list = await query(
+            `SELECT p.id, p.book_id, p.page_number, p.image_url, p.text_en, p.text_cn,
+                    p.audio_url, p.audio_url_male,
+                    pb.title, pb.title_en, pb.cover_url
+             FROM picture_book_pages p
+             JOIN picture_books pb ON pb.id = p.book_id
+             WHERE p.id IN (${ids.map(() => '?').join(',')})`,
+            ids
+        );
+        list.forEach(p => {
+            payloadMap.set(`picture_book_page:${p.id}`, {
+                task_type: 'picture_book_page',
+                target_id: p.id,
+                reference_text: p.text_en,
+                extra_info: {
+                    book_id: p.book_id,
+                    book_title: p.title,
+                    book_title_en: p.title_en,
+                    page_number: p.page_number,
+                    image_url: p.image_url,
+                    text_en: p.text_en,
+                    text_cn: p.text_cn,
+                    audio_url_female: p.audio_url,
+                    audio_url_male: p.audio_url_male,
+                    cover_image: p.cover_url
+                }
+            });
+        });
+    }
+
+    return rows.map(row => {
+        const hydrated = payloadMap.get(`${row.task_type}:${row.target_id}`);
+        return hydrated ? { ...hydrated, course_item_id: row.course_item_id || row.id } : null;
+    }).filter(Boolean);
+}
 
 // 积分规则：每个任务按评分给积分
 function calcTaskPoints(score) {
@@ -99,7 +262,7 @@ const handleCheckinUpload = (req, res, next) => {
         await query(`CREATE TABLE IF NOT EXISTS daily_task_items (
             id INT AUTO_INCREMENT PRIMARY KEY,
             plan_id INT NOT NULL, user_id INT NOT NULL,
-            task_type ENUM('word','scene','podcast') NOT NULL,
+            task_type ENUM('word','scene','podcast','picture_book_page') NOT NULL,
             target_id INT DEFAULT NULL, course_item_id INT DEFAULT NULL, reference_text TEXT,
             extra_info JSON DEFAULT NULL,
             status ENUM('pending','completed','skipped') DEFAULT 'pending',
@@ -166,7 +329,7 @@ const handleCheckinUpload = (req, res, next) => {
         await query(`CREATE TABLE IF NOT EXISTS checkin_course_items (
             id INT AUTO_INCREMENT PRIMARY KEY,
             course_id INT NOT NULL,
-            task_type ENUM('word','scene','podcast') NOT NULL,
+            task_type ENUM('word','scene','podcast','picture_book_page') NOT NULL,
             target_id INT NOT NULL,
             sort_order INT DEFAULT 0,
             is_active TINYINT(1) DEFAULT 1,
@@ -227,6 +390,12 @@ const handleCheckinUpload = (req, res, next) => {
                 await query(`ALTER TABLE daily_task_plans ADD COLUMN ${col.name} ${col.sql}`);
             } catch (e) { /* 字段已存在则忽略 */ }
         }
+        try {
+            await query(`ALTER TABLE daily_task_items MODIFY COLUMN task_type ENUM('word','scene','podcast','picture_book_page') NOT NULL`);
+        } catch (e) { /* 枚举已兼容则忽略 */ }
+        try {
+            await query(`ALTER TABLE checkin_course_items MODIFY COLUMN task_type ENUM('word','scene','podcast','picture_book_page') NOT NULL`);
+        } catch (e) { /* 枚举已兼容则忽略 */ }
     } catch (e) {
         console.error('每日任务表初始化失败（可忽略如果已存在）:', e.message);
     }
@@ -461,7 +630,7 @@ router.post('/complete-task', authMiddleware, requirePoints(1), handleCheckinUpl
         }
 
         // 语音评测
-        const contentType = task.task_type === 'podcast' ? 'paragraph' : (task.task_type === 'scene' ? 'sentence' : 'word');
+        const contentType = inferAssessmentContentType(task.reference_text, task.task_type);
         const assessResult = await voiceService.assessPronunciation(
             req.file.path,
             task.reference_text,
@@ -1070,82 +1239,7 @@ async function generateCurriculumTaskItems(userId, type, count, excludeIds, opti
     );
     if (!rows.length) return [];
 
-    const targetIds = rows.map(r => r.target_id);
-    const courseItemMap = new Map(rows.map(r => [String(r.target_id), r.course_item_id]));
-
-    if (type === 'word') {
-        const list = await query(
-            `SELECT id, word, phonetic, translation, image_url, audio_url_female, audio_url_male
-             FROM words WHERE id IN (${targetIds.map(() => '?').join(',')})`,
-            targetIds
-        );
-        return list.map(w => ({
-            target_id: w.id,
-            course_item_id: courseItemMap.get(String(w.id)),
-            reference_text: w.word,
-            extra_info: {
-                word: w.word,
-                phonetic: w.phonetic,
-                translation: w.translation,
-                image_url: w.image_url,
-                audio_female: w.audio_url_female,
-                audio_male: w.audio_url_male
-            }
-        }));
-    }
-
-    if (type === 'scene') {
-        const list = await query(
-            `SELECT so.id, so.custom_label, so.phonetic, so.translation,
-                    so.audio_url_female, so.audio_url_male,
-                    s.name as scene_name, s.image_url as scene_image
-             FROM scene_objects so
-             JOIN scenes s ON s.id = so.scene_id AND s.is_active = 1
-             WHERE so.id IN (${targetIds.map(() => '?').join(',')})`,
-            targetIds
-        );
-        return list.map(o => ({
-            target_id: o.id,
-            course_item_id: courseItemMap.get(String(o.id)),
-            reference_text: o.custom_label,
-            extra_info: {
-                label: o.custom_label,
-                phonetic: o.phonetic,
-                translation: o.translation,
-                scene_name: o.scene_name,
-                scene_image: o.scene_image,
-                audio_female: o.audio_url_female,
-                audio_male: o.audio_url_male
-            }
-        }));
-    }
-
-    if (type === 'podcast') {
-        const list = await query(
-            `SELECT id, title, title_en, content_text, translation,
-                    difficulty_level, male_audio_url, female_audio_url, chinese_audio_url
-             FROM podcast_contents
-             WHERE id IN (${targetIds.map(() => '?').join(',')})`,
-            targetIds
-        );
-        return list.map(c => ({
-            target_id: c.id,
-            course_item_id: courseItemMap.get(String(c.id)),
-            reference_text: c.content_text,
-            extra_info: {
-                title: c.title,
-                title_en: c.title_en,
-                content_text: c.content_text,
-                translation: c.translation,
-                difficulty_level: c.difficulty_level,
-                male_audio_url: c.male_audio_url,
-                female_audio_url: c.female_audio_url,
-                chinese_audio_url: c.chinese_audio_url
-            }
-        }));
-    }
-
-    return [];
+    return hydrateCourseItems(rows);
 }
 
 async function generateRandomTaskItems(userId, type, count, excludeIds, options = {}) {
@@ -1345,7 +1439,7 @@ router.get('/v2/status', authMiddleware, async (req, res) => {
         const passingScore = (user && user.daily_passing_score) || 60;
 
         let course = null;
-        let courseWordCount = 0;
+        let courseItemCount = 0;
         let learnedCount = 0;
 
         if (courseId) {
@@ -1355,17 +1449,17 @@ router.get('/v2/status', authMiddleware, async (req, res) => {
             );
             if (course) {
                 const [cnt] = await query(
-                    'SELECT COUNT(*) as cnt FROM checkin_course_items WHERE course_id = ? AND task_type = "word" AND is_active = 1',
+                    'SELECT COUNT(*) as cnt FROM checkin_course_items WHERE course_id = ? AND is_active = 1',
                     [courseId]
                 );
-                courseWordCount = cnt ? cnt.cnt : 0;
+                courseItemCount = cnt ? cnt.cnt : 0;
 
                 const [lcnt] = await query(`
                     SELECT COUNT(DISTINCT dti.course_item_id) as cnt
                     FROM daily_task_items dti
                     WHERE dti.user_id = ? AND dti.status = 'completed' AND dti.course_item_id IS NOT NULL
                     AND dti.course_item_id IN (
-                        SELECT id FROM checkin_course_items WHERE course_id = ? AND task_type = 'word'
+                        SELECT id FROM checkin_course_items WHERE course_id = ? AND is_active = 1
                     )
                 `, [userId, courseId]);
                 learnedCount = lcnt ? lcnt.cnt : 0;
@@ -1389,7 +1483,19 @@ router.get('/v2/status', authMiddleware, async (req, res) => {
 
         res.json({
             success: true,
-            data: { enrolled: !!course, course, dailyTarget, passingScore, courseWordCount, learnedCount, todayDoneCount, todayComplete, streakDays, totalDays }
+            data: {
+                enrolled: !!course,
+                course,
+                dailyTarget,
+                passingScore,
+                courseItemCount,
+                courseWordCount: courseItemCount,
+                learnedCount,
+                todayDoneCount,
+                todayComplete,
+                streakDays,
+                totalDays
+            }
         });
     } catch (e) {
         console.error('v2/status error:', e);
@@ -1514,21 +1620,25 @@ router.get('/v2/course-detail/:id', async (req, res) => {
             [courseId]
         );
 
-        // 示例单词（随机取20个，带图片）
+        // 示例学习项（优先按课程顺序取前 12 个）
         const baseUrl = process.env.BASE_URL || '';
-        const sampleWords = await query(
-            `SELECT w.id, w.word, w.translation, w.phonetic, w.image_url
+        const sampleSourceRows = await query(
+            `SELECT ci.id AS course_item_id, ci.task_type, ci.target_id
              FROM checkin_course_items ci
-             JOIN words w ON w.id = ci.target_id
-             WHERE ci.course_id = ? AND ci.task_type = 'word' AND ci.is_active = 1
-             ORDER BY RAND() LIMIT 20`,
+             WHERE ci.course_id = ? AND ci.is_active = 1
+             ORDER BY ci.sort_order ASC, ci.id ASC
+             LIMIT 12`,
             [courseId]
         );
-        sampleWords.forEach(w => {
-            if (w.image_url && w.image_url.startsWith('/')) w.image_url = baseUrl + w.image_url;
+        const sampleItems = await hydrateCourseItems(sampleSourceRows);
+        sampleItems.forEach(item => {
+            const extra = item.extra_info || {};
+            if (extra.image_url && extra.image_url.startsWith('/')) extra.image_url = baseUrl + extra.image_url;
+            if (extra.scene_image && extra.scene_image.startsWith('/')) extra.scene_image = baseUrl + extra.scene_image;
+            if (extra.cover_image && extra.cover_image.startsWith('/')) extra.cover_image = baseUrl + extra.cover_image;
         });
 
-        res.json({ success: true, data: { ...course, chapters, sampleWords } });
+        res.json({ success: true, data: { ...course, chapters, sampleItems } });
     } catch (e) {
         console.error('course-detail error:', e);
         res.status(500).json({ success: false, message: e.message });
@@ -1546,10 +1656,11 @@ router.get('/v2/courses', authMiddleware, async (req, res) => {
         );
         for (const c of courses) {
             const [cnt] = await query(
-                'SELECT COUNT(*) as cnt FROM checkin_course_items WHERE course_id = ? AND task_type = "word" AND is_active = 1',
+                'SELECT COUNT(*) as cnt FROM checkin_course_items WHERE course_id = ? AND is_active = 1',
                 [c.id]
             );
-            c.wordCount = cnt ? cnt.cnt : 0;
+            c.itemCount = cnt ? cnt.cnt : 0;
+            c.wordCount = c.itemCount;
         }
         const [user] = await query('SELECT current_course_id, daily_word_target, daily_passing_score FROM users WHERE id = ?', [userId]);
         res.json({
@@ -1663,7 +1774,7 @@ router.post('/v2/enroll', authMiddleware, async (req, res) => {
 });
 
 /**
- * GET /checkin/v2/today - 获取今日单词列表
+ * GET /checkin/v2/today - 获取今日课程任务列表
  */
 router.get('/v2/today', authMiddleware, async (req, res) => {
     try {
@@ -1699,7 +1810,7 @@ router.get('/v2/today', authMiddleware, async (req, res) => {
                 SELECT DISTINCT course_item_id
                 FROM daily_task_items
                 WHERE user_id = ? AND status = 'completed' AND course_item_id IN (
-                    SELECT id FROM checkin_course_items WHERE course_id = ? AND task_type = 'word'
+                    SELECT id FROM checkin_course_items WHERE course_id = ? AND is_active = 1
                 )
             `, [userId, courseId]);
             const learnedIds = new Set(learnedRows.map(r => r.course_item_id));
@@ -1715,11 +1826,11 @@ router.get('/v2/today', authMiddleware, async (req, res) => {
             `, [userId, courseId, today, dailyTarget]);
             const lastPlanIds = new Set(lastPlanRows.map(r => r.course_item_id));
 
-            // 课程所有单词（按顺序）
+            // 课程所有学习项（按顺序）
             const courseItems = await query(`
-                SELECT ci.id as course_item_id, ci.target_id as word_id, ci.sort_order
+                SELECT ci.id as course_item_id, ci.task_type, ci.target_id, ci.sort_order
                 FROM checkin_course_items ci
-                WHERE ci.course_id = ? AND ci.task_type = 'word' AND ci.is_active = 1
+                WHERE ci.course_id = ? AND ci.is_active = 1
                 ORDER BY ci.sort_order, ci.id
             `, [courseId]);
 
@@ -1742,27 +1853,30 @@ router.get('/v2/today', authMiddleware, async (req, res) => {
             const planId = planResult.insertId;
 
             if (todayItems.length > 0) {
-                const wordIds = todayItems.map(i => i.word_id);
-                const words = await query(
-                    `SELECT id, word, phonetic, translation, image_url, audio_url_female, audio_url_male, example_sentence, example_translation
-                     FROM words WHERE id IN (${wordIds.map(() => '?').join(',')})`,
-                    wordIds
-                );
-                const wordMap = {};
-                words.forEach(w => { wordMap[w.id] = w; });
+                const hydratedItems = await hydrateCourseItems(todayItems.map(i => ({
+                    course_item_id: i.course_item_id,
+                    task_type: i.task_type,
+                    target_id: i.target_id
+                })));
+                const itemMap = new Map(hydratedItems.map(item => [String(item.course_item_id), item]));
 
                 for (let i = 0; i < todayItems.length; i++) {
                     const ci = todayItems[i];
-                    const word = wordMap[ci.word_id];
-                    if (!word) continue;
+                    const payload = itemMap.get(String(ci.course_item_id));
+                    if (!payload) continue;
                     await query(
                         `INSERT INTO daily_task_items (plan_id, user_id, task_type, target_id, course_item_id, reference_text, extra_info, status, sort_order)
-                         VALUES (?, ?, 'word', ?, ?, ?, ?, 'pending', ?)`,
-                        [planId, userId, word.id, ci.course_item_id, word.word, JSON.stringify({
-                            word: word.word, phonetic: word.phonetic, translation: word.translation,
-                            image_url: word.image_url, audio_url_female: word.audio_url_female, audio_url_male: word.audio_url_male,
-                            example_sentence: word.example_sentence, example_translation: word.example_translation
-                        }), i]
+                         VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+                        [
+                            planId,
+                            userId,
+                            payload.task_type,
+                            payload.target_id,
+                            ci.course_item_id,
+                            payload.reference_text,
+                            JSON.stringify(payload.extra_info || {}),
+                            i
+                        ]
                     );
                 }
             }
@@ -1771,15 +1885,10 @@ router.get('/v2/today', authMiddleware, async (req, res) => {
         }
 
         const items = await query(
-            `SELECT dti.id, dti.status, dti.course_item_id, dti.target_id, dti.sort_order,
-                    w.word, w.phonetic, w.translation, w.image_url,
-                    w.audio_url_female, w.audio_url_male,
-                    w.example_sentence, w.example_translation,
-                    w.example_audio_female, w.example_audio_male,
-                    COALESCE(w.content_type, 'word') AS content_type
+            `SELECT dti.id, dti.status, dti.course_item_id, dti.target_id, dti.task_type, dti.reference_text,
+                    dti.extra_info, dti.sort_order
              FROM daily_task_items dti
-             LEFT JOIN words w ON w.id = dti.target_id
-             WHERE dti.plan_id = ? AND dti.task_type = 'word'
+             WHERE dti.plan_id = ?
              ORDER BY dti.sort_order, dti.id`,
             [plan.id]
         );
@@ -1794,22 +1903,39 @@ router.get('/v2/today', authMiddleware, async (req, res) => {
                 doneCount: plan.word_completed || 0,
                 isComplete: !!plan.is_completed,
                 streakDays: stats ? stats.consecutive_days : 0,
-                items: items.map(item => ({
-                    id: item.id,
-                    status: item.status,
-                    courseItemId: item.course_item_id,
-                    wordId: item.target_id,
-                    word: item.word,
-                    phonetic: item.phonetic,
-                    translation: item.translation,
-                    image_url: item.image_url,
-                    audio_url_female: item.audio_url_female,
-                    audio_url_male: item.audio_url_male,
-                    example_sentence: item.example_sentence,
-                    example_translation: item.example_translation,
-                    example_audio_female: item.example_audio_female,
-                    example_audio_male: item.example_audio_male,
-                }))
+                items: items.map(item => {
+                    const extra = parseExtraInfo(item.extra_info);
+                    return {
+                        id: item.id,
+                        status: item.status,
+                        courseItemId: item.course_item_id,
+                        taskType: item.task_type,
+                        targetId: item.target_id,
+                        wordId: item.task_type === 'word' ? item.target_id : null,
+                        pictureBookPageId: item.task_type === 'picture_book_page' ? item.target_id : null,
+                        reference_text: item.reference_text,
+                        word: extra.word || extra.text_en || item.reference_text || '',
+                        phonetic: extra.phonetic || '',
+                        translation: extra.translation || extra.text_cn || '',
+                        image_url: extra.image_url || extra.scene_image || extra.cover_image || '',
+                        audio_url_female: extra.audio_url_female || extra.female_audio_url || '',
+                        audio_url_male: extra.audio_url_male || extra.male_audio_url || '',
+                        example_sentence: extra.example_sentence || '',
+                        example_translation: extra.example_translation || '',
+                        example_audio_female: extra.example_audio_female || '',
+                        example_audio_male: extra.example_audio_male || '',
+                        grammar_explanation: extra.grammar_explanation || '',
+                        content_type: extra.content_type || (item.task_type === 'picture_book_page' ? 'picture_book_page' : 'word'),
+                        book_id: extra.book_id || null,
+                        book_title: extra.book_title || '',
+                        book_title_en: extra.book_title_en || '',
+                        page_number: extra.page_number || null,
+                        text_en: extra.text_en || '',
+                        text_cn: extra.text_cn || '',
+                        scene_name: extra.scene_name || '',
+                        label: extra.label || ''
+                    };
+                })
             }
         });
     } catch (e) {
@@ -1886,8 +2012,28 @@ router.post('/v2/done', authMiddleware, async (req, res) => {
             await query('UPDATE daily_task_plans SET word_completed = ? WHERE id = ?', [newDoneCount, plan.id]);
         }
 
+        if (item.course_item_id && plan.course_id) {
+            const [progressCount] = await query(
+                `SELECT COUNT(DISTINCT dti.course_item_id) AS cnt
+                 FROM daily_task_items dti
+                 JOIN checkin_course_items cci ON cci.id = dti.course_item_id
+                 WHERE dti.user_id = ? AND dti.status = 'completed' AND cci.course_id = ? AND cci.is_active = 1`,
+                [userId, plan.course_id]
+            );
+            const [totalRow] = await query(
+                'SELECT COUNT(*) AS cnt FROM checkin_course_items WHERE course_id = ? AND is_active = 1',
+                [plan.course_id]
+            );
+            await query(
+                `INSERT INTO user_course_progress (user_id, course_id, completed_count, total_count)
+                 VALUES (?, ?, ?, ?)
+                 ON DUPLICATE KEY UPDATE completed_count = VALUES(completed_count), total_count = VALUES(total_count)`,
+                [userId, plan.course_id, progressCount ? progressCount.cnt : 0, totalRow ? totalRow.cnt : 0]
+            );
+        }
+
         // 更新单词学习记录
-        if (item.target_id) {
+        if (item.task_type === 'word' && item.target_id) {
             try {
                 await query(`
                     INSERT INTO word_learning_records (user_id, word_id, learning_count, mastery_level, last_learned_at, updated_at)

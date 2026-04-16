@@ -172,7 +172,7 @@ Page({
           doneCount: d.todayDoneCount,
           totalCount: d.dailyTarget,
           courseLearnedCount: d.learnedCount,
-          courseTotalCount: d.courseWordCount
+          courseTotalCount: d.courseItemCount || d.courseWordCount || 0
         });
         this._prepareShare();
       } else {
@@ -264,7 +264,7 @@ Page({
         resume = await new Promise(resolve => {
           wx.showModal({
             title: '继续学习',
-            content: `该课程已学习 ${completed_count}/${total_count} 个单词，是否继续上次进度？`,
+            content: `该课程已学习 ${completed_count}/${total_count} 个学习项，是否继续上次进度？`,
             confirmText: '继续学习',
             cancelText: '重新开始',
             success(r) { resolve(r.confirm); }
@@ -363,7 +363,7 @@ Page({
       const word = this.data.words[this.data.currentIdx];
       if (!word) return;
 
-      const text = (word.word || '').trim();
+      const text = ((word.taskType === 'picture_book_page' ? word.text_en : word.word) || word.reference_text || '').trim();
       const wordCount = text.split(/\s+/).length;
       const contentType = wordCount <= 2 ? 'word' : (wordCount <= 20 ? 'sentence' : 'paragraph');
 
@@ -515,6 +515,7 @@ Page({
 
   async _ensureAudio(word) {
     if (!word) return;
+    if (word.taskType && word.taskType !== 'word') return;
     const hasFemale = !!word.audio_url_female;
     const hasMale = !!word.audio_url_male;
     const hasExFemale = !!word.example_audio_female;

@@ -34,6 +34,10 @@
 
     <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div class="p-5 border-b border-gray-100 bg-gray-50 space-y-4">
+            <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                <div class="font-semibold">Google 配音安全模式</div>
+                <div class="mt-1">整本配音会按更保守的串行节奏执行。若代理触发 429 或冷却，本页会自动停止，避免继续触发 Vertex AI 风控。</div>
+            </div>
             <div class="flex flex-wrap items-center gap-3">
                 <select id="batch-category" onchange="loadCandidates()"
                     class="px-4 py-2 border border-gray-200 rounded-lg outline-none focus:border-pink-500 bg-white text-sm">
@@ -107,6 +111,7 @@
 let queue = [];
 let failedItems = [];
 let isGenerating = false;
+const BOOK_AUDIO_SETTLE_DELAY_MS = 5000;
 let progress = {
     total: 0,
     success: 0,
@@ -126,11 +131,37 @@ function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function formatWait(ms = 0) {
+    const totalSeconds = Math.max(1, Math.ceil(ms / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    if (minutes > 0) return `${minutes}分${seconds ? `${seconds}秒` : ''}`;
+    return `${seconds}秒`;
+}
+
+async function fetchJson(url, options = {}) {
+    const res = await fetch(url, options);
+    const text = await res.text();
+    let data = null;
+    try {
+        data = text ? JSON.parse(text) : {};
+    } catch (e) {
+        throw new Error(text.startsWith('<') ? '接口返回了 HTML 页面，请刷新后台登录后重试' : '接口返回了非 JSON 数据');
+    }
+
+    if (!res.ok || !data.success) {
+        const err = new Error(data.message || data.error || `请求失败（${res.status}）`);
+        err.status = res.status;
+        err.retryAfterMs = data.retryAfterMs;
+        throw err;
+    }
+
+    return data;
+}
+
 async function loadCategories() {
     try {
-        const res = await fetch('/picture-books/categories/api/list');
-        const result = await res.json();
-        if (!result.success) return;
+        const result = await fetchJson('/picture-books/categories/api/list');
         const select = document.getElementById('batch-category');
         result.data.forEach(cat => {
             if (cat.is_active) {
@@ -167,10 +198,7 @@ async function loadCandidates() {
 
     try {
         const url = `/picture-books/api/batch/audio-candidates?category_id=${encodeURIComponent(categoryId)}&mode=${encodeURIComponent(mode)}`;
-        const res = await fetch(url);
-        const result = await res.json();
-        if (!result.success) throw new Error(result.message || '加载失败');
-
+        const result = await fetchJson(url);
         queue = result.data || [];
         failedItems = [];
         progress = { total: queue.length, success: 0, failed: 0 };
@@ -276,6 +304,15 @@ async function startBatchGenerate() {
             await generateSingleBookAudio(item);
             progress.success += 1;
         } catch (e) {
+            if (e.status === 429 || e.retryAfterMs) {
+                failedItems.unshift({ ...item, error: e.message || '触发冷却保护' });
+                renderFailedList();
+                updateStats();
+                updateProgressText('已触发冷却保护，批量暂停');
+                isGenerating = false;
+                showToast(`已触发 Google 冷却保护，请 ${formatWait(e.retryAfterMs || 60000)} 后再继续`, 'error');
+                break;
+            }
             progress.failed += 1;
             failedItems.push({ ...item, error: e.message || '生成失败' });
         }
@@ -284,7 +321,9 @@ async function startBatchGenerate() {
         renderQueue();
         renderFailedList();
         updateStats();
-        await sleep(1200);
+        if (queue.length && isGenerating) {
+            await sleep(BOOK_AUDIO_SETTLE_DELAY_MS);
+        }
     }
 
     isGenerating = false;
@@ -300,15 +339,11 @@ function stopBatchGenerate() {
 
 async function generateSingleBookAudio(item) {
     const mode = document.getElementById('batch-mode').value;
-    const res = await fetch(`/picture-books/api/${item.id}/generate-audio-batch`, {
+    const data = await fetchJson(`/picture-books/api/${item.id}/generate-audio-batch`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mode })
     });
-    const data = await res.json();
-    if (!data.success) {
-        throw new Error(data.message || '整本配音失败');
-    }
     // 部分失败：标记为失败，让用户知道有遗漏页
     if (data.failed_pages && data.failed_pages.length > 0) {
         const failedNums = data.failed_pages.map(p => p.page_number).join(', ');

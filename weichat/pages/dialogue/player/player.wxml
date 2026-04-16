@@ -74,10 +74,16 @@
   <!-- ===== listen ===== -->
   <view class="listen-screen" wx:elif="{{phase === 'listen'}}">
 
-    <!-- 进度提示 -->
+    <!-- 封面背景 -->
+    <image wx:if="{{scene.cover_image}}" class="listen-bg" src="{{scene.cover_image}}" mode="aspectFill"/>
+
+    <!-- 顶部信息栏 -->
     <view class="listen-header">
-      <text class="listen-title">先听一遍</text>
-      <text class="listen-hint">熟悉对话内容，点击气泡可单独播放</text>
+      <view class="listen-header-top">
+        <text class="listen-title">先听一遍</text>
+        <text class="listen-line-count">{{lines.length}} 句</text>
+      </view>
+      <text class="listen-hint">熟悉对话内容，点击气泡播放</text>
     </view>
 
     <!-- 对话气泡列表 -->
@@ -99,15 +105,18 @@
               data-audio="{{item.audio_url}}"
             >
               <text class="bubble-en">{{item.line_en}}</text>
-              <text class="bubble-cn">{{item.line_cn}}</text>
-              <view class="play-dot" wx:if="{{item.audio_url}}">
-                {{listenPlayingId === item.id ? '■' : '▶'}}
+              <text class="bubble-cn" wx:if="{{showCn && item.line_cn}}">{{item.line_cn}}</text>
+              <view class="bubble-sound-wave" wx:if="{{listenPlayingId === item.id}}">
+                <view class="sw-bar"></view><view class="sw-bar"></view><view class="sw-bar"></view>
               </view>
             </view>
           </view>
 
           <!-- user 气泡（右） -->
           <view wx:if="{{item.role === 'user'}}" class="bubble-row user-row">
+            <view class="avatar user-avatar">
+              <text class="avatar-text">我</text>
+            </view>
             <view
               class="bubble user-bubble {{listenPlayingId === item.id ? 'playing' : ''}} {{item.audio_url ? '' : 'no-audio'}}"
               bindtap="tapLine"
@@ -115,13 +124,10 @@
               data-audio="{{item.audio_url}}"
             >
               <text class="bubble-en">{{item.line_en}}</text>
-              <text class="bubble-cn">{{item.line_cn}}</text>
-              <view class="play-dot" wx:if="{{item.audio_url}}">
-                {{listenPlayingId === item.id ? '■' : '▶'}}
+              <text class="bubble-cn" wx:if="{{showCn && item.line_cn}}">{{item.line_cn}}</text>
+              <view class="bubble-sound-wave" wx:if="{{listenPlayingId === item.id}}">
+                <view class="sw-bar"></view><view class="sw-bar"></view><view class="sw-bar"></view>
               </view>
-            </view>
-            <view class="avatar user-avatar">
-              <text class="avatar-text">我</text>
             </view>
           </view>
         </view>
@@ -133,11 +139,13 @@
 
     <!-- 底部操作栏 -->
     <view class="listen-footer">
+      <view class="toggle-cn-btn {{showCn ? 'active' : ''}}" bindtap="toggleCn">中</view>
       <view
         class="auto-play-btn {{listenAutoPlaying ? 'playing' : ''}}"
         bindtap="autoPlayAll"
       >
-        {{listenAutoPlaying ? '⏹ 停止播放' : '▶ 全部播放'}}
+        <image class="btn-icon" src="/assets/icons/{{listenAutoPlaying ? 'icon-stop-dark.svg' : 'icon-play-white.svg'}}" />
+        <text>{{listenAutoPlaying ? '停止' : '播放'}}</text>
       </view>
       <view class="practice-btn" bindtap="startPractice">
         开始练习 →
@@ -147,6 +155,9 @@
 
   <!-- ===== practice ===== -->
   <view class="practice-screen" wx:elif="{{phase === 'practice'}}">
+
+    <!-- 封面背景 -->
+    <image wx:if="{{scene.cover_image}}" class="practice-bg" src="{{scene.cover_image}}" mode="aspectFill"/>
 
     <!-- 进度条 -->
     <view class="progress-bar-bg">
@@ -178,43 +189,43 @@
         <!-- user 气泡（当前轮到的） -->
         <view wx:if="{{lines[index].role === 'user' && index === practiceStep}}" class="user-turn-box">
           <view class="user-turn-label">
-            <text class="turn-emoji">🎤</text>
-            <text class="turn-text">轮到你说了</text>
+            <text class="turn-text">轮到你说了：</text>
           </view>
 
           <!-- 提示文字（可显隐） -->
-          <view class="hint-box {{showHint ? 'visible' : ''}}">
+          <view bindtap="toggleHint" class="hint-box {{showHint ? 'visible' : ''}}">
             <text wx:if="{{showHint}}" class="hint-en">{{lines[index].line_en}}</text>
             <text wx:if="{{showHint}}" class="hint-cn">{{lines[index].line_cn}}</text>
-            <text wx:if="{{!showHint}}" class="hint-placeholder">••• 点击查看提示</text>
+            <text wx:if="{{!showHint}}" class="hint-placeholder">点击查看提示</text>
           </view>
 
           <!-- 评测结果 -->
           <view class="assess-result-box" wx:if="{{assessResult}}">
             <view class="score-row">
-              <text class="big-score {{assessResult.overall_score >= 85 ? 'excellent' : assessResult.overall_score >= 70 ? 'good' : 'poor'}}">
-                {{assessResult.overall_score}}
+              <text class="big-score {{assessResult.overall_score >= 85 ? 'excellent' : assessResult.overall_score >= 70 ? 'good' : 'poor'}}">{{assessResult.overall_score}}
               </text>
               <text class="score-unit">分</text>
-              <text class="score-label {{assessResult.overall_score >= 70 ? 'passed' : 'failed'}}">
-                {{assessResult.overall_score >= 70 ? '✓ 不错' : '✗ 再试试'}}
+              <text class="score-label {{assessResult.overall_score >= 70 ? 'passed' : 'failed'}}">{{assessResult.overall_score >= 70 ? '✓ 不错' : '✗ 再试试'}}
               </text>
             </view>
             <view class="score-details">
-              <text class="score-detail-item">发音 {{assessResult.pronunciation_score || '-'}}</text>
-              <text class="score-detail-item">流利 {{assessResult.fluency_score || '-'}}</text>
-              <text class="score-detail-item">完整 {{assessResult.integrity_score || '-'}}</text>
+              <view class="score-detail-item">发音<text class="score-detail-value">{{assessResult.pronunciation_score || '-'}}</text></view>
+              <view class="score-detail-item">流利<text class="score-detail-value">{{assessResult.fluency_score || '-'}}</text></view>
+              <view class="score-detail-item">完整<text class="score-detail-value">{{assessResult.integrity_score || '-'}}</text></view>
+            </view>
+            <view class="play-my-audio-btn {{playingMyAudio ? 'playing' : ''}}" bindtap="playMyRecording" wx:if="{{recordedAudioPath}}">
+              <text>{{playingMyAudio ? '⏹ 停止播放' : '🔊 听我的录音'}}</text>
             </view>
           </view>
         </view>
 
         <!-- 已说过的 user 气泡（历史） -->
         <view wx:if="{{lines[index].role === 'user' && index < practiceStep}}" class="bubble-row user-row">
-          <view class="bubble user-bubble prev">
-            <text class="bubble-en">{{lines[index].line_en}}</text>
-          </view>
           <view class="avatar user-avatar sm">
             <text class="avatar-text">我</text>
+          </view>
+          <view class="bubble user-bubble prev">
+            <text class="bubble-en">{{lines[index].line_en}}</text>
           </view>
         </view>
       </view>
@@ -226,9 +237,6 @@
       <block wx:if="{{lines[practiceStep] && lines[practiceStep].role === 'user'}}">
         <!-- 有评测结果 -->
         <view class="result-actions" wx:if="{{assessResult}}">
-          <view class="hint-toggle-btn" bindtap="toggleHint">
-            {{showHint ? '隐藏提示' : '查看提示'}}
-          </view>
           <view class="retry-btn" bindtap="retryLine">再说一次</view>
           <view class="next-btn" bindtap="nextLine">
             {{practiceStep >= lines.length - 1 ? '完成 🎉' : '下一句 →'}}
@@ -237,22 +245,15 @@
 
         <!-- 等待录音 -->
         <view class="record-actions" wx:else>
-          <view class="hint-toggle-btn" bindtap="toggleHint">
-            {{showHint ? '隐藏提示' : '查看提示'}}
-          </view>
           <view
             class="mic-btn {{isRecording ? 'recording' : ''}} {{isAssessing ? 'assessing' : ''}}"
-            bindtouchstart="startRecord"
-            bindtouchend="stopRecord"
-            catchtap="noop"
+            bindtap="toggleRecord"
           >
             <image
               class="mic-icon {{isAssessing ? 'spin' : ''}}"
-              src="/assets/icons/{{isAssessing ? 'icon-refresh.svg' : (isRecording ? 'icon-stop.svg' : 'icon-mic.svg')}}"
+              src="/assets/icons/{{isAssessing ? 'icon-refresh-white.svg' : (isRecording ? 'icon-stop.svg' : 'icon-mic-white.svg')}}"
             />
-            <text class="mic-label">
-              {{isAssessing ? '评测中...' : (isRecording ? '松开停止 · ' + recordingTime + 's' : '按住说话')}}
-            </text>
+            <text class="mic-label">{{isAssessing ? '评测中...' : (isRecording ? '点击停止 · ' + recordingTime + 's' : '点击录音')}}</text>
           </view>
         </view>
       </block>

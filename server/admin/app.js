@@ -127,6 +127,8 @@ app.use('/api/admin/users', requireAuth, require('./routes/users'));
 app.use('/api/admin/checkin-curriculum', requireAuth, require('./routes/checkin_curriculum'));
 app.use('/api/admin/dialogue', requireAuth, require('./routes/dialogue'));
 app.use('/picture-books/categories', requireAuth, require('./routes/picturebook_categories'));
+app.use('/picturebook-videos', requireAuth, require('./routes/picturebook_videos'));
+app.use('/dialogue-videos', requireAuth, require('./routes/dialogue_videos'));
 app.use('/picture-books', requireAuth, require('./routes/picturebooks'));
 app.use('/api/admin/pet-stages', requireAuth, require('./routes/pet_stages'));
 app.use('/marketing', requireAuth, require('./routes/marketing'));

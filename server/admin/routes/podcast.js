@@ -264,13 +264,11 @@ router.post('/generate-audio', async (req, res) => {
             return res.status(404).json({ success: false, message: '内容不存在' });
         }
 
-        let text, voice;
+        let text;
         if (voice_type === 'chinese') {
             text = content.translation;
-            voice = 'female';
         } else {
             text = content.content_text;
-            voice = voice_type;
         }
 
         if (!text) {
@@ -279,18 +277,18 @@ router.post('/generate-audio', async (req, res) => {
 
         console.log(`[Podcast] 生成${voice_type}音频: ${text.substring(0, 50)}...`);
 
-        const result = await voiceService.textToSpeech(text, voice, voice_type === 'chinese' ? 'zh-CN' : 'en-US');
+        const speed = voiceService.getGoogleTtsSpeed('podcast');
+        const result = await voiceService.googleTextToSpeech(text, 'female', speed);
 
         if (!result.success) {
             return res.status(500).json({ success: false, message: result.error || '音频生成失败' });
         }
 
-        const updateField = voice_type === 'male' ? 'male_audio_url' :
-            voice_type === 'female' ? 'female_audio_url' : 'chinese_audio_url';
+        const updateField = voice_type === 'chinese' ? 'chinese_audio_url' : 'female_audio_url';
 
         await query(`UPDATE podcast_contents SET ${updateField} = ? WHERE id = ?`, [result.audioUrl, content_id]);
 
-        res.json({ success: true, data: { audio_url: result.audioUrl }, message: '音频生成成功' });
+        res.json({ success: true, data: { audio_url: result.audioUrl, voice: 'female', speed }, message: '音频生成成功' });
     } catch (error) {
         console.error('生成播客音频失败:', error);
         res.status(500).json({ success: false, message: '音频生成失败' });
@@ -311,16 +309,11 @@ router.post('/generate-all-audio', async (req, res) => {
             return res.status(404).json({ success: false, message: '内容不存在' });
         }
 
-        const results = { male: null, female: null, chinese: null };
+        const results = { female: null, chinese: null };
+        const speed = voiceService.getGoogleTtsSpeed('podcast');
 
         if (content.content_text) {
-            const maleResult = await voiceService.textToSpeech(content.content_text, 'male', 'en-US');
-            if (maleResult.success) {
-                results.male = maleResult.audioUrl;
-                await query('UPDATE podcast_contents SET male_audio_url = ? WHERE id = ?', [maleResult.audioUrl, content_id]);
-            }
-
-            const femaleResult = await voiceService.textToSpeech(content.content_text, 'female', 'en-US');
+            const femaleResult = await voiceService.googleTextToSpeech(content.content_text, 'female', speed);
             if (femaleResult.success) {
                 results.female = femaleResult.audioUrl;
                 await query('UPDATE podcast_contents SET female_audio_url = ? WHERE id = ?', [femaleResult.audioUrl, content_id]);
@@ -328,7 +321,7 @@ router.post('/generate-all-audio', async (req, res) => {
         }
 
         if (content.translation) {
-            const chineseResult = await voiceService.textToSpeech(content.translation, 'female', 'zh-CN');
+            const chineseResult = await voiceService.googleTextToSpeech(content.translation, 'female', speed);
             if (chineseResult.success) {
                 results.chinese = chineseResult.audioUrl;
                 await query('UPDATE podcast_contents SET chinese_audio_url = ? WHERE id = ?', [chineseResult.audioUrl, content_id]);
@@ -368,13 +361,10 @@ router.post('/analyze-sentences/:id', async (req, res) => {
         const sentences = aiResult.sentences;
 
         // 2. 为每句生成 TTS + 为关键词查找/生成音频
+        const speed = voiceService.getGoogleTtsSpeed('podcast');
         for (const s of sentences) {
-            // 句子男声
-            const mRes = await voiceService.textToSpeech(s.text, 'male', 'en-US').catch(() => ({ success: false }));
-            if (mRes.success) s.male_audio_url = mRes.audioUrl;
-
             // 句子女声
-            const fRes = await voiceService.textToSpeech(s.text, 'female', 'en-US').catch(() => ({ success: false }));
+            const fRes = await voiceService.googleTextToSpeech(s.text, 'female', speed).catch(() => ({ success: false }));
             if (fRes.success) s.female_audio_url = fRes.audioUrl;
 
             // 关键词音频 + 音标复用
@@ -391,7 +381,7 @@ router.post('/analyze-sentences/:id', async (req, res) => {
                     if (!w.phonetic && wRow.phonetic) w.phonetic = wRow.phonetic;
                 } else {
                     // words 表无记录：生成 TTS 音频
-                    const wTts = await voiceService.textToSpeech(w.word, 'female', 'en-US').catch(() => ({ success: false }));
+                    const wTts = await voiceService.googleTextToSpeech(w.word, 'female', speed).catch(() => ({ success: false }));
                     if (wTts.success) w.audio_url = wTts.audioUrl;
                 }
             }

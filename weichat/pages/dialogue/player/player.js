@@ -21,11 +21,16 @@ Page({
     isAssessing: false,
     recordingTime: 0,
     assessResult: null,
+    recordedAudioPath: '',     // 录音文件路径（回放用）
+    playingMyAudio: false,     // 是否正在回放录音
     lineScores: [],            // [{lineId, score, passed}]
 
     // done 阶段
     avgScore: 0,
     stars: 0,
+
+    // 显示中文翻译
+    showCn: true,
 
     // VIP
     isVip: false
@@ -46,6 +51,7 @@ Page({
 
   onUnload() {
     this._stopAudio();
+    this._stopMyAudio();
     this._clearAllTimers();
     this._suppressStop = true;
     try { recorderManager.stop(); } catch (e) {}
@@ -66,7 +72,7 @@ Page({
     recorderManager.onStop((res) => {
       if (this._suppressStop) { this._suppressStop = false; return; }
       if (this._recordTimer) { clearInterval(this._recordTimer); this._recordTimer = null; }
-      this.setData({ isRecording: false, recordingTime: 0 });
+      this.setData({ isRecording: false, recordingTime: 0, recordedAudioPath: res.tempFilePath });
       this._submitAssessment(res.tempFilePath);
     });
 
@@ -171,14 +177,15 @@ Page({
 
   tapLine(e) {
     if (this.data.listenAutoPlaying) return;
-    const { id, audio } = e.currentTarget.dataset;
+    const { audio } = e.currentTarget.dataset;
+    const id = Number(e.currentTarget.dataset.id);
     if (!audio) return;
     if (this.data.listenPlayingId === id) {
       this._stopAudio();
       return;
     }
-    this.setData({ listenPlayingId: id });
     this._playAudio(audio, () => this.setData({ listenPlayingId: -1 }));
+    this.setData({ listenPlayingId: id });
   },
 
   autoPlayAll() {
@@ -201,11 +208,11 @@ Page({
     if (!this.data.listenAutoPlaying) return;
     const line = lines[idx];
     if (line.audio_url) {
-      this.setData({ listenPlayingId: line.id });
       this._playAudio(line.audio_url, () => {
         this.setData({ listenPlayingId: -1 });
         this._autoPlayTimer = setTimeout(() => this._autoPlayQueue(idx + 1), 400);
       });
+      this.setData({ listenPlayingId: line.id });
     } else {
       // 无音频：停顿后跳过
       this._autoPlayTimer = setTimeout(() => this._autoPlayQueue(idx + 1), 800);
@@ -257,23 +264,60 @@ Page({
     this.setData({ showHint: !this.data.showHint });
   },
 
-  // ===== 录音 =====
+  toggleCn() {
+    this.setData({ showCn: !this.data.showCn });
+  },
 
-  startRecord() {
-    if (this.data.isRecording || this.data.isAssessing) return;
-    this._suppressStop = true;
-    try { recorderManager.stop(); } catch (e) {}
-    this._suppressStop = false;
+  // ===== 录音（点击切换） =====
+
+  toggleRecord() {
+    if (this.data.isAssessing) return;
+    if (this.data.isRecording) {
+      recorderManager.stop();
+    } else {
+      this._checkRecordPermission();
+    }
+  },
+
+  _checkRecordPermission() {
+    wx.getSetting({
+      success: (res) => {
+        const recordAuth = res.authSetting['scope.record'];
+        if (recordAuth === true) {
+          this._startRecord();
+        } else if (recordAuth === false) {
+          wx.showModal({
+            title: '录音权限已关闭',
+            content: '语音跟读需要录音权限，请在设置中开启"麦克风"权限',
+            confirmText: '去设置',
+            cancelText: '取消',
+            success: (modalRes) => {
+              if (modalRes.confirm) {
+                wx.openSetting({
+                  success: (settingRes) => {
+                    if (settingRes.authSetting['scope.record']) this._startRecord();
+                  }
+                });
+              }
+            }
+          });
+        } else {
+          wx.authorize({
+            scope: 'scope.record',
+            success: () => this._startRecord(),
+            fail: () => wx.showToast({ title: '需要录音权限', icon: 'none' })
+          });
+        }
+      }
+    });
+  },
+
+  _startRecord() {
     this.setData({ isRecording: true, recordingTime: 0, assessResult: null });
     recorderManager.start({ format: 'wav', sampleRate: 16000, numberOfChannels: 1 });
     this._recordTimer = setInterval(() => {
       this.setData({ recordingTime: this.data.recordingTime + 1 });
     }, 1000);
-  },
-
-  stopRecord() {
-    if (!this.data.isRecording) return;
-    recorderManager.stop();
   },
 
   async _submitAssessment(audioPath) {
@@ -317,7 +361,36 @@ Page({
   },
 
   retryLine() {
+    this._stopMyAudio();
     this.setData({ assessResult: null });
+  },
+
+  playMyRecording() {
+    const { recordedAudioPath, playingMyAudio } = this.data;
+    if (!recordedAudioPath) return;
+    if (playingMyAudio) {
+      this._stopMyAudio();
+      return;
+    }
+    this._stopAudio();
+    this._myAudioCtx = wx.createInnerAudioContext();
+    this._myAudioCtx.obeyMuteSwitch = false;
+    this._myAudioCtx.src = recordedAudioPath;
+    this._myAudioCtx.onEnded(() => this.setData({ playingMyAudio: false }));
+    this._myAudioCtx.onError(() => {
+      this.setData({ playingMyAudio: false });
+      wx.showToast({ title: '播放失败', icon: 'none' });
+    });
+    this.setData({ playingMyAudio: true });
+    this._myAudioCtx.play();
+  },
+
+  _stopMyAudio() {
+    if (this._myAudioCtx) {
+      try { this._myAudioCtx.stop(); this._myAudioCtx.destroy(); } catch (e) {}
+      this._myAudioCtx = null;
+    }
+    this.setData({ playingMyAudio: false });
   },
 
   nextLine() {

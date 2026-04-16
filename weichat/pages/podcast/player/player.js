@@ -9,9 +9,8 @@ Page({
         // ── Sentences mode ──
         sentences: [],
         currentSentenceIdx: 0,
-        voice: 'female',       // 'male' | 'female'
-        showTranslation: true,
-        showGrammar: true,
+        showTranslation: false,
+        showGrammar: false,
         wordPopup: null,       // { word, phonetic, pos, translation, audio_url }
         grammarPopup: null,    // { text, grammar, translation }
 
@@ -27,7 +26,11 @@ Page({
         // ── Full mode extras ──
         readChinese: true,
         playSequence: [],
-        currentIndex: 0
+        currentIndex: 0,
+
+        // ── 评测历史 ──
+        articleAvgScore: 0,   // 0 表示从未评测
+        articleMastery: ''    // 'excellent' | 'good' | 'needs_practice' | ''
     },
 
     onLoad(options) {
@@ -90,12 +93,28 @@ Page({
                 this._buildPlaylist(content);
                 // 不自动播放，等用户手动点击
             }
+            // 异步拉取该文章的评测历史（不阻塞页面）
+            this._loadArticleScore(content.id);
         } catch (e) {
             console.error(e);
             wx.showToast({ title: '加载失败', icon: 'none' });
         } finally {
             wx.hideLoading();
         }
+    },
+
+    // ─────────────────── 评测历史 ───────────────────
+
+    async _loadArticleScore(contentId) {
+        try {
+            const res = await api.get(`/voice/podcast-summary/${contentId}`);
+            if (res.success && res.data.assessed_count > 0) {
+                this.setData({
+                    articleAvgScore: res.data.avg_score,
+                    articleMastery: res.data.mastery
+                });
+            }
+        } catch (e) { /* 静默失败 */ }
     },
 
     // ─────────────────── Sentences mode ───────────────────
@@ -163,10 +182,10 @@ Page({
     },
 
     _playSentence(idx, autoAdvance = false) {
-        const { sentences, voice } = this.data;
+        const { sentences } = this.data;
         if (idx < 0 || idx >= sentences.length) return;
         const s = sentences[idx];
-        const url = voice === 'male' ? s.male_audio_url : s.female_audio_url;
+        const url = s.female_audio_url || s.male_audio_url;
         if (!url) { wx.showToast({ title: '该句暂无音频', icon: 'none' }); return; }
         this._autoAdvance = autoAdvance;
         this.setData({ currentSentenceIdx: idx, progress: 0, currentTime: 0, duration: 0 });
@@ -190,12 +209,6 @@ Page({
 
     playPrevSentence() { this._playSentence(this.data.currentSentenceIdx - 1, false); },
     playNextSentence() { this._playSentence(this.data.currentSentenceIdx + 1, false); },
-
-    setVoice(e) {
-        const v = e.currentTarget.dataset.v;
-        this.setData({ voice: v });
-        if (this.data.isPlaying) this._playSentence(this.data.currentSentenceIdx, this._autoAdvance);
-    },
 
     toggleTranslation() { this.setData({ showTranslation: !this.data.showTranslation }); },
     toggleGrammar() { this.setData({ showGrammar: !this.data.showGrammar }); },
@@ -234,8 +247,9 @@ Page({
 
     _buildPlaylist(content) {
         const seq = [];
-        if (content.male_audio_url) seq.push({ type: 'male', url: this._url(content.male_audio_url) });
-        if (content.female_audio_url) seq.push({ type: 'female', url: this._url(content.female_audio_url) });
+        if (content.female_audio_url || content.male_audio_url) {
+            seq.push({ type: 'female', url: this._url(content.female_audio_url || content.male_audio_url) });
+        }
         if (this.data.readChinese && content.chinese_audio_url) seq.push({ type: 'chinese', url: this._url(content.chinese_audio_url) });
         this.setData({ playSequence: seq, currentIndex: 0 });
     },
@@ -293,6 +307,16 @@ Page({
     _fmt(s) {
         if (!s) return '00:00';
         return `${Math.floor(s / 60).toString().padStart(2, '0')}:${Math.floor(s % 60).toString().padStart(2, '0')}`;
+    },
+
+    goAssess() {
+        const { content } = this.data;
+        if (!content) return;
+        // 暂停当前播放
+        if (this._audio) { this._audio.pause(); }
+        wx.navigateTo({
+            url: `/pages/podcast/assess/assess?id=${content.id}&title=${encodeURIComponent(content.title || '')}`
+        });
     },
 
     noop() {}

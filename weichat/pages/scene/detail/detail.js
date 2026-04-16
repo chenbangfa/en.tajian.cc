@@ -23,6 +23,7 @@ Page({
     _recordTimer: null,
     _assessingLock: false,
     _suppressNextStop: false,
+    _recorderActive: false,
 
     onLoad(options) {
         const sysInfo = wx.getSystemInfoSync();
@@ -45,8 +46,9 @@ Page({
     },
 
     onHide() {
-        if (this.data.isRecording) {
+        if (this.data.isRecording || this._recorderActive) {
             this._suppressNextStop = true;
+            this._recorderActive = false;
             try { recorderManager.stop(); } catch (e) {}
             if (this._recordTimer) { clearInterval(this._recordTimer); this._recordTimer = null; }
             this.setData({ isRecording: false, recordingTime: 0 });
@@ -58,13 +60,19 @@ Page({
         this._stopUserAudio();
         if (this._recordTimer) { clearInterval(this._recordTimer); this._recordTimer = null; }
         this._suppressNextStop = true;
+        this._recorderActive = false;
         try { recorderManager.stop(); } catch (e) {}
     },
 
     _bindRecorder() {
         if (typeof recorderManager.offStop === 'function') recorderManager.offStop();
         if (typeof recorderManager.offError === 'function') recorderManager.offError();
+        if (typeof recorderManager.offStart === 'function') recorderManager.offStart();
+        recorderManager.onStart(() => {
+            this._recorderActive = true;
+        });
         recorderManager.onStop((res) => {
+            this._recorderActive = false;
             if (this._assessingLock) return;
             if (this._suppressNextStop) { this._suppressNextStop = false; return; }
             if (this._recordTimer) { clearInterval(this._recordTimer); this._recordTimer = null; }
@@ -72,6 +80,7 @@ Page({
             this.submitAssessment(res.tempFilePath);
         });
         recorderManager.onError((err) => {
+            this._recorderActive = false;
             if (this._suppressNextStop) return;
             console.error('录音错误:', err);
             if (this._recordTimer) { clearInterval(this._recordTimer); this._recordTimer = null; }
@@ -204,15 +213,26 @@ Page({
     _startRecord() {
         this._stopAudio();
         this._stopUserAudio();
-        this._suppressNextStop = true;
-        try { recorderManager.stop(); } catch (e) {}
-        this.setData({ isRecording: true, recordingTime: 0, assessResult: null });
-        this._assessingLock = false;
-        this._suppressNextStop = false;
-        recorderManager.start({ format: 'wav', sampleRate: 16000, numberOfChannels: 1 });
-        this._recordTimer = setInterval(() => {
-            this.setData({ recordingTime: this.data.recordingTime + 1 });
-        }, 1000);
+
+        const doStart = () => {
+            this._suppressNextStop = false;
+            this._assessingLock = false;
+            this.setData({ isRecording: true, recordingTime: 0, assessResult: null });
+            recorderManager.start({ format: 'wav', sampleRate: 16000, numberOfChannels: 1 });
+            this._recordTimer = setInterval(() => {
+                this.setData({ recordingTime: this.data.recordingTime + 1 });
+            }, 1000);
+        };
+
+        if (this._recorderActive) {
+            // 有残留录音，先 stop 再延迟启动
+            this._suppressNextStop = true;
+            try { recorderManager.stop(); } catch (e) {}
+            setTimeout(doStart, 200);
+        } else {
+            // 无残留录音，直接启动（不调用 stop，避免触发 NotFoundError）
+            doStart();
+        }
     },
 
     async submitAssessment(audioPath) {

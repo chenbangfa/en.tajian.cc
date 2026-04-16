@@ -47,6 +47,27 @@ class VoiceService {
         return this.normalizeSpeed(envMap[scope], fallbackMap[scope] || fallbackMap.default);
     }
 
+    normalizeEngine(engine = '') {
+        const normalized = String(engine || '').trim().toLowerCase();
+        if (['google', 'youdao', 'tencent', 'auto'].includes(normalized)) return normalized;
+        return 'auto';
+    }
+
+    async textToSpeechByEngine(text, engine = 'auto', voice = 'female', speed = 1.0) {
+        const normalizedEngine = this.normalizeEngine(engine);
+
+        switch (normalizedEngine) {
+            case 'google':
+                return this._googleTTS(text, voice, speed);
+            case 'youdao':
+                return this._youdaoTTS(text, voice, speed);
+            case 'tencent':
+                return this._tencentTTS(text, voice, speed);
+            default:
+                return this.textToSpeech(text, voice, speed);
+        }
+    }
+
     /**
      * 统一 TTS 入口 - 自动选择引擎 + fallback
      * @param {string} text - 要合成的文本
@@ -143,8 +164,14 @@ class VoiceService {
             const errData = err.response?.data;
             const errMsg = (typeof errData === 'object' && errData?.error) ? errData.error : (err.message || '代理请求失败');
             const statusCode = err.response?.status;
+            const retryAfterMs = Number(err.response?.data?.retryAfterMs || err.retryAfterMs || 0);
             console.error(`[VoiceService] Google TTS 代理错误: ${statusCode} ${errMsg}`);
-            return { success: false, error: `Google: ${errMsg}`, statusCode };
+            return {
+                success: false,
+                error: `Google: ${errMsg}`,
+                statusCode,
+                retryAfterMs: retryAfterMs > 0 ? retryAfterMs : undefined
+            };
         }
 
         if (response.data?.success && response.data?.audioData) {

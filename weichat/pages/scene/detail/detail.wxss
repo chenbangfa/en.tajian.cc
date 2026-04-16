@@ -2,11 +2,12 @@
 page {
   background: #f5f6fa;
   padding-bottom: env(safe-area-inset-bottom);
+  overflow-x: hidden;
 }
-.container { min-height: 100vh; padding-bottom: 120rpx; }
+.container { min-height: 100vh; padding: 0 0 120rpx; overflow-x: hidden; }
 
 /* 图片区域 */
-.image-wrap { position: relative; overflow: hidden; background: #111; }
+.image-wrap { position: relative; overflow: hidden; background: #111; width: 100%; }
 .main-img { width: 100%; display: block; }
 
 /* 热点框 */

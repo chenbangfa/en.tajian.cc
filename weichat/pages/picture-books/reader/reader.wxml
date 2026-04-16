@@ -95,7 +95,7 @@
   <!-- 单词释义弹窗 -->
   <view wx:if="{{wordPopup}}" class="wp-mask" catchtap="closeWordPopup">
     <view class="wp-popup" catchtap="noop">
-      <view class="wp-close" catchtap="closeWordPopup">&#x2715;</view>
+      <view class="wp-close" catchtap="closeWordPopup">✕</view>
       <text class="wp-word">{{wordPopup.word}}</text>
       <view class="wp-meta">
         <text class="wp-phonetic" wx:if="{{wordPopup.phonetic}}">{{wordPopup.phonetic}}</text>

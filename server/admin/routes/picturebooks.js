@@ -259,6 +259,7 @@ router.post('/api/:id/generate-audio-batch', async (req, res) => {
         const speed = voiceService.getGoogleTtsSpeed('picture_book');
         let generated = 0;
         const failedPages = [];
+        let retryAfterMs = 0;
 
         for (let i = 0; i < targetPages.length; i++) {
             const page = targetPages[i];
@@ -267,15 +268,33 @@ router.post('/api/:id/generate-audio-batch', async (req, res) => {
             try {
                 const result = await voiceService.googleTextToSpeech(page.text_en, 'female', speed);
                 if (!result.success || !result.audioUrl) {
-                    throw new Error(result.error || '生成失败');
+                    const err = new Error(result.error || '生成失败');
+                    err.statusCode = result.statusCode;
+                    err.retryAfterMs = result.retryAfterMs;
+                    throw err;
                 }
                 await query('UPDATE picture_book_pages SET audio_url = ? WHERE id = ?', [result.audioUrl, page.id]);
                 generated++;
             } catch (err) {
+                const statusCode = Number(err.statusCode || err.response?.status || 0);
+                retryAfterMs = Number(err.retryAfterMs || err.response?.data?.retryAfterMs || retryAfterMs || 0);
                 failedPages.push({
                     page_number: page.page_number,
                     error: err.message || '生成失败'
                 });
+
+                if (statusCode === 429 || retryAfterMs > 0) {
+                    return res.status(429).json({
+                        success: false,
+                        message: `${book.title} 触发 Google TTS 冷却保护，请稍后再继续`,
+                        generated,
+                        total: targetPages.length,
+                        failed_pages: failedPages,
+                        speed,
+                        voice: 'female',
+                        retryAfterMs: retryAfterMs || undefined
+                    });
+                }
             }
         }
 
@@ -591,7 +610,11 @@ router.post('/api/:id/pages/:pageId/generate-image', async (req, res) => {
 
         const result = await aiService.generateImage(finalPrompt);
         if (!result.success || !result.imageUrl) {
-            return res.status(500).json({ success: false, message: result.error || '生成失败' });
+            return res.status(result.statusCode || 500).json({
+                success: false,
+                message: result.error || '生成失败',
+                retryAfterMs: result.retryAfterMs
+            });
         }
 
         await query(
@@ -931,7 +954,11 @@ router.post('/api/:id/generate-cover', async (req, res) => {
                 }
             });
         } else {
-            res.status(500).json({ success: false, message: result.error || '生成失败' });
+            res.status(result.statusCode || 500).json({
+                success: false,
+                message: result.error || '生成失败',
+                retryAfterMs: result.retryAfterMs
+            });
         }
     } catch (e) {
         res.status(500).json({ success: false, message: e.message });
@@ -977,15 +1004,11 @@ router.get('/api/batch/vocab-candidates', async (req, res) => {
     }
 });
 
-// 单本绘本词汇分析
-router.post('/api/:id/analyze-vocab', async (req, res) => {
+// 获取绘本待分析页面列表
+router.get('/api/:id/vocab-pages', async (req, res) => {
     try {
         const bookId = parseInt(req.params.id, 10);
-        const mode = req.body?.mode === 'all' ? 'all' : 'missing';
-
-        const [book] = await query('SELECT id, title FROM picture_books WHERE id = ?', [bookId]);
-        if (!book) return res.status(404).json({ success: false, message: '绘本不存在' });
-
+        const mode = req.query.mode === 'all' ? 'all' : 'missing';
         const pages = await query(
             `SELECT id, page_number, text_en, words_data
                FROM picture_book_pages
@@ -993,87 +1016,74 @@ router.post('/api/:id/analyze-vocab', async (req, res) => {
               ORDER BY page_number ASC`,
             [bookId]
         );
+        const list = pages
+            .filter(p => mode === 'all' || !p.words_data)
+            .map(p => ({ id: p.id, page_number: p.page_number }));
+        res.json({ success: true, data: list, total: pages.length });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
 
-        const targetPages = pages.filter(p => mode === 'all' || !p.words_data);
-        if (targetPages.length === 0) {
-            return res.json({ success: true, analyzed: 0, total: pages.length, message: '无需分析' });
-        }
+// 分析单页词汇
+router.post('/api/pages/:pageId/analyze-vocab', async (req, res) => {
+    try {
+        const pageId = parseInt(req.params.pageId, 10);
+        const [page] = await query(
+            'SELECT id, page_number, book_id, text_en FROM picture_book_pages WHERE id = ?', [pageId]
+        );
+        if (!page) return res.status(404).json({ success: false, message: '页面不存在' });
 
         const proxyUrl = process.env.PROXY_BASE_URL;
         const proxyKey = process.env.PROXY_API_KEY;
         if (!proxyUrl) return res.status(500).json({ success: false, message: '未配置 PROXY_BASE_URL' });
 
-        let analyzed = 0;
-        const failedPages = [];
+        const resp = await axios.post(
+            `${proxyUrl}/proxy/analyze-picturebook-words`,
+            { text: page.text_en },
+            { headers: { 'Content-Type': 'application/json', 'X-Proxy-Key': proxyKey || '' }, timeout: 60000 }
+        );
+        if (!resp.data.success || !Array.isArray(resp.data.words)) {
+            throw new Error(resp.data.error || 'AI 分析失败');
+        }
 
-        for (let i = 0; i < targetPages.length; i++) {
-            const page = targetPages[i];
-            if (i > 0) await new Promise(r => setTimeout(r, 1500));
+        const words = resp.data.words;
 
-            try {
-                // 1. AI 分析全部单词
-                const resp = await axios.post(
-                    `${proxyUrl}/proxy/analyze-picturebook-words`,
-                    { text: page.text_en },
-                    { headers: { 'Content-Type': 'application/json', 'X-Proxy-Key': proxyKey || '' }, timeout: 60000 }
-                );
-                if (!resp.data.success || !Array.isArray(resp.data.words)) {
-                    throw new Error(resp.data.error || 'AI 分析失败');
-                }
-
-                const words = resp.data.words;
-
-                // 2. 查 words 表：已有则复用音频，没有则插入新词
-                for (const w of words) {
-                    const [wRow] = await query(
-                        'SELECT id, audio_url_female, audio_url_male, phonetic FROM words WHERE LOWER(word) = LOWER(?) LIMIT 1',
-                        [w.word]
+        // 查 words 表：已有则复用音频，没有则插入新词
+        for (const w of words) {
+            const [wRow] = await query(
+                'SELECT id, audio_url_female, audio_url_male, phonetic FROM words WHERE LOWER(word) = LOWER(?) LIMIT 1',
+                [w.word]
+            );
+            if (wRow) {
+                w.audio_url = wRow.audio_url_female || wRow.audio_url_male || null;
+                if (!w.phonetic && wRow.phonetic) w.phonetic = wRow.phonetic;
+            } else {
+                const contentType = w.word.includes(' ') ? 'phrase' : 'word';
+                const wordType = _posToWordType(w.pos);
+                try {
+                    await query(
+                        `INSERT INTO words (word, phonetic, translation, content_type, word_type, difficulty_level)
+                         VALUES (?, ?, ?, ?, ?, 1)`,
+                        [w.word, w.phonetic || null, w.translation || null, contentType, wordType]
                     );
-                    if (wRow) {
-                        w.audio_url = wRow.audio_url_female || wRow.audio_url_male || null;
-                        if (!w.phonetic && wRow.phonetic) w.phonetic = wRow.phonetic;
-                    } else {
-                        // 新词：插入 words 表（语音在 words 批量合成页单独处理）
-                        const contentType = w.word.includes(' ') ? 'phrase' : 'word';
-                        const wordType = _posToWordType(w.pos);
-                        try {
-                            await query(
-                                `INSERT INTO words (word, phonetic, translation, content_type, word_type, difficulty_level)
-                                 VALUES (?, ?, ?, ?, ?, 1)`,
-                                [w.word, w.phonetic || null, w.translation || null, contentType, wordType]
-                            );
-                        } catch (insertErr) {
-                            // 忽略重复插入等错误
-                        }
-                    }
-                }
-
-                // 3. 保存 words_data 到页面
-                await query('UPDATE picture_book_pages SET words_data = ? WHERE id = ?', [JSON.stringify({ words }), page.id]);
-                analyzed++;
-            } catch (err) {
-                failedPages.push({ page_number: page.page_number, error: err.message || '分析失败' });
+                } catch (insertErr) { /* 忽略重复 */ }
             }
         }
 
-
-        const allFailed = analyzed === 0 && failedPages.length > 0;
-        if (allFailed) {
-            return res.status(500).json({
+        await query('UPDATE picture_book_pages SET words_data = ? WHERE id = ?', [JSON.stringify({ words }), page.id]);
+        res.json({ success: true, page_number: page.page_number, word_count: words.length });
+    } catch (err) {
+        const statusCode = err.response?.status || 500;
+        const retryAfterMs = Number(err.response?.data?.retryAfterMs || 0);
+        if (statusCode === 429 || retryAfterMs > 0) {
+            return res.status(429).json({
                 success: false,
-                message: `${book.title} 全部 ${failedPages.length} 页分析失败`,
-                analyzed, total: targetPages.length, failed_pages: failedPages
+                message: err.response?.data?.error || '触发限流保护',
+                retryAfterMs: retryAfterMs || 120000
             });
         }
-
-        res.json({
-            success: true, analyzed, total: targetPages.length, failed_pages: failedPages,
-            message: failedPages.length > 0
-                ? `${book.title} 完成 ${analyzed}/${targetPages.length} 页，${failedPages.length} 页失败`
-                : undefined
-        });
-    } catch (e) {
-        res.status(500).json({ success: false, message: e.message });
+        res.status(500).json({ success: false, message: err.response?.data?.error || err.message });
     }
 });
 

@@ -23,6 +23,13 @@
             </button>
         </div>
         <div class="p-4">
+            <div class="mb-3">
+                <label for="course-filter-category" class="block text-xs font-medium text-gray-500 mb-1">按课程分类筛选</label>
+                <select id="course-filter-category" onchange="handleCourseCategoryFilterChange()"
+                    class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
+                    <option value="">全部分类</option>
+                </select>
+            </div>
             <div id="course-list" class="space-y-2"></div>
         </div>
     </section>
@@ -208,6 +215,7 @@
                         <option value="word">单词</option>
                         <option value="scene">场景</option>
                         <option value="podcast">播客</option>
+                        <option value="picture_book_page">绘本分页</option>
                     </select>
                 </div>
                 <div>
@@ -265,6 +273,7 @@
     let categories = [];
     let selectedCourseId = null;
     let selectedChapterId = null; // null=全部, 0=未分配, N=章节id
+    let selectedCourseCategoryId = '';
 
     // ─── 分类 ────────────────────────────────────────────
     async function loadCategories() {
@@ -297,12 +306,29 @@
     }
 
     function updateCategorySelects() {
-        const sel = document.getElementById('course-category');
-        if (!sel) return;
-        const current = sel.value;
-        sel.innerHTML = '<option value="">无分类</option>' +
-            categories.map(c => `<option value="${c.id}">${c.icon || ''} ${c.name}</option>`).join('');
-        sel.value = current;
+        const categoryOptions = categories.map(c => `<option value="${c.id}">${c.icon || ''} ${c.name}</option>`).join('');
+
+        const courseSelect = document.getElementById('course-category');
+        if (courseSelect) {
+            const current = courseSelect.value;
+            courseSelect.innerHTML = '<option value="">无分类</option>' + categoryOptions;
+            courseSelect.value = current;
+        }
+
+        const filterSelect = document.getElementById('course-filter-category');
+        if (filterSelect) {
+            filterSelect.innerHTML = '<option value="">全部分类</option>' + categoryOptions;
+            filterSelect.value = selectedCourseCategoryId;
+            if (selectedCourseCategoryId && !categories.some(c => String(c.id) === String(selectedCourseCategoryId))) {
+                selectedCourseCategoryId = '';
+                filterSelect.value = '';
+            }
+        }
+    }
+
+    function handleCourseCategoryFilterChange() {
+        selectedCourseCategoryId = document.getElementById('course-filter-category')?.value || '';
+        loadCourses();
     }
 
     function openCatModal(cat) {
@@ -386,12 +412,20 @@
     }
 
     async function loadCourses() {
-        const res = await fetch(`${API_BASE}/checkin-curriculum/courses`);
+        const params = new URLSearchParams();
+        if (selectedCourseCategoryId) params.set('categoryId', selectedCourseCategoryId);
+
+        const res = await fetch(`${API_BASE}/checkin-curriculum/courses${params.toString() ? `?${params.toString()}` : ''}`);
         const data = await res.json();
         if (!data.success) return showToast(data.message || '加载课程失败', 'error');
 
         courses = data.data || [];
         const wrap = document.getElementById('course-list');
+        if (selectedCourseId && !courses.some(c => String(c.id) === String(selectedCourseId))) {
+            selectedCourseId = null;
+            selectedChapterId = null;
+            resetRightPanel();
+        }
         if (!courses.length) {
             wrap.innerHTML = '<div class="text-sm text-gray-500 py-10 text-center">暂无课程，点击右上角新增</div>';
             return;
@@ -604,11 +638,12 @@
             return;
         }
 
-        const typeLabel = { word: '单词', scene: '场景', podcast: '播客' };
+        const typeLabel = { word: '单词', scene: '场景', podcast: '播客', picture_book_page: '绘本分页' };
         const typeBadge = {
             word: 'bg-blue-100 text-blue-700',
             scene: 'bg-amber-100 text-amber-700',
-            podcast: 'bg-pink-100 text-pink-700'
+            podcast: 'bg-pink-100 text-pink-700',
+            picture_book_page: 'bg-emerald-100 text-emerald-700'
         };
 
         tbody.innerHTML = courseItems.map(item => {

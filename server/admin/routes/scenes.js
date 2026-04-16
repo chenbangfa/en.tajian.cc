@@ -2,10 +2,31 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const axios = require('axios');
 const { query } = require('../../src/config/database');
 const aiService = require('../../src/services/ai.service');
+const config = require('../../src/config');
 
 const router = express.Router();
+
+// 确保场景表具备小程序码缓存字段
+(async function ensureSceneWxacodeColumns() {
+    try {
+        const columns = [
+            { name: 'wxacode_url', ddl: 'VARCHAR(500) DEFAULT NULL COMMENT "场景小程序码URL"' },
+            { name: 'wxacode_scene', ddl: 'VARCHAR(120) DEFAULT NULL COMMENT "小程序码scene参数"' },
+            { name: 'wxacode_generated_at', ddl: 'DATETIME DEFAULT NULL COMMENT "小程序码生成时间"' }
+        ];
+        for (const col of columns) {
+            const rows = await query('SHOW COLUMNS FROM scenes LIKE ?', [col.name]);
+            if (!rows || rows.length === 0) {
+                await query(`ALTER TABLE scenes ADD COLUMN ${col.name} ${col.ddl}`);
+            }
+        }
+    } catch (e) {
+        console.error('[Scenes] 补齐小程序码字段失败:', e.message);
+    }
+})();
 
 // Multer Config
 const storage = multer.diskStorage({
@@ -27,7 +48,11 @@ const upload = multer({ storage });
 // 1. 获取场景列表 (支持搜索和筛选)
 router.get('/', async (req, res) => {
     try {
-        const { keyword, category_id, page = 1, limit = 20 } = req.query;
+        const { keyword, category_id, without_image, page = 1, limit = 20 } = req.query;
+        const pageNum = Math.max(parseInt(page, 10) || 1, 1);
+        const pageSize = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 100);
+        const offset = (pageNum - 1) * pageSize;
+
         let sql = `
             SELECT s.*, c.name as category_name,
             (SELECT COUNT(*) FROM scene_objects WHERE scene_id = s.id) as object_count
@@ -35,30 +60,115 @@ router.get('/', async (req, res) => {
             LEFT JOIN scene_categories c ON s.category_id = c.id
             WHERE 1=1
         `;
+        let countSql = `
+            SELECT COUNT(*) as total
+            FROM scenes s
+            WHERE 1=1
+        `;
         const params = [];
+        const countParams = [];
 
         if (keyword) {
             sql += ` AND (s.name LIKE ? OR s.name_en LIKE ?)`;
             params.push(`%${keyword}%`, `%${keyword}%`);
+            countSql += ` AND (s.name LIKE ? OR s.name_en LIKE ?)`;
+            countParams.push(`%${keyword}%`, `%${keyword}%`);
         }
 
         if (category_id) {
             sql += ` AND s.category_id = ?`;
             params.push(category_id);
+            countSql += ` AND s.category_id = ?`;
+            countParams.push(category_id);
+        }
+
+        if (String(without_image || '') === '1' || String(without_image || '').toLowerCase() === 'true') {
+            sql += ` AND (s.image_url IS NULL OR TRIM(s.image_url) = '')`;
+            countSql += ` AND (s.image_url IS NULL OR TRIM(s.image_url) = '')`;
         }
 
         sql += ` ORDER BY s.sort_order ASC, s.created_at DESC LIMIT ? OFFSET ?`;
-        params.push(parseInt(limit), (page - 1) * parseInt(limit));
+        params.push(pageSize, offset);
 
-        const scenes = await query(sql, params);
+        const [scenes, [countResult]] = await Promise.all([
+            query(sql, params),
+            query(countSql, countParams)
+        ]);
 
-        // Count Total (Optional but good practice)
-        // const [total] = await query('SELECT COUNT(*) as count FROM scenes ...');
+        const total = parseInt(countResult?.total || 0, 10);
+        const totalPages = Math.max(Math.ceil(total / pageSize), 1);
 
-        res.json({ success: true, data: { items: scenes } });
+        res.json({
+            success: true,
+            data: {
+                items: scenes,
+                pagination: {
+                    page: pageNum,
+                    limit: pageSize,
+                    total,
+                    total_pages: totalPages,
+                    has_prev: pageNum > 1,
+                    has_next: pageNum < totalPages
+                }
+            }
+        });
     } catch (error) {
         console.error('获取场景列表错误:', error);
         res.status(500).json({ success: false, message: '获取场景列表失败' });
+    }
+});
+
+// 1.1 批量补齐：将缺失分类自动创建为“待生成图片”的空场景
+router.post('/sync-missing-categories', async (req, res) => {
+    try {
+        const missingCategories = await query(`
+            SELECT c.id, c.name, c.name_en, c.sort_order
+            FROM scene_categories c
+            WHERE c.is_active = 1
+              AND (
+                c.parent_id <> 0
+                OR NOT EXISTS (
+                    SELECT 1 FROM scene_categories ch
+                    WHERE ch.parent_id = c.id AND ch.is_active = 1
+                )
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM scenes s WHERE s.category_id = c.id
+              )
+            ORDER BY c.sort_order ASC, c.id ASC
+        `);
+
+        let inserted = 0;
+        for (const cat of missingCategories) {
+            await query(
+                `INSERT INTO scenes
+                 (name, name_en, description, category_id, image_url, difficulty_level, is_active, sort_order)
+                 VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
+                [
+                    cat.name || `分类${cat.id}`,
+                    cat.name_en || '',
+                    '待生成图片',
+                    cat.id,
+                    null,
+                    1,
+                    cat.sort_order || 0
+                ]
+            );
+            inserted++;
+        }
+
+        res.json({
+            success: true,
+            message: inserted > 0 ? `已补齐 ${inserted} 个缺失分类场景` : '没有缺失分类需要补齐',
+            data: {
+                inserted,
+                missing_category_ids: missingCategories.map(c => c.id),
+                missing_category_names: missingCategories.map(c => c.name)
+            }
+        });
+    } catch (error) {
+        console.error('补齐缺失分类场景失败:', error);
+        res.status(500).json({ success: false, message: '补齐失败' });
     }
 });
 
@@ -178,11 +288,41 @@ router.post('/upload', upload.single('image'), (req, res) => {
     res.json({ success: true, url: `/uploads/scenes/${req.file.filename}` });
 });
 
-// 5. AI 生成图片 (Imagen 4.0 via proxy)
+// 5. AI 生成图片 (带 prompt 增强)
 router.post('/generate-image', async (req, res) => {
     try {
-        const { prompt } = req.body;
-        const result = await aiService.generateImage(prompt);
+        const { prompt, ai_style, name, name_en, category_id, difficulty_level } = req.body;
+        const userPrompt = String(prompt || '').trim();
+        if (!userPrompt) {
+            return res.status(400).json({ success: false, message: '提示词不能为空' });
+        }
+
+        const style = String(ai_style || '').toLowerCase();
+        const aiStyle = ['poster', 'scene', 'custom'].includes(style) ? style : 'scene';
+
+        // 查分类信息用于 prompt 增强
+        let category_name = '', category_name_en = '', items = '';
+        if (category_id) {
+            const [cat] = await query(
+                'SELECT name, name_en, items FROM scene_categories WHERE id = ?',
+                [category_id]
+            );
+            if (cat) {
+                category_name = cat.name || '';
+                category_name_en = cat.name_en || '';
+                items = cat.items || '';
+            }
+        }
+
+        const result = await aiService.generateSceneImage(userPrompt, {
+            ai_style: aiStyle,
+            name: name || '',
+            name_en: name_en || '',
+            category_name,
+            category_name_en,
+            difficulty_level: difficulty_level || '',
+            items
+        });
 
         if (result.success) {
             res.json({ success: true, imageUrl: result.imageUrl });
@@ -220,10 +360,26 @@ router.post('/ocr', async (req, res) => {
 router.get('/:id/wxacode', async (req, res) => {
     try {
         const sceneId = req.params.id;
-        const config = require('../../src/config');
+        const force = req.query.force === '1' || req.query.force === 'true';
+        const [scene] = await query('SELECT id, wxacode_url, wxacode_scene FROM scenes WHERE id = ?', [sceneId]);
+        if (!scene) {
+            return res.status(404).json({ success: false, message: '场景不存在' });
+        }
+
+        const savedUrl = scene.wxacode_url || '';
+        const savedScene = scene.wxacode_scene || `id=${sceneId}`;
+        if (!force && savedUrl) {
+            if (/^https?:\/\//i.test(savedUrl)) {
+                return res.json({ success: true, url: savedUrl, scene: savedScene, cached: true });
+            }
+            const localPath = path.join(__dirname, '../../', savedUrl);
+            if (fs.existsSync(localPath)) {
+                return res.json({ success: true, url: savedUrl, scene: savedScene, cached: true });
+            }
+        }
 
         // 获取 access_token
-        const tokenRes = await require('axios').get(
+        const tokenRes = await axios.get(
             `https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=${config.wechat.appId}&secret=${config.wechat.secret}`
         );
         if (!tokenRes.data.access_token) {
@@ -231,10 +387,10 @@ router.get('/:id/wxacode', async (req, res) => {
         }
 
         // 调用 wxacode.getUnlimited 生成小程序码
-        const wxRes = await require('axios').post(
+        const wxRes = await axios.post(
             `https://api.weixin.qq.com/wxa/getwxacodeunlimit?access_token=${tokenRes.data.access_token}`,
             {
-                scene: `id=${sceneId}`,
+                scene: savedScene,
                 page: 'pages/scene/detail/detail',
                 width: 430,
                 auto_color: false,
@@ -253,7 +409,14 @@ router.get('/:id/wxacode', async (req, res) => {
             if (!fs.existsSync(savePath)) fs.mkdirSync(savePath, { recursive: true });
             const filePath = path.join(savePath, filename);
             fs.writeFileSync(filePath, wxRes.data);
-            res.json({ success: true, url: `/uploads/wxacode/${filename}` });
+            const url = `/uploads/wxacode/${filename}`;
+
+            await query(
+                'UPDATE scenes SET wxacode_url = ?, wxacode_scene = ?, wxacode_generated_at = NOW() WHERE id = ?',
+                [url, savedScene, sceneId]
+            );
+
+            res.json({ success: true, url, scene: savedScene, cached: false });
         } else {
             const errData = JSON.parse(Buffer.from(wxRes.data).toString());
             res.status(500).json({ success: false, message: errData.errmsg || '生成失败', errcode: errData.errcode });
@@ -324,6 +487,23 @@ router.post('/objects/:objId/update-fields', async (req, res) => {
 // 9. 生成热点音频和翻译
 const voiceService = require('../../src/services/voice.service');
 
+function normalizeHotspotText(text = '') {
+    return String(text || '').trim();
+}
+
+function normalizePhonetic(phonetic = '') {
+    return String(phonetic || '').trim().replace(/^\/+/, '').replace(/\/+$/, '');
+}
+
+function inferWordContentType(text = '') {
+    const t = normalizeHotspotText(text);
+    if (!t) return 'word';
+    const words = t.split(/\s+/).filter(Boolean);
+    if (/[.!?。！？]/.test(t) || words.length >= 5) return 'sentence';
+    if (words.length >= 2) return 'phrase';
+    return 'word';
+}
+
 router.post('/objects/:objId/generate', async (req, res) => {
     try {
         const { objId } = req.params;
@@ -334,72 +514,147 @@ router.post('/objects/:objId/generate', async (req, res) => {
             return res.status(404).json({ success: false, message: '热点不存在' });
         }
 
-        const text = obj.custom_label;
+        const text = normalizeHotspotText(obj.custom_label);
         if (!text) {
             return res.status(400).json({ success: false, message: '热点无文本' });
         }
 
-        // 1. 检查是否匹配已有单词
+        // 1) 优先按标准化文本查 words 表（复用）
         const [existingWord] = await query(
-            'SELECT * FROM words WHERE word = ? LIMIT 1',
-            [text.toLowerCase().trim()]
+            'SELECT * FROM words WHERE LOWER(TRIM(word)) = LOWER(TRIM(?)) ORDER BY id ASC LIMIT 1',
+            [text]
         );
 
         let phonetic = '';
         let translation = '';
         let audioMale = '';
         let audioFemale = '';
+        let linkedWordId = null;
 
         if (existingWord) {
-            // 使用已有单词数据，去掉音标外层斜杠
-            phonetic = (existingWord.phonetic || '').replace(/^\/+/, '').replace(/\/+$/, '');
-            translation = existingWord.translation || '';
-            audioMale = existingWord.audio_url_male || '';
-            audioFemale = existingWord.audio_url_female || '';
+            linkedWordId = existingWord.id;
+            // 场景已有数据优先，其次复用 words 数据
+            phonetic = normalizePhonetic(obj.phonetic || existingWord.phonetic || '');
+            translation = obj.translation || existingWord.translation || '';
+            audioMale = obj.audio_url_male || existingWord.audio_url_male || '';
+            audioFemale = obj.audio_url_female || existingWord.audio_url_female || '';
+
+            if (!phonetic) {
+                const phoneticResult = await aiService.getPhonetic(text);
+                if (phoneticResult.success) {
+                    phonetic = normalizePhonetic(phoneticResult.phonetic);
+                }
+            }
+
+            if (!translation) {
+                const translateResult = await aiService.translateText(text);
+                if (translateResult.success) {
+                    translation = translateResult.translation;
+                }
+            }
+
+            // words 有缺失音频时自动补齐（仅生成缺失项）
+            if (!audioMale) {
+                try {
+                    const maleResult = await voiceService.textToSpeech(text, 'male');
+                    if (maleResult.success) audioMale = maleResult.audioUrl;
+                } catch (e) {
+                    console.error('[Generate] 生成男声音频失败:', e.message);
+                }
+            }
+
+            if (!audioFemale) {
+                try {
+                    const femaleResult = await voiceService.textToSpeech(text, 'female');
+                    if (femaleResult.success) audioFemale = femaleResult.audioUrl;
+                } catch (e) {
+                    console.error('[Generate] 生成女声音频失败:', e.message);
+                }
+            }
+
+            await query(
+                `UPDATE words
+                 SET phonetic = COALESCE(NULLIF(?, ''), phonetic),
+                     translation = COALESCE(NULLIF(?, ''), translation),
+                     audio_url_male = COALESCE(NULLIF(?, ''), audio_url_male),
+                     audio_url_female = COALESCE(NULLIF(?, ''), audio_url_female),
+                     updated_at = NOW()
+                 WHERE id = ?`,
+                [phonetic, translation, audioMale, audioFemale, linkedWordId]
+            );
 
             // 更新word_id关联
-            await query('UPDATE scene_objects SET word_id = ? WHERE id = ?', [existingWord.id, objId]);
-            console.log(`[Generate] 关联已有单词: ${text} -> word_id=${existingWord.id}`);
+            await query('UPDATE scene_objects SET word_id = ? WHERE id = ?', [linkedWordId, objId]);
+            console.log(`[Generate] 关联并补齐已有单词: ${text} -> word_id=${linkedWordId}`);
         } else {
-            // 生成新数据
-            console.log(`[Generate] 生成新数据: ${text}`);
+            // 2) words 无匹配时：生成并入 words 基础表
+            console.log(`[Generate] words无匹配，生成并入库: ${text}`);
+
+            phonetic = normalizePhonetic(obj.phonetic || '');
+            translation = obj.translation || '';
+            audioMale = obj.audio_url_male || '';
+            audioFemale = obj.audio_url_female || '';
 
             // 获取音标
-            const phoneticResult = await aiService.getPhonetic(text);
-            if (phoneticResult.success) {
-                // 去掉所有外层斜杠，前端统一加 /xxx/ 显示
-                phonetic = (phoneticResult.phonetic || '').replace(/^\/+/, '').replace(/\/+$/, '');
+            if (!phonetic) {
+                const phoneticResult = await aiService.getPhonetic(text);
+                if (phoneticResult.success) {
+                    phonetic = normalizePhonetic(phoneticResult.phonetic);
+                }
             }
 
             // 获取翻译
-            const translateResult = await aiService.translateText(text);
-            if (translateResult.success) {
-                translation = translateResult.translation;
+            if (!translation) {
+                const translateResult = await aiService.translateText(text);
+                if (translateResult.success) {
+                    translation = translateResult.translation;
+                }
             }
 
             // 生成TTS音频
             try {
-                const maleResult = await voiceService.textToSpeech(text, 'male');
-                if (maleResult.success) {
-                    audioMale = maleResult.audioUrl;
+                if (!audioMale) {
+                    const maleResult = await voiceService.textToSpeech(text, 'male');
+                    if (maleResult.success) {
+                        audioMale = maleResult.audioUrl;
+                    }
                 }
 
-                const femaleResult = await voiceService.textToSpeech(text, 'female');
-                if (femaleResult.success) {
-                    audioFemale = femaleResult.audioUrl;
+                if (!audioFemale) {
+                    const femaleResult = await voiceService.textToSpeech(text, 'female');
+                    if (femaleResult.success) {
+                        audioFemale = femaleResult.audioUrl;
+                    }
                 }
             } catch (ttsError) {
                 console.error('[Generate] TTS错误:', ttsError.message);
                 // TTS失败不阻断流程
             }
+
+            const contentType = inferWordContentType(text);
+            const insertResult = await query(
+                `INSERT INTO words
+                 (word, phonetic, translation, content_type, audio_url_male, audio_url_female, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+                [
+                    text,
+                    phonetic || null,
+                    translation || null,
+                    contentType,
+                    audioMale || null,
+                    audioFemale || null
+                ]
+            );
+            linkedWordId = insertResult.insertId;
+            console.log(`[Generate] 新增words: ${text} -> word_id=${linkedWordId}`);
         }
 
-        // 更新scene_objects
+        // 3) 回写 scene_objects（与 words 保持同步）
         await query(`
             UPDATE scene_objects 
-            SET phonetic = ?, translation = ?, audio_url_male = ?, audio_url_female = ?
+            SET word_id = ?, phonetic = ?, translation = ?, audio_url_male = ?, audio_url_female = ?
             WHERE id = ?
-        `, [phonetic, translation, audioMale, audioFemale, objId]);
+        `, [linkedWordId || null, phonetic, translation, audioMale, audioFemale, objId]);
 
         res.json({
             success: true,
@@ -409,7 +664,7 @@ router.post('/objects/:objId/generate', async (req, res) => {
                 translation,
                 audio_url_male: audioMale,
                 audio_url_female: audioFemale,
-                linked_word_id: existingWord?.id || null
+                linked_word_id: linkedWordId
             }
         });
     } catch (error) {

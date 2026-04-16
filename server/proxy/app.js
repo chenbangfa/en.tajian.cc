@@ -40,12 +40,54 @@ function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+const PROXY_TTS_MIN_INTERVAL_MS = Math.max(
+    1000,
+    Number(process.env.PROXY_TTS_MIN_INTERVAL_MS || 15000)
+);
+const PROXY_TTS_COOLDOWN_MS = Math.max(
+    PROXY_TTS_MIN_INTERVAL_MS,
+    Number(process.env.PROXY_TTS_COOLDOWN_MS || 10 * 60 * 1000)
+);
+
+let ttsQueue = Promise.resolve();
+let ttsLastRequestAt = 0;
+let ttsCooldownUntil = 0;
+const PROXY_IMAGE_MIN_INTERVAL_MS = Math.max(
+    1000,
+    Number(process.env.PROXY_IMAGE_MIN_INTERVAL_MS || 30000)
+);
+const PROXY_IMAGE_COOLDOWN_MS = Math.max(
+    PROXY_IMAGE_MIN_INTERVAL_MS,
+    Number(process.env.PROXY_IMAGE_COOLDOWN_MS || 10 * 60 * 1000)
+);
+let imageQueue = Promise.resolve();
+let imageLastRequestAt = 0;
+let imageCooldownUntil = 0;
+const PROXY_ANALYZE_MIN_INTERVAL_MS = Math.max(
+    1000,
+    Number(process.env.PROXY_ANALYZE_MIN_INTERVAL_MS || 20000)
+);
+const PROXY_ANALYZE_COOLDOWN_MS = Math.max(
+    PROXY_ANALYZE_MIN_INTERVAL_MS,
+    Number(process.env.PROXY_ANALYZE_COOLDOWN_MS || 120 * 1000)
+);
+let analyzeQueue = Promise.resolve();
+let analyzeLastRequestAt = 0;
+let analyzeCooldownUntil = 0;
+
 function getUpstreamError(error) {
     const status = error?.response?.status || 500;
     const errObj = error?.response?.data?.error || {};
     const code = errObj.status || '';
     const message = errObj.message || error?.message || 'Upstream request failed';
     return { status, code, message: String(message) };
+}
+
+function isRateLimitedUpstreamError(error) {
+    const { status, code, message } = getUpstreamError(error);
+    return status === 429
+        || code === 'RESOURCE_EXHAUSTED'
+        || /resource exhausted|quota exceeded|try again later|too many requests/i.test(message);
 }
 
 function isRetryableUpstreamError(error) {
@@ -67,10 +109,181 @@ function mapProxyStatus(error) {
     return 500;
 }
 
+function stripMarkdownJsonFence(rawText = '') {
+    return String(rawText || '')
+        .replace(/```json\n?/gi, '')
+        .replace(/```\n?/g, '')
+        .trim();
+}
+
+function extractJsonObjectText(rawText = '') {
+    const cleaned = stripMarkdownJsonFence(rawText);
+
+    if (!cleaned) return '';
+
+    const firstBrace = cleaned.indexOf('{');
+    if (firstBrace < 0) return cleaned;
+
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let i = firstBrace; i < cleaned.length; i++) {
+        const ch = cleaned[i];
+
+        if (inString) {
+            if (escaped) {
+                escaped = false;
+            } else if (ch === '\\') {
+                escaped = true;
+            } else if (ch === '"') {
+                inString = false;
+            }
+            continue;
+        }
+
+        if (ch === '"') {
+            inString = true;
+            continue;
+        }
+        if (ch === '{') {
+            depth++;
+            continue;
+        }
+        if (ch === '}') {
+            depth--;
+            if (depth === 0) {
+                return cleaned.slice(firstBrace, i + 1);
+            }
+        }
+    }
+
+    return cleaned;
+}
+
+function normalizeLikelyJsonText(rawText = '') {
+    return stripMarkdownJsonFence(rawText)
+        .replace(/,\s*([}\]])/g, '$1')
+        .replace(/([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*:)/g, '$1"$2"$3')
+        .trim();
+}
+
+function sanitizePictureBookWordEntry(entry) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
+    const word = String(entry.word || entry.term || entry.text || '').trim();
+    if (!word) return null;
+    return {
+        word,
+        phonetic: String(entry.phonetic || entry.pronunciation || '').trim(),
+        pos: String(entry.pos || entry.partOfSpeech || '').trim(),
+        translation: String(entry.translation || entry.meaning || entry.chinese || '').trim()
+    };
+}
+
+function tryParsePictureBookWordsJson(candidateText = '') {
+    if (!candidateText) return null;
+    const parsed = JSON.parse(candidateText);
+    const words = Array.isArray(parsed?.words) ? parsed.words.map(sanitizePictureBookWordEntry).filter(Boolean) : null;
+    if (!words) return null;
+    return { words, parsed };
+}
+
+function salvagePictureBookWords(rawText = '') {
+    const cleaned = normalizeLikelyJsonText(rawText);
+    const wordsKeyIndex = cleaned.indexOf('"words"');
+    if (wordsKeyIndex < 0) return [];
+    const arrayStart = cleaned.indexOf('[', wordsKeyIndex);
+    if (arrayStart < 0) return [];
+
+    const items = [];
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    let objectStart = -1;
+
+    for (let i = arrayStart + 1; i < cleaned.length; i++) {
+        const ch = cleaned[i];
+
+        if (inString) {
+            if (escaped) {
+                escaped = false;
+            } else if (ch === '\\') {
+                escaped = true;
+            } else if (ch === '"') {
+                inString = false;
+            }
+            continue;
+        }
+
+        if (ch === '"') {
+            inString = true;
+            continue;
+        }
+        if (ch === '{') {
+            if (depth === 0) objectStart = i;
+            depth++;
+            continue;
+        }
+        if (ch === '}') {
+            depth--;
+            if (depth === 0 && objectStart >= 0) {
+                const candidate = cleaned.slice(objectStart, i + 1);
+                try {
+                    const parsed = JSON.parse(candidate);
+                    const normalized = sanitizePictureBookWordEntry(parsed);
+                    if (normalized) items.push(normalized);
+                } catch (_) {}
+                objectStart = -1;
+            }
+            continue;
+        }
+        if (ch === ']' && depth === 0) {
+            break;
+        }
+    }
+
+    return items;
+}
+
+function truncateForLog(text = '', max = 4000) {
+    const s = String(text || '');
+    return s.length <= max ? s : `${s.slice(0, max)}\n...[truncated ${s.length - max} chars]`;
+}
+
+function parsePictureBookWordsResponse(rawText = '') {
+    const candidates = [];
+    const stripped = stripMarkdownJsonFence(rawText);
+    const extracted = extractJsonObjectText(rawText);
+    const normalized = normalizeLikelyJsonText(rawText);
+    const extractedNormalized = normalizeLikelyJsonText(extracted);
+
+    for (const text of [stripped, extracted, normalized, extractedNormalized]) {
+        if (text && !candidates.includes(text)) candidates.push(text);
+    }
+
+    let lastError = null;
+    for (const candidate of candidates) {
+        try {
+            const result = tryParsePictureBookWordsJson(candidate);
+            if (result) return { words: result.words, recovered: candidate !== stripped };
+        } catch (error) {
+            lastError = error;
+        }
+    }
+
+    const salvagedWords = salvagePictureBookWords(rawText);
+    if (salvagedWords.length > 0) {
+        return { words: salvagedWords, recovered: true, salvaged: true };
+    }
+
+    throw lastError || new Error('AI返回格式错误: 无法解析 words JSON');
+}
+
 async function withRetry(label, taskFn, options = {}) {
     const {
         maxAttempts = 3,
-        baseDelayMs = 1200
+        baseDelayMs = 1200,
+        retryOnRateLimit = true
     } = options;
 
     let lastError = null;
@@ -79,6 +292,9 @@ async function withRetry(label, taskFn, options = {}) {
             return await taskFn();
         } catch (error) {
             lastError = error;
+            if (!retryOnRateLimit && isRateLimitedUpstreamError(error)) {
+                throw error;
+            }
             if (!isRetryableUpstreamError(error) || attempt >= maxAttempts) {
                 throw error;
             }
@@ -88,6 +304,162 @@ async function withRetry(label, taskFn, options = {}) {
         }
     }
     throw lastError || new Error(`${label} failed`);
+}
+
+function getTtsCooldownRemainingMs() {
+    return Math.max(0, ttsCooldownUntil - Date.now());
+}
+
+function createTtsCooldownError(remainingMs) {
+    const seconds = Math.max(1, Math.ceil(remainingMs / 1000));
+    const error = new Error(`Google TTS 正在冷却，请在 ${seconds} 秒后重试`);
+    error.response = {
+        status: 429,
+        data: {
+            error: {
+                status: 'RESOURCE_EXHAUSTED',
+                message: `Google TTS 正在冷却，请在 ${seconds} 秒后重试`
+            }
+        }
+    };
+    error.retryAfterMs = remainingMs;
+    return error;
+}
+
+async function enqueueTtsRequest(taskFn) {
+    const run = async () => {
+        const cooldownRemainingMs = getTtsCooldownRemainingMs();
+        if (cooldownRemainingMs > 0) {
+            throw createTtsCooldownError(cooldownRemainingMs);
+        }
+
+        const waitMs = Math.max(0, PROXY_TTS_MIN_INTERVAL_MS - (Date.now() - ttsLastRequestAt));
+        if (waitMs > 0) {
+            console.log(`[Proxy] TTS 限速等待 ${waitMs}ms`);
+            await sleep(waitMs);
+        }
+
+        ttsLastRequestAt = Date.now();
+
+        try {
+            return await taskFn();
+        } catch (error) {
+            if (isRateLimitedUpstreamError(error)) {
+                ttsCooldownUntil = Math.max(ttsCooldownUntil, Date.now() + PROXY_TTS_COOLDOWN_MS);
+                error.retryAfterMs = error.retryAfterMs || PROXY_TTS_COOLDOWN_MS;
+                console.warn(`[Proxy] TTS 触发冷却，持续 ${error.retryAfterMs}ms`);
+            }
+            throw error;
+        }
+    };
+
+    const current = ttsQueue.then(run, run);
+    ttsQueue = current.catch(() => {});
+    return current;
+}
+
+function getImageCooldownRemainingMs() {
+    return Math.max(0, imageCooldownUntil - Date.now());
+}
+
+function createImageCooldownError(remainingMs) {
+    const seconds = Math.max(1, Math.ceil(remainingMs / 1000));
+    const error = new Error(`图片生成正在冷却，请在 ${seconds} 秒后重试`);
+    error.response = {
+        status: 429,
+        data: {
+            error: {
+                status: 'RESOURCE_EXHAUSTED',
+                message: `图片生成正在冷却，请在 ${seconds} 秒后重试`
+            }
+        }
+    };
+    error.retryAfterMs = remainingMs;
+    return error;
+}
+
+async function enqueueImageRequest(taskFn) {
+    const run = async () => {
+        const cooldownRemainingMs = getImageCooldownRemainingMs();
+        if (cooldownRemainingMs > 0) {
+            throw createImageCooldownError(cooldownRemainingMs);
+        }
+
+        const waitMs = Math.max(0, PROXY_IMAGE_MIN_INTERVAL_MS - (Date.now() - imageLastRequestAt));
+        if (waitMs > 0) {
+            console.log(`[Proxy] Image 限速等待 ${waitMs}ms`);
+            await sleep(waitMs);
+        }
+
+        imageLastRequestAt = Date.now();
+
+        try {
+            return await taskFn();
+        } catch (error) {
+            if (isRateLimitedUpstreamError(error)) {
+                imageCooldownUntil = Math.max(imageCooldownUntil, Date.now() + PROXY_IMAGE_COOLDOWN_MS);
+                error.retryAfterMs = error.retryAfterMs || PROXY_IMAGE_COOLDOWN_MS;
+                console.warn(`[Proxy] Image 触发冷却，持续 ${error.retryAfterMs}ms`);
+            }
+            throw error;
+        }
+    };
+
+    const current = imageQueue.then(run, run);
+    imageQueue = current.catch(() => {});
+    return current;
+}
+
+function getAnalyzeCooldownRemainingMs() {
+    return Math.max(0, analyzeCooldownUntil - Date.now());
+}
+
+function createAnalyzeCooldownError(remainingMs) {
+    const seconds = Math.max(1, Math.ceil(remainingMs / 1000));
+    const error = new Error(`绘本词汇分析正在冷却，请在 ${seconds} 秒后重试`);
+    error.response = {
+        status: 429,
+        data: {
+            error: {
+                status: 'RESOURCE_EXHAUSTED',
+                message: `绘本词汇分析正在冷却，请在 ${seconds} 秒后重试`
+            }
+        }
+    };
+    error.retryAfterMs = remainingMs;
+    return error;
+}
+
+async function enqueueAnalyzeRequest(taskFn) {
+    const run = async () => {
+        const cooldownRemainingMs = getAnalyzeCooldownRemainingMs();
+        if (cooldownRemainingMs > 0) {
+            throw createAnalyzeCooldownError(cooldownRemainingMs);
+        }
+
+        const waitMs = Math.max(0, PROXY_ANALYZE_MIN_INTERVAL_MS - (Date.now() - analyzeLastRequestAt));
+        if (waitMs > 0) {
+            console.log(`[Proxy] Analyze 限速等待 ${waitMs}ms`);
+            await sleep(waitMs);
+        }
+
+        analyzeLastRequestAt = Date.now();
+
+        try {
+            return await taskFn();
+        } catch (error) {
+            if (isRateLimitedUpstreamError(error)) {
+                analyzeCooldownUntil = Math.max(analyzeCooldownUntil, Date.now() + PROXY_ANALYZE_COOLDOWN_MS);
+                error.retryAfterMs = error.retryAfterMs || PROXY_ANALYZE_COOLDOWN_MS;
+                console.warn(`[Proxy] Analyze 触发冷却，持续 ${error.retryAfterMs}ms`);
+            }
+            throw error;
+        }
+    };
+
+    const current = analyzeQueue.then(run, run);
+    analyzeQueue = current.catch(() => {});
+    return current;
 }
 
 // ==================== 鉴权中间件 ====================
@@ -135,48 +507,51 @@ app.post('/proxy/generate-image', auth, async (req, res) => {
         const headers = await vertexAuth.getAuthHeaders();
         let rawBuffer = null;
 
-        // Gemini 图片生成模型 fallback 链：3.1 Flash → 3 Pro
-        const IMAGE_MODELS = [
-            'gemini-3.1-flash-image-preview',
-            'gemini-3-pro-image-preview'
-        ];
+        await enqueueImageRequest(async () => {
+            // Gemini 图片生成模型 fallback 链：3.1 Flash → 3 Pro
+            const IMAGE_MODELS = [
+                'gemini-3.1-flash-image-preview',
+                'gemini-3-pro-image-preview'
+            ];
 
-        for (let i = 0; i < IMAGE_MODELS.length; i++) {
-            const model = IMAGE_MODELS[i];
-            try {
-                const response = await withRetry(
-                    `generate-image(${model})`,
-                    () => axios.post(
-                        vertexAuth.getUrl(model),
-                        {
-                            contents: [{ role: 'user', parts: [{ text: prompt }] }],
-                            generationConfig: { responseModalities: ['image', 'text'] }
-                        },
-                        { headers, timeout: 180000 }
-                    ),
-                    { maxAttempts: 2, baseDelayMs: 1500 }
-                );
+            for (let i = 0; i < IMAGE_MODELS.length; i++) {
+                const model = IMAGE_MODELS[i];
+                try {
+                    const response = await withRetry(
+                        `generate-image(${model})`,
+                        () => axios.post(
+                            vertexAuth.getUrl(model),
+                            {
+                                contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                                generationConfig: { responseModalities: ['image', 'text'] }
+                            },
+                            { headers, timeout: 180000 }
+                        ),
+                        { maxAttempts: 2, baseDelayMs: 30000, retryOnRateLimit: false }
+                    );
 
-                const parts = response.data.candidates?.[0]?.content?.parts || [];
-                for (const part of parts) {
-                    if (part.inlineData?.mimeType?.startsWith('image/')) {
-                        rawBuffer = Buffer.from(part.inlineData.data, 'base64');
-                        break;
+                    const parts = response.data.candidates?.[0]?.content?.parts || [];
+                    for (const part of parts) {
+                        if (part.inlineData?.mimeType?.startsWith('image/')) {
+                            rawBuffer = Buffer.from(part.inlineData.data, 'base64');
+                            break;
+                        }
+                    }
+                    if (rawBuffer) {
+                        console.log(`[Proxy] 模型 ${model} 生成成功`);
+                        return response.data;
+                    }
+                } catch (err) {
+                    console.warn(`[Proxy] 模型 ${model} 失败: ${getUpstreamError(err).message}`);
+                    if (i < IMAGE_MODELS.length - 1) {
+                        console.log(`[Proxy] 降级到 ${IMAGE_MODELS[i + 1]}`);
+                    } else {
+                        throw err; // 所有模型都失败，抛出最后的错误
                     }
                 }
-                if (rawBuffer) {
-                    console.log(`[Proxy] 模型 ${model} 生成成功`);
-                    break;
-                }
-            } catch (err) {
-                console.warn(`[Proxy] 模型 ${model} 失败: ${getUpstreamError(err).message}`);
-                if (i < IMAGE_MODELS.length - 1) {
-                    console.log(`[Proxy] 降级到 ${IMAGE_MODELS[i + 1]}`);
-                } else {
-                    throw err; // 所有模型都失败，抛出最后的错误
-                }
             }
-        }
+            return null;
+        });
 
         if (!rawBuffer) {
             return res.json({ success: false, error: '图片生成未返回有效数据，请稍后重试' });
@@ -205,11 +580,16 @@ app.post('/proxy/generate-image', auth, async (req, res) => {
     } catch (error) {
         const up = getUpstreamError(error);
         const status = mapProxyStatus(error);
+        const retryAfterMs = error.retryAfterMs || (status === 429 ? getImageCooldownRemainingMs() : 0);
         console.error('[Proxy] generate-image error:', status, up.code, up.message);
+        if (status === 429 && retryAfterMs > 0) {
+            res.set('Retry-After', String(Math.max(1, Math.ceil(retryAfterMs / 1000))));
+        }
         res.status(status).json({
             success: false,
             error: up.message,
-            code: up.code
+            code: up.code,
+            retryAfterMs: status === 429 && retryAfterMs > 0 ? retryAfterMs : undefined
         });
     }
 });
@@ -228,7 +608,7 @@ app.post('/proxy/gemini-text', auth, async (req, res) => {
 
     try {
         const headers = await vertexAuth.getAuthHeaders();
-        const response = await withRetry(
+        const response = await enqueueAnalyzeRequest(() => withRetry(
             'gemini-text',
             () => axios.post(
                 vertexAuth.getUrl('gemini-2.5-flash'),
@@ -238,8 +618,8 @@ app.post('/proxy/gemini-text', auth, async (req, res) => {
                 },
                 { headers, timeout: 60000 }
             ),
-            { maxAttempts: 3, baseDelayMs: 1200 }
-        );
+            { maxAttempts: 2, baseDelayMs: 30000, retryOnRateLimit: false }
+        ));
 
         const text = response.data.candidates?.[0]?.content?.parts?.[0]?.text;
         if (text) {
@@ -249,8 +629,17 @@ app.post('/proxy/gemini-text', auth, async (req, res) => {
     } catch (error) {
         const up = getUpstreamError(error);
         const status = mapProxyStatus(error);
+        const retryAfterMs = error.retryAfterMs || (status === 429 ? getAnalyzeCooldownRemainingMs() : 0);
         console.error('[Proxy] gemini-text error:', status, up.code, up.message);
-        res.status(status).json({ success: false, error: up.message, code: up.code });
+        if (status === 429 && retryAfterMs > 0) {
+            res.set('Retry-After', String(Math.max(1, Math.ceil(retryAfterMs / 1000))));
+        }
+        res.status(status).json({
+            success: false,
+            error: up.message,
+            code: up.code,
+            retryAfterMs: status === 429 && retryAfterMs > 0 ? retryAfterMs : undefined
+        });
     }
 });
 
@@ -428,7 +817,7 @@ Respond ONLY with a valid JSON object:
         console.log(`[Proxy] 增强单词: ${word}`);
 
         const headers = await vertexAuth.getAuthHeaders();
-        const response = await withRetry(
+        const response = await enqueueAnalyzeRequest(() => withRetry(
             'enhance-word',
             () => axios.post(
                 vertexAuth.getUrl('gemini-2.5-flash'),
@@ -438,8 +827,8 @@ Respond ONLY with a valid JSON object:
                 },
                 { headers, timeout: 30000 }
             ),
-            { maxAttempts: 3, baseDelayMs: 1200 }
-        );
+            { maxAttempts: 2, baseDelayMs: 30000, retryOnRateLimit: false }
+        ));
 
         const text = response.data.candidates?.[0]?.content?.parts?.[0]?.text;
         if (text) {
@@ -455,8 +844,17 @@ Respond ONLY with a valid JSON object:
     } catch (error) {
         const up = getUpstreamError(error);
         const status = mapProxyStatus(error);
+        const retryAfterMs = error.retryAfterMs || (status === 429 ? getAnalyzeCooldownRemainingMs() : 0);
         console.error('[Proxy] enhance-word error:', status, up.code, up.message);
-        res.status(status).json({ success: false, error: up.message, code: up.code });
+        if (status === 429 && retryAfterMs > 0) {
+            res.set('Retry-After', String(Math.max(1, Math.ceil(retryAfterMs / 1000))));
+        }
+        res.status(status).json({
+            success: false,
+            error: up.message,
+            code: up.code,
+            retryAfterMs: status === 429 && retryAfterMs > 0 ? retryAfterMs : undefined
+        });
     }
 });
 
@@ -483,7 +881,7 @@ app.post('/proxy/tts', auth, async (req, res) => {
         console.log(`[Proxy] Google TTS (Vertex AI): "${text.substring(0, 40)}", voice: ${voiceName}`);
 
         const headers = await vertexAuth.getAuthHeaders();
-        const response = await withRetry(
+        const response = await enqueueTtsRequest(() => withRetry(
             'tts',
             () => axios.post(
                 vertexAuth.getUrl('gemini-2.5-flash-preview-tts'),
@@ -496,8 +894,8 @@ app.post('/proxy/tts', auth, async (req, res) => {
                 },
                 { headers, timeout: 30000 }
             ),
-            { maxAttempts: 3, baseDelayMs: 5000 }
-        );
+            { maxAttempts: 2, baseDelayMs: 30000, retryOnRateLimit: false }
+        ));
 
         const parts = response.data.candidates?.[0]?.content?.parts || [];
         for (const part of parts) {
@@ -517,8 +915,17 @@ app.post('/proxy/tts', auth, async (req, res) => {
     } catch (error) {
         const up = getUpstreamError(error);
         const status = mapProxyStatus(error);
+        const retryAfterMs = error.retryAfterMs || (status === 429 ? getTtsCooldownRemainingMs() : 0);
         console.error('[Proxy] tts error:', status, up.code, up.message);
-        res.status(status).json({ success: false, error: up.message, code: up.code });
+        if (status === 429 && retryAfterMs > 0) {
+            res.set('Retry-After', String(Math.max(1, Math.ceil(retryAfterMs / 1000))));
+        }
+        res.status(status).json({
+            success: false,
+            error: up.message,
+            code: up.code,
+            retryAfterMs: status === 429 && retryAfterMs > 0 ? retryAfterMs : undefined
+        });
     }
 });
 
@@ -555,17 +962,19 @@ ${chunkText}`;
 
 async function analyzeChunk(chunkText) {
     const headers = await vertexAuth.getAuthHeaders();
-    const response = await axios.post(
-        vertexAuth.getUrl('gemini-2.5-flash'),
-        {
-            contents: [{ role: 'user', parts: [{ text: buildAnalyzePrompt(chunkText) }] }],
-            generationConfig: { temperature: 0.2, maxOutputTokens: 8192 }
-        },
-        { headers, timeout: 90000 }
-    );
-    let raw = response.data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    raw = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    const parsed = JSON.parse(raw);
+    const response = await enqueueAnalyzeRequest(() => withRetry(
+        'analyze-podcast',
+        () => axios.post(
+            vertexAuth.getUrl('gemini-2.5-flash'),
+            {
+                contents: [{ role: 'user', parts: [{ text: buildAnalyzePrompt(chunkText) }] }],
+                generationConfig: { temperature: 0.2, maxOutputTokens: 8192 }
+            },
+            { headers, timeout: 90000 }
+        ),
+        { maxAttempts: 2, baseDelayMs: 30000, retryOnRateLimit: false }
+    ));
+    const parsed = JSON.parse(extractJsonObjectText(response.data.candidates?.[0]?.content?.parts?.[0]?.text || ''));
     if (!Array.isArray(parsed.sentences)) throw new Error('AI返回格式错误');
     return parsed.sentences;
 }
@@ -594,8 +1003,19 @@ app.post('/proxy/analyze-podcast', auth, async (req, res) => {
         console.log(`[Proxy] 播客分析成功, ${allSentences.length} 句`);
         res.json({ success: true, sentences: allSentences });
     } catch (error) {
-        console.error('[Proxy] analyze-podcast error:', error.response?.data || error.message);
-        res.status(500).json({ success: false, error: error.message });
+        const up = getUpstreamError(error);
+        const status = mapProxyStatus(error);
+        const retryAfterMs = error.retryAfterMs || (status === 429 ? getAnalyzeCooldownRemainingMs() : 0);
+        console.error('[Proxy] analyze-podcast error:', status, up.code, up.message);
+        if (status === 429 && retryAfterMs > 0) {
+            res.set('Retry-After', String(Math.max(1, Math.ceil(retryAfterMs / 1000))));
+        }
+        res.status(status).json({
+            success: false,
+            error: up.message,
+            code: up.code,
+            retryAfterMs: status === 429 && retryAfterMs > 0 ? retryAfterMs : undefined
+        });
     }
 });
 
@@ -632,28 +1052,89 @@ ${text}`;
 app.post('/proxy/analyze-picturebook-words', auth, async (req, res) => {
     const { text } = req.body;
     if (!text) return res.status(400).json({ success: false, error: '缺少 text 参数' });
-    if (!vertexAuth.isConfigured) return res.status(500).json({ success: false, error: '未配置 Vertex AI' });
+
+    const DEEPSEEK_KEY = process.env.DEEPSEEK_API_KEY;
+    const useDeepSeek = DEEPSEEK_KEY && (!vertexAuth.isConfigured || process.env.AI_ANALYZE_ENGINE === 'deepseek');
 
     try {
-        const headers = await vertexAuth.getAuthHeaders();
-        const response = await axios.post(
-            vertexAuth.getUrl('gemini-2.5-flash'),
-            {
-                contents: [{ role: 'user', parts: [{ text: buildPictureBookWordsPrompt(text) }] }],
-                generationConfig: { temperature: 0.2, maxOutputTokens: 4096 }
-            },
-            { headers, timeout: 60000 }
-        );
-        let raw = response.data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        raw = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-        const parsed = JSON.parse(raw);
-        if (!Array.isArray(parsed.words)) throw new Error('AI返回格式错误: 缺少 words 数组');
+        let rawText;
+        if (useDeepSeek) {
+            // DeepSeek 路径
+            const response = await axios.post(
+                'https://api.deepseek.com/chat/completions',
+                {
+                    model: 'deepseek-chat',
+                    messages: [
+                        { role: 'system', content: 'You are a JSON-only assistant. Return ONLY valid JSON, no markdown, no explanation.' },
+                        { role: 'user', content: buildPictureBookWordsPrompt(text) }
+                    ],
+                    temperature: 0,
+                    max_tokens: 4096,
+                    response_format: { type: 'json_object' }
+                },
+                {
+                    headers: { 'Authorization': `Bearer ${DEEPSEEK_KEY}`, 'Content-Type': 'application/json' },
+                    timeout: 60000
+                }
+            );
+            rawText = response.data.choices?.[0]?.message?.content || '';
+            console.log('[Proxy] analyze-picturebook-words using DeepSeek');
+        } else if (vertexAuth.isConfigured) {
+            // Vertex AI 路径
+            const headers = await vertexAuth.getAuthHeaders();
+            const response = await enqueueAnalyzeRequest(() => withRetry(
+                'analyze-picturebook-words',
+                () => axios.post(
+                    vertexAuth.getUrl('gemini-2.5-flash'),
+                    {
+                        contents: [{ role: 'user', parts: [{ text: buildPictureBookWordsPrompt(text) }] }],
+                        generationConfig: { temperature: 0, maxOutputTokens: 4096, responseMimeType: 'application/json' }
+                    },
+                    { headers, timeout: 60000 }
+                ),
+                { maxAttempts: 2, baseDelayMs: 30000, retryOnRateLimit: false }
+            ));
+            rawText = response.data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        } else {
+            return res.status(500).json({ success: false, error: '未配置 AI 引擎（Vertex AI 或 DeepSeek）' });
+        }
+
+        let parsed;
+        try {
+            parsed = parsePictureBookWordsResponse(rawText);
+        } catch (parseError) {
+            parseError.rawResponseText = rawText;
+            throw parseError;
+        }
+
+        if (parsed.recovered) {
+            console.warn('[Proxy] analyze-picturebook-words 使用恢复解析:', { salvaged: !!parsed.salvaged, rawLength: rawText.length });
+        }
 
         console.log(`[Proxy] 绘本词汇分析成功, ${parsed.words.length} 词`);
         res.json({ success: true, words: parsed.words });
     } catch (error) {
-        console.error('[Proxy] analyze-picturebook-words error:', error.response?.data || error.message);
-        res.status(500).json({ success: false, error: error.message });
+        const up = getUpstreamError(error);
+        const status = mapProxyStatus(error);
+        const retryAfterMs = error.retryAfterMs || (status === 429 ? getAnalyzeCooldownRemainingMs() : 0);
+        if (status === 500 && /JSON|Unexpected end|Unterminated string|property name/i.test(String(up.message || ''))) {
+            console.error('[Proxy] analyze-picturebook-words raw-response:', truncateForLog(error.rawResponseText || error.response?.data?.candidates?.[0]?.content?.parts?.[0]?.text || ''));
+        }
+        console.error('[Proxy] analyze-picturebook-words error:', status, up.code, up.message);
+        if (status === 429 && retryAfterMs > 0) {
+            res.set('Retry-After', String(Math.max(1, Math.ceil(retryAfterMs / 1000))));
+        }
+        const friendlyMessage = status === 429
+            ? `AI 限流保护，请在 ${Math.max(1, Math.ceil((retryAfterMs || PROXY_ANALYZE_COOLDOWN_MS) / 1000))} 秒后重试`
+            : (/JSON|Unexpected end|Unterminated string|property name/i.test(String(up.message || ''))
+                ? 'AI 返回的词汇 JSON 不完整，请重试'
+                : up.message);
+        res.status(status).json({
+            success: false,
+            error: friendlyMessage,
+            code: up.code,
+            retryAfterMs: status === 429 && retryAfterMs > 0 ? retryAfterMs : undefined
+        });
     }
 });
 
@@ -687,4 +1168,7 @@ app.listen(PORT, () => {
     console.log(`🔑 API Key 鉴权: ${API_KEY ? '已启用' : '未启用（开发模式）'}`);
     console.log(`🤖 Vertex AI: ${vertexAuth.isConfigured ? '已配置' : '❌ 未配置'}`);
     console.log(`📍 Project: ${process.env.GOOGLE_CLOUD_PROJECT || 'NOT SET'}, Region: ${process.env.GOOGLE_CLOUD_REGION || 'us-central1'}`);
+    console.log(`🖼️ Image 限速: 最小间隔 ${PROXY_IMAGE_MIN_INTERVAL_MS}ms, 冷却 ${PROXY_IMAGE_COOLDOWN_MS}ms`);
+    console.log(`🔊 TTS 限速: 最小间隔 ${PROXY_TTS_MIN_INTERVAL_MS}ms, 冷却 ${PROXY_TTS_COOLDOWN_MS}ms`);
+    console.log(`🧠 Analyze 限速: 最小间隔 ${PROXY_ANALYZE_MIN_INTERVAL_MS}ms, 冷却 ${PROXY_ANALYZE_COOLDOWN_MS}ms`);
 });

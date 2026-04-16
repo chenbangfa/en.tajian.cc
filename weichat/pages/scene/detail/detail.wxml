@@ -4,7 +4,7 @@
   <!-- 图片 + 热点 -->
   <view wx:if="{{scene}}"
     class="image-wrap"
-    style="width:{{imageWrapperWidth}}px;height:{{imageWrapperHeight}}px"
+    style="height:{{imageWrapperHeight}}px"
   >
     <image
       class="main-img"

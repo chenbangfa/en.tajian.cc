@@ -5,8 +5,96 @@ const fs = require('fs');
 const { query } = require('../../src/config/database');
 const voiceService = require('../../src/services/voice.service');
 const aiService = require('../../src/services/ai.service');
+const tencentImageService = require('../../src/services/tencent-image.service');
 
 const router = express.Router();
+
+function resolveAdminTtsEngine(req) {
+    const engine = voiceService.normalizeEngine(req.body?.engine || req.query?.engine || 'youdao');
+    return engine === 'auto' ? 'youdao' : engine;
+}
+
+async function generateDialogueLineAudio(line, engine) {
+    const voice = line.role === 'guide' ? 'female' : 'male';
+    const speed = engine === 'google' ? voiceService.getGoogleTtsSpeed('dialogue') : 1.0;
+    return voiceService.textToSpeechByEngine(line.line_en, engine, voice, speed);
+}
+
+function sanitizeEnglish(text = '') {
+    return String(text || '')
+        .replace(/[\u4e00-\u9fff]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function buildDialogueCoverPrompt(scene = {}, lines = []) {
+    const titleEn = sanitizeEnglish(scene.title_en);
+    const descriptionEn = sanitizeEnglish(scene.description_en);
+    const lineEns = (lines || [])
+        .map(line => sanitizeEnglish(line.line_en))
+        .filter(Boolean);
+    const corpus = [titleEn, descriptionEn, ...lineEns].join(' ').toLowerCase();
+
+    const difficulty = {
+        1: 'beginner',
+        2: 'intermediate',
+        3: 'advanced'
+    }[Number(scene.difficulty)] || 'intermediate';
+
+    let setting = 'a clear real-life learning setting';
+    let action = 'two people having a natural face-to-face dialogue';
+    let details = ['expressive faces', 'clear environment', 'supportive interaction'];
+
+    if (/lost|backpack|school bag|bag|lost-item|lost item/.test(corpus)) {
+        if (/train|station|platform/.test(corpus)) {
+            setting = 'a train-station lost-and-found desk';
+        } else if (/school|teacher|homework/.test(corpus)) {
+            setting = 'a school lost-and-found office';
+        } else {
+            setting = 'a public lost-and-found counter';
+        }
+        action = 'a worried school-age child reporting a missing school backpack to a helpful adult staff member';
+        details = ['a green school backpack', 'a small panda zipper tag', 'a lost-item form on the counter'];
+    } else if (/restaurant|menu|order|waiter|food|drink/.test(corpus)) {
+        setting = 'a bright family-friendly restaurant';
+        action = 'a learner ordering food while a staff member helps politely';
+        details = ['menu on the table', 'food or drinks', 'friendly eye contact'];
+    } else if (/doctor|hospital|dentist|tooth|fever|clinic/.test(corpus)) {
+        setting = 'a clean clinic or consultation room';
+        action = 'a child talking to a calm medical worker about a health problem';
+        details = ['gentle body language', 'medical desk or chair', 'reassuring atmosphere'];
+    } else if (/school|classroom|teacher|homework|library/.test(corpus)) {
+        setting = 'a warm classroom or school learning space';
+        action = 'a student talking with a teacher or school helper in a realistic school moment';
+        details = ['books or worksheets', 'school furniture', 'focused but natural expressions'];
+    } else if (/supermarket|shop|store|cashier|buy|shopping/.test(corpus)) {
+        setting = 'a supermarket or everyday shop';
+        action = 'a learner talking with staff during a shopping moment';
+        details = ['shopping basket or products', 'service counter', 'clear everyday setting'];
+    } else if (/travel|airport|hotel|passport|check-in|museum/.test(corpus)) {
+        setting = 'a travel-related public place';
+        action = 'two people solving a travel-related question together';
+        details = ['travel props', 'signage or counter', 'clear public environment'];
+    }
+
+    const guideRole = sanitizeEnglish(scene.guide_role) || (action.includes('staff member') ? 'helpful adult staff member' : 'guide');
+    const userRole = sanitizeEnglish(scene.user_role) || 'school-age child';
+    const sampleBeat = lineEns.slice(0, 3).join(' ');
+
+    return [
+        'Create a cover illustration for an English dialogue learning scene.',
+        titleEn ? `Scene title: "${titleEn}".` : '',
+        descriptionEn ? `Story context: ${descriptionEn}.` : '',
+        `Setting: ${setting}.`,
+        `Characters: one ${guideRole} and one ${userRole}.`,
+        `Main action: ${action}.`,
+        `Important visual details: ${details.join(', ')}.`,
+        sampleBeat ? `Conversation beat reference: ${sampleBeat}` : '',
+        `Level: ${difficulty}.`,
+        'Style: realistic illustration, warm natural light, medium shot, clear composition, emotionally readable, suitable for learners.',
+        'No text, no watermark, no speech bubbles, no subtitles.'
+    ].filter(Boolean).join(' ');
+}
 
 // Multer for cover image upload
 const storage = multer.diskStorage({
@@ -25,7 +113,17 @@ const upload = multer({ storage });
 
 router.get('/categories', async (req, res) => {
     try {
-        const cats = await query('SELECT * FROM dialogue_categories WHERE is_active = 1 ORDER BY sort_order ASC, id ASC');
+        const cats = await query(`
+            SELECT c.*,
+                   (
+                     SELECT COUNT(*)
+                     FROM dialogue_scenes s
+                     WHERE s.category_id = c.id AND s.is_active = 1
+                   ) AS scene_count
+            FROM dialogue_categories c
+            WHERE c.is_active = 1
+            ORDER BY c.group_name ASC, c.sort_order ASC, c.id ASC
+        `);
         res.json({ success: true, data: cats });
     } catch (e) {
         res.status(500).json({ success: false, message: e.message });
@@ -73,7 +171,9 @@ router.get('/scenes', async (req, res) => {
     try {
         const { category_id } = req.query;
         let sql = `SELECT s.*, c.name as category_name,
-            (SELECT COUNT(*) FROM dialogue_lines WHERE scene_id = s.id) as real_line_count
+            (SELECT COUNT(*) FROM dialogue_lines WHERE scene_id = s.id) as real_line_count,
+            (SELECT COUNT(*) FROM dialogue_lines WHERE scene_id = s.id AND audio_url IS NOT NULL AND audio_url != '') as ready_audio_count,
+            (SELECT COUNT(*) FROM dialogue_lines WHERE scene_id = s.id AND (audio_url IS NULL OR audio_url = '')) as missing_audio_count
             FROM dialogue_scenes s
             LEFT JOIN dialogue_categories c ON s.category_id = c.id
             WHERE s.is_active=1`;
@@ -95,6 +195,23 @@ router.get('/scenes/:id', async (req, res) => {
         const [scene] = await query('SELECT * FROM dialogue_scenes WHERE id = ?', [req.params.id]);
         if (!scene) return res.status(404).json({ success: false, message: '场景不存在' });
         res.json({ success: true, data: scene });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+router.get('/scenes/:id/cover-prompt', async (req, res) => {
+    try {
+        const [scene] = await query('SELECT * FROM dialogue_scenes WHERE id = ?', [req.params.id]);
+        if (!scene) return res.status(404).json({ success: false, message: '场景不存在' });
+
+        const lines = await query(
+            'SELECT role, line_en FROM dialogue_lines WHERE scene_id = ? ORDER BY sort_order ASC, id ASC LIMIT 6',
+            [req.params.id]
+        );
+
+        const prompt = buildDialogueCoverPrompt(scene, lines);
+        res.json({ success: true, prompt });
     } catch (e) {
         res.status(500).json({ success: false, message: e.message });
     }
@@ -209,13 +326,14 @@ router.post('/lines/:id/tts', async (req, res) => {
         const [line] = await query('SELECT id, role, line_en FROM dialogue_lines WHERE id = ?', [req.params.id]);
         if (!line) return res.status(404).json({ success: false, message: '台词不存在' });
 
+        const engine = resolveAdminTtsEngine(req);
         const voice = line.role === 'guide' ? 'female' : 'male';
-        const result = await voiceService.textToSpeech(line.line_en, voice, 1.0);
+        const result = await generateDialogueLineAudio(line, engine);
         if (result.success && result.audioUrl) {
             await query('UPDATE dialogue_lines SET audio_url = ? WHERE id = ?', [result.audioUrl, line.id]);
             const baseUrl = process.env.BASE_URL || 'https://en.tajian.cc';
             const fullUrl = result.audioUrl.startsWith('http') ? result.audioUrl : baseUrl + result.audioUrl;
-            return res.json({ success: true, audio_url: fullUrl });
+            return res.json({ success: true, audio_url: fullUrl, voice, engine: result.engine || engine });
         }
         res.status(500).json({ success: false, message: result.error || '生成失败' });
     } catch (e) {
@@ -223,10 +341,11 @@ router.post('/lines/:id/tts', async (req, res) => {
     }
 });
 
-// ===== TTS 生成（guide 女声 + user 男声）=====
+// ===== TTS 生成（固定角色发音：guide 女声 / user 男声）=====
 
 router.post('/scenes/:id/tts', async (req, res) => {
     try {
+        const engine = resolveAdminTtsEngine(req);
         const lines = await query(
             "SELECT id, role, line_en FROM dialogue_lines WHERE scene_id = ? AND (audio_url IS NULL OR audio_url = '')",
             [req.params.id]
@@ -236,8 +355,7 @@ router.post('/scenes/:id/tts', async (req, res) => {
         let generated = 0;
         for (const line of lines) {
             try {
-                const voice = line.role === 'guide' ? 'female' : 'male';
-                const result = await voiceService.textToSpeech(line.line_en, voice, 1.0);
+                const result = await generateDialogueLineAudio(line, engine);
                 if (result.success && result.audioUrl) {
                     await query('UPDATE dialogue_lines SET audio_url = ? WHERE id = ?', [result.audioUrl, line.id]);
                     generated++;
@@ -247,7 +365,7 @@ router.post('/scenes/:id/tts', async (req, res) => {
             }
         }
 
-        res.json({ success: true, generated, total: lines.length });
+        res.json({ success: true, generated, total: lines.length, engine });
     } catch (e) {
         res.status(500).json({ success: false, message: e.message });
     }
@@ -278,11 +396,14 @@ router.post('/upload-cover', upload.single('image'), async (req, res) => {
 
 router.post('/generate-cover', async (req, res) => {
     try {
-        const { prompt } = req.body;
+        const { prompt, provider = 'gemini' } = req.body;
         if (!prompt) return res.status(400).json({ success: false, message: '请提供描述' });
-        const result = await aiService.generateImage(prompt);
+        const normalizedProvider = String(provider || 'gemini').trim().toLowerCase();
+        const result = normalizedProvider === 'tencent'
+            ? await tencentImageService.generateImage(prompt)
+            : await aiService.generateImage(prompt);
         if (result.success) {
-            res.json({ success: true, imageUrl: result.imageUrl });
+            res.json({ success: true, imageUrl: result.imageUrl, provider: normalizedProvider });
         } else {
             res.status(500).json({ success: false, message: result.error || '生成失败' });
         }
@@ -290,5 +411,7 @@ router.post('/generate-cover', async (req, res) => {
         res.status(500).json({ success: false, message: e.message });
     }
 });
+
+router.buildDialogueCoverPrompt = buildDialogueCoverPrompt;
 
 module.exports = router;

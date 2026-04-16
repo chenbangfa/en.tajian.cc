@@ -19,12 +19,12 @@
             <i class="fas fa-filter"></i>
             <span>筛选:</span>
         </div>
-        <select id="categoryFilter" onchange="loadScenes()"
+        <select id="categoryFilter" onchange="loadScenes(1)"
             class="px-4 py-2 border border-gray-200 rounded-lg outline-none focus:border-blue-500 bg-gray-50">
             <option value="">全部分类</option>
         </select>
         <div class="relative flex-1 max-w-md">
-            <input type="text" id="searchInput" onkeyup="if(event.key==='Enter') loadScenes()" placeholder="搜索场景名称..."
+            <input type="text" id="searchInput" onkeyup="if(event.key==='Enter') loadScenes(1)" placeholder="搜索场景名称..."
                 class="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg outline-none focus:border-blue-500 bg-gray-50">
             <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
         </div>
@@ -46,9 +46,17 @@
             <p>加载场景中...</p>
         </div>
     </div>
+
+    <div id="scenePagination" class="hidden bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between gap-3">
+        <div id="scenePaginationInfo" class="text-sm text-gray-500"></div>
+        <div id="scenePaginationControls" class="flex items-center gap-2"></div>
+    </div>
 </div>
 
 <script>
+    let currentPage = 1;
+    const pageSize = 30;
+
     async function loadCategories() {
         try {
             const res = await fetch(`${API_BASE}/scene_categories`);
@@ -71,21 +79,93 @@
         }
     }
 
-    async function loadScenes() {
+    async function loadScenes(page = 1) {
         const categoryId = document.getElementById('categoryFilter').value;
         const keyword = document.getElementById('searchInput').value;
 
-        let url = `${API_BASE}/scenes?page=1&limit=100`;
-        if (categoryId) url += `&category_id=${categoryId}`;
-        if (keyword) url += `&keyword=${keyword}`;
+        let url = `${API_BASE}/scenes?page=${page}&limit=${pageSize}`;
+        if (categoryId) url += `&category_id=${encodeURIComponent(categoryId)}`;
+        if (keyword) url += `&keyword=${encodeURIComponent(keyword.trim())}`;
 
         try {
             const res = await fetch(url);
             const result = await res.json();
-            renderScenes(result.data.items || []);
+            if (!result.success) {
+                throw new Error(result.message || '加载场景失败');
+            }
+
+            const data = result.data || {};
+            const scenes = data.items || [];
+            const pagination = data.pagination || {
+                page: page,
+                limit: pageSize,
+                total: scenes.length,
+                total_pages: 1,
+                has_prev: false,
+                has_next: false
+            };
+
+            if (scenes.length === 0 && pagination.total > 0 && page > pagination.total_pages) {
+                return loadScenes(pagination.total_pages);
+            }
+
+            currentPage = pagination.page || page;
+            renderScenes(scenes);
+            renderPagination(pagination);
         } catch (err) {
             showToast('加载失败', 'error');
         }
+    }
+
+    function renderPagination(pagination) {
+        const wrap = document.getElementById('scenePagination');
+        const info = document.getElementById('scenePaginationInfo');
+        const controls = document.getElementById('scenePaginationControls');
+        const total = Number(pagination.total || 0);
+        const totalPages = Math.max(Number(pagination.total_pages || 1), 1);
+        const page = Math.min(Math.max(Number(pagination.page || 1), 1), totalPages);
+
+        if (total === 0) {
+            wrap.classList.add('hidden');
+            info.innerHTML = '';
+            controls.innerHTML = '';
+            return;
+        }
+
+        wrap.classList.remove('hidden');
+        info.textContent = `第 ${page} / ${totalPages} 页，共 ${total} 条`;
+
+        const renderBtn = (label, targetPage, disabled, active) => {
+            if (disabled) {
+                return `<button class="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-400 bg-gray-50 cursor-not-allowed" disabled>${label}</button>`;
+            }
+            const cls = active
+                ? 'px-3 py-1.5 text-sm rounded-lg border border-blue-600 text-white bg-blue-600'
+                : 'px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-700 bg-white hover:bg-gray-50';
+            return `<button onclick="loadScenes(${targetPage})" class="${cls}">${label}</button>`;
+        };
+
+        const pages = [1];
+        for (let p = page - 2; p <= page + 2; p++) {
+            if (p > 1 && p < totalPages) pages.push(p);
+        }
+        if (totalPages > 1) pages.push(totalPages);
+        const uniquePages = [...new Set(pages)].sort((a, b) => a - b);
+
+        let html = '';
+        html += renderBtn('上一页', page - 1, !pagination.has_prev, false);
+
+        let prev = 0;
+        uniquePages.forEach(p => {
+            if (prev && p - prev > 1) {
+                html += `<span class="px-1 text-gray-400">...</span>`;
+            }
+            html += renderBtn(String(p), p, false, p === page);
+            prev = p;
+        });
+
+        html += renderBtn('下一页', page + 1, !pagination.has_next, false);
+        controls.innerHTML = html;
     }
 
     function renderScenes(scenes) {
@@ -142,7 +222,7 @@
             const result = await res.json();
             if (result.success) {
                 showToast('删除成功');
-                loadScenes();
+                loadScenes(currentPage);
             } else {
                 showToast('删除失败', 'error');
             }
@@ -153,5 +233,5 @@
 
     // Init
     loadCategories();
-    loadScenes();
+    loadScenes(1);
 </script>

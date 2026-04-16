@@ -23,7 +23,18 @@
       <option value="0">免费</option>
       <option value="1">VIP</option>
     </select>
+    <select id="ttsEngine" class="px-4 py-2 border border-gray-200 rounded-lg bg-gray-50 focus:outline-none focus:border-purple-500">
+      <option value="youdao">有道 TTS（中国）</option>
+      <option value="google">Google TTS（美国中转）</option>
+    </select>
+    <button id="batchTtsBtn" onclick="startBatchTTS()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium">
+      <i class="fas fa-headphones mr-1"></i>批量生成当前筛选
+    </button>
+    <button id="stopBatchTtsBtn" onclick="stopBatchTTS()" class="hidden px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium">
+      <i class="fas fa-stop mr-1"></i>停止
+    </button>
     <span class="text-gray-400 text-sm ml-auto" id="totalCount"></span>
+    <div id="batchStatus" class="w-full text-sm text-blue-600 hidden"></div>
   </div>
 
   <!-- 场景列表 -->
@@ -34,10 +45,58 @@
 
 <script>
 let allCats = [];
+let currentScenes = [];
+let batchRunning = false;
+let batchQueue = [];
+let batchProgress = { total: 0, success: 0, failed: 0 };
+
+function escapeHtml(value = '') {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+async function fetchJson(url, options = {}) {
+  const res = await fetch(url, options);
+  const text = await res.text();
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch (e) {
+    throw new Error(text.startsWith('<') ? '接口返回了登录页，请刷新后台后重试' : '接口返回了非 JSON 数据');
+  }
+  if (!res.ok || !data.success) {
+    const err = new Error(data.message || data.error || `请求失败（${res.status}）`);
+    err.retryAfterMs = data.retryAfterMs;
+    throw err;
+  }
+  return data;
+}
+
+function updateBatchStatus(text = '', isError = false) {
+  const el = document.getElementById('batchStatus');
+  if (!text) {
+    el.classList.add('hidden');
+    el.textContent = '';
+    el.classList.remove('text-red-500', 'text-blue-600');
+    return;
+  }
+  el.classList.remove('hidden');
+  el.textContent = text;
+  el.classList.toggle('text-red-500', !!isError);
+  el.classList.toggle('text-blue-600', !isError);
+}
+
+function updateBatchButtons(running) {
+  document.getElementById('batchTtsBtn').classList.toggle('hidden', running);
+  document.getElementById('stopBatchTtsBtn').classList.toggle('hidden', !running);
+}
 
 async function loadCats() {
-  const res = await fetch(`${API_BASE}/dialogue/categories`);
-  const r = await res.json();
+  const r = await fetchJson(`${API_BASE}/dialogue/categories`);
   if (!r.success) return;
   allCats = r.data;
 
@@ -67,69 +126,133 @@ async function loadScenes() {
   const cat = document.getElementById('catFilter').value;
   const group = document.getElementById('groupFilter').value;
   const vip = document.getElementById('vipFilter').value;
+  const container = document.getElementById('sceneList');
   let url = `${API_BASE}/dialogue/scenes?limit=200`;
   if (cat) url += `&category_id=${cat}`;
-  const res = await fetch(url);
-  const r = await res.json();
-  const container = document.getElementById('sceneList');
-  if (!r.success) { container.innerHTML = `<div class="col-span-full text-center py-12 text-red-400">加载失败</div>`; return; }
-  let scenes = r.data;
-  // 按分组过滤（未选分类时）
-  if (group && !cat) {
-    const groupCatIds = new Set(allCats.filter(c => c.group_name === group).map(c => c.id));
-    scenes = scenes.filter(s => groupCatIds.has(s.category_id));
+  try {
+    const r = await fetchJson(url);
+    let scenes = r.data;
+    // 按分组过滤（未选分类时）
+    if (group && !cat) {
+      const groupCatIds = new Set(allCats.filter(c => c.group_name === group).map(c => c.id));
+      scenes = scenes.filter(s => groupCatIds.has(s.category_id));
+    }
+    if (vip !== '') scenes = scenes.filter(s => String(s.is_vip) === vip);
+    currentScenes = scenes;
+    const pendingScenes = scenes.filter(s => Number(s.missing_audio_count || 0) > 0).length;
+    document.getElementById('totalCount').textContent = `共 ${scenes.length} 个场景 · 待补语音 ${pendingScenes} 个`;
+    if (!scenes.length) {
+      container.innerHTML = `<div class="col-span-full text-center py-16 text-gray-400 bg-white rounded-2xl border border-dashed border-gray-200">
+        <div class="text-4xl mb-3">💬</div><p>暂无场景，点击右上角新建</p></div>`;
+      return;
+    }
+    container.innerHTML = scenes.map(s => `
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-all group">
+        <div class="relative h-40 bg-gradient-to-br from-purple-100 to-indigo-100 overflow-hidden">
+          ${s.cover_image ? `<img src="${s.cover_image}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500">` : `<div class="w-full h-full flex items-center justify-center text-5xl">☕</div>`}
+          <div class="absolute top-3 left-3 flex gap-2">
+            <span class="text-xs font-bold px-2 py-1 rounded-full ${s.difficulty===1?'bg-green-100 text-green-700':s.difficulty===2?'bg-yellow-100 text-yellow-700':'bg-red-100 text-red-700'}">${['','入门','进阶','挑战'][s.difficulty]||'入门'}</span>
+            ${s.is_vip ? '<span class="text-xs font-bold px-2 py-1 rounded-full bg-yellow-100 text-yellow-700">🔒 VIP</span>' : ''}
+            ${!s.is_active ? '<span class="text-xs font-bold px-2 py-1 rounded-full bg-gray-200 text-gray-500">已下架</span>' : ''}
+          </div>
+          ${s.category_name ? `<div class="absolute bottom-3 right-3"><span class="text-xs px-2 py-1 rounded-full bg-black/30 text-white">${s.category_name}</span></div>` : ''}
+        </div>
+        <div class="p-4">
+          <h3 class="font-bold text-gray-800 text-lg truncate">${s.title}</h3>
+          <p class="text-sm text-gray-400 truncate">${s.title_en||''}</p>
+          <div class="flex items-center gap-3 mt-3 text-xs text-gray-500">
+            <span><i class="fas fa-comments mr-1"></i>${s.real_line_count||0} 句台词</span>
+            <span><i class="fas fa-user mr-1"></i>${s.user_role||'顾客'} vs ${s.guide_role||'服务员'}</span>
+          </div>
+          <div class="mt-2 text-xs text-gray-500">
+            已有语音 ${s.ready_audio_count || 0} 条 · 待补 ${s.missing_audio_count || 0} 条
+          </div>
+          <div class="flex gap-2 mt-4">
+            <a href="/dialogue/edit/${s.id}" class="flex-1 text-center py-2 bg-purple-50 text-purple-600 rounded-lg text-sm font-medium hover:bg-purple-100 transition-colors">
+              <i class="fas fa-edit mr-1"></i>编辑
+            </a>
+            <button onclick="genTTS(${s.id}, this)" class="flex-1 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-100 transition-colors" ${Number(s.real_line_count || 0) === 0 ? 'disabled' : ''}>
+              <i class="fas fa-volume-up mr-1"></i>生成TTS
+            </button>
+            <button onclick="deleteScene(${s.id})" class="px-3 py-2 bg-red-50 text-red-500 rounded-lg text-sm hover:bg-red-100 transition-colors">
+              <i class="fas fa-trash-alt"></i>
+            </button>
+          </div>
+        </div>
+      </div>`).join('');
+  } catch (e) {
+    currentScenes = [];
+    document.getElementById('totalCount').textContent = '';
+    container.innerHTML = `<div class="col-span-full text-center py-12 text-red-400">${escapeHtml(e.message || '加载失败')}</div>`;
   }
-  if (vip !== '') scenes = scenes.filter(s => String(s.is_vip) === vip);
-  document.getElementById('totalCount').textContent = `共 ${scenes.length} 个场景`;
-  if (!scenes.length) {
-    container.innerHTML = `<div class="col-span-full text-center py-16 text-gray-400 bg-white rounded-2xl border border-dashed border-gray-200">
-      <div class="text-4xl mb-3">💬</div><p>暂无场景，点击右上角新建</p></div>`;
-    return;
-  }
-  container.innerHTML = scenes.map(s => `
-    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-all group">
-      <div class="relative h-40 bg-gradient-to-br from-purple-100 to-indigo-100 overflow-hidden">
-        ${s.cover_image ? `<img src="${s.cover_image}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500">` : `<div class="w-full h-full flex items-center justify-center text-5xl">☕</div>`}
-        <div class="absolute top-3 left-3 flex gap-2">
-          <span class="text-xs font-bold px-2 py-1 rounded-full ${s.difficulty===1?'bg-green-100 text-green-700':s.difficulty===2?'bg-yellow-100 text-yellow-700':'bg-red-100 text-red-700'}">${['','入门','进阶','挑战'][s.difficulty]||'入门'}</span>
-          ${s.is_vip ? '<span class="text-xs font-bold px-2 py-1 rounded-full bg-yellow-100 text-yellow-700">🔒 VIP</span>' : ''}
-          ${!s.is_active ? '<span class="text-xs font-bold px-2 py-1 rounded-full bg-gray-200 text-gray-500">已下架</span>' : ''}
-        </div>
-        ${s.category_name ? `<div class="absolute bottom-3 right-3"><span class="text-xs px-2 py-1 rounded-full bg-black/30 text-white">${s.category_name}</span></div>` : ''}
-      </div>
-      <div class="p-4">
-        <h3 class="font-bold text-gray-800 text-lg truncate">${s.title}</h3>
-        <p class="text-sm text-gray-400 truncate">${s.title_en||''}</p>
-        <div class="flex items-center gap-3 mt-3 text-xs text-gray-500">
-          <span><i class="fas fa-comments mr-1"></i>${s.real_line_count||0} 句台词</span>
-          <span><i class="fas fa-user mr-1"></i>${s.user_role||'顾客'} vs ${s.guide_role||'服务员'}</span>
-        </div>
-        <div class="flex gap-2 mt-4">
-          <a href="/dialogue/edit/${s.id}" class="flex-1 text-center py-2 bg-purple-50 text-purple-600 rounded-lg text-sm font-medium hover:bg-purple-100 transition-colors">
-            <i class="fas fa-edit mr-1"></i>编辑
-          </a>
-          <button onclick="genTTS(${s.id}, this)" class="flex-1 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-100 transition-colors">
-            <i class="fas fa-volume-up mr-1"></i>生成TTS
-          </button>
-          <button onclick="deleteScene(${s.id})" class="px-3 py-2 bg-red-50 text-red-500 rounded-lg text-sm hover:bg-red-100 transition-colors">
-            <i class="fas fa-trash-alt"></i>
-          </button>
-        </div>
-      </div>
-    </div>`).join('');
 }
 
 async function genTTS(id, btn) {
   btn.disabled = true;
   btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>生成中...';
   try {
-    const res = await fetch(`${API_BASE}/dialogue/scenes/${id}/tts`, { method: 'POST' });
-    const r = await res.json();
-    if (r.success) showToast(`生成完成：${r.generated}/${r.total} 条`);
-    else showToast(r.message, 'error');
+    const engine = document.getElementById('ttsEngine').value;
+    const r = await fetchJson(`${API_BASE}/dialogue/scenes/${id}/tts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ engine })
+    });
+    showToast(`生成完成：${r.generated}/${r.total} 条`);
+    await loadScenes();
   } catch(e) { showToast('生成失败', 'error'); }
   btn.disabled = false;
   btn.innerHTML = '<i class="fas fa-volume-up mr-1"></i>生成TTS';
+}
+
+function stopBatchTTS() {
+  batchRunning = false;
+  updateBatchStatus('批量生成已停止');
+  updateBatchButtons(false);
+}
+
+async function startBatchTTS() {
+  if (batchRunning) return;
+  batchQueue = currentScenes.filter(s => Number(s.missing_audio_count || 0) > 0 && Number(s.real_line_count || 0) > 0);
+  if (!batchQueue.length) {
+    showToast('当前筛选下没有待补语音的场景', 'error');
+    return;
+  }
+
+  batchRunning = true;
+  batchProgress = { total: batchQueue.length, success: 0, failed: 0 };
+  updateBatchButtons(true);
+
+  const engine = document.getElementById('ttsEngine').value;
+
+  for (let i = 0; i < batchQueue.length; i++) {
+    if (!batchRunning) break;
+    const scene = batchQueue[i];
+    updateBatchStatus(`正在生成 ${i + 1}/${batchProgress.total}：${scene.title}（${engine}）`);
+    try {
+      const result = await fetchJson(`${API_BASE}/dialogue/scenes/${scene.id}/tts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ engine })
+      });
+      batchProgress.success += 1;
+      updateBatchStatus(`已完成 ${batchProgress.success}/${batchProgress.total}：${scene.title}（生成 ${result.generated}/${result.total} 条）`);
+      await loadScenes();
+    } catch (e) {
+      batchProgress.failed += 1;
+      updateBatchStatus(`失败 ${batchProgress.failed} 个：${scene.title} · ${e.message || '生成失败'}`, true);
+      if (e.retryAfterMs) {
+        batchRunning = false;
+        updateBatchStatus(`Google 正在冷却，请稍后再继续。${e.message || ''}`, true);
+      }
+    }
+  }
+
+  const finished = batchRunning;
+  batchRunning = false;
+  updateBatchButtons(false);
+  if (finished) {
+    updateBatchStatus(`批量完成：成功 ${batchProgress.success} 个，失败 ${batchProgress.failed} 个`, batchProgress.failed > 0);
+  }
 }
 
 async function deleteScene(id) {

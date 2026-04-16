@@ -34,6 +34,10 @@
 
     <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div class="p-5 border-b border-gray-100 bg-gray-50 space-y-4">
+            <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                <div class="font-semibold">AI 分析安全模式</div>
+                <div class="mt-1">绘本词汇分析同样会触发 Vertex AI 额度与风控。现在已改为更保守的串行节奏，若触发 429/冷却，本页会自动暂停。</div>
+            </div>
             <div class="flex flex-wrap items-center gap-3">
                 <select id="batch-category" onchange="loadCandidates()"
                     class="px-4 py-2 border border-gray-200 rounded-lg outline-none focus:border-indigo-500 bg-white text-sm">
@@ -111,6 +115,22 @@ function escapeHtml(v = '') {
     return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+async function fetchJson(url, options = {}) {
+    const res = await fetch(url, options);
+    const text = await res.text();
+    let data;
+    try { data = text ? JSON.parse(text) : {}; } catch (e) {
+        throw new Error(text.startsWith('<') ? '请刷新后台登录后重试' : '接口返回了非 JSON 数据');
+    }
+    if (!res.ok || !data.success) {
+        const err = new Error(data.message || data.error || `请求失败（${res.status}）`);
+        err.status = res.status;
+        err.retryAfterMs = data.retryAfterMs;
+        throw err;
+    }
+    return data;
+}
+
 async function loadCategories() {
     try {
         const res = await fetch('/picture-books/categories/api/list');
@@ -126,12 +146,8 @@ async function loadCandidates() {
     const mode = document.getElementById('batch-mode').value;
     const list = document.getElementById('candidate-list');
     list.innerHTML = '<div class="text-center py-16 text-gray-400"><i class="fas fa-spinner fa-spin text-2xl mb-3"></i><p>正在加载...</p></div>';
-
     try {
-        const res = await fetch(`/picture-books/api/batch/vocab-candidates?category_id=${encodeURIComponent(catId)}&mode=${encodeURIComponent(mode)}`);
-        const r = await res.json();
-        if (!r.success) throw new Error(r.message || '加载失败');
-
+        const r = await fetchJson(`/picture-books/api/batch/vocab-candidates?category_id=${encodeURIComponent(catId)}&mode=${encodeURIComponent(mode)}`);
         queue = r.data || [];
         failedItems = [];
         progress = { total: queue.length, success: 0, failed: 0 };
@@ -148,7 +164,7 @@ function renderQueue() {
         list.innerHTML = '<div class="text-center py-16 text-gray-400 bg-white rounded-xl border border-dashed border-gray-200"><i class="fas fa-circle-check text-3xl mb-3 text-green-500"></i><p>当前没有待处理绘本</p></div>';
         return;
     }
-    list.innerHTML = queue.map((item, i) => `
+    list.innerHTML = queue.map(item => `
         <div class="rounded-xl border border-gray-100 bg-white p-4 flex items-center gap-4" id="vq-${item.id}">
             <div class="w-16 h-20 rounded-lg bg-gray-100 overflow-hidden shrink-0 flex items-center justify-center text-gray-300">
                 ${item.cover_url ? `<img src="${item.cover_url}" class="w-full h-full object-cover">` : '<i class="fas fa-book-open text-xl"></i>'}
@@ -157,8 +173,9 @@ function renderQueue() {
                 <div class="font-bold text-gray-800 truncate">${escapeHtml(item.title)}</div>
                 <div class="text-sm text-gray-500 truncate">${escapeHtml(item.title_en || '')}</div>
                 <div class="text-xs text-gray-400 mt-1">
-                    ${escapeHtml(item.category_name || '未分类')} · 共 ${item.total_text_pages||0} 页文本 · 缺少 ${item.missing_vocab_pages||0} 页词汇
+                    ${escapeHtml(item.category_name || '未分类')} · 共 ${item.total_text_pages||0} 页 · 缺 ${item.missing_vocab_pages||0} 页
                 </div>
+                <div class="text-xs text-indigo-500 mt-1 hidden" id="vq-page-${item.id}"></div>
             </div>
         </div>
     `).join('');
@@ -189,6 +206,7 @@ function updateProgressUI(text) {
     document.getElementById('batch-progress-bar').style.width = `${(done / Math.max(progress.total, 1)) * 100}%`;
 }
 
+// 逐页分析：一页请求完成后再请求下一页
 async function startBatch() {
     if (!queue.length) { showToast('没有待处理绘本', 'error'); return; }
     isRunning = true;
@@ -196,32 +214,61 @@ async function startBatch() {
     document.getElementById('btn-stop').classList.remove('hidden');
     document.getElementById('batch-progress').classList.remove('hidden');
 
-    while (isRunning && queue.length) {
-        const item = queue[0];
-        updateProgressUI(`正在分析：${item.title}`);
+    const mode = document.getElementById('batch-mode').value;
 
+    while (isRunning && queue.length) {
+        const book = queue[0];
+        updateProgressUI(`正在获取页面：${book.title}`);
+
+        // 1. 获取该绘本待分析的页面列表
+        let pages;
         try {
-            const mode = document.getElementById('batch-mode').value;
-            const res = await fetch(`/picture-books/api/${item.id}/analyze-vocab`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ mode })
-            });
-            const data = await res.json();
-            if (!data.success) throw new Error(data.message || '分析失败');
-            if (data.failed_pages && data.failed_pages.length > 0) {
-                const nums = data.failed_pages.map(p => p.page_number).join(', ');
-                throw new Error(`${data.analyzed}/${data.total} 页成功，第 ${nums} 页失败`);
-            }
-            progress.success++;
-        } catch(e) {
+            const r = await fetchJson(`/picture-books/api/${book.id}/vocab-pages?mode=${mode}`);
+            pages = r.data || [];
+        } catch (e) {
             progress.failed++;
-            failedItems.push({ ...item, error: e.message || '分析失败' });
+            failedItems.push({ ...book, error: e.message });
+            queue.shift(); renderQueue(); renderFailed(); updateStats();
+            continue;
         }
 
-        queue.shift();
-        renderQueue(); renderFailed(); updateStats();
-        await new Promise(r => setTimeout(r, 800));
+        if (!pages.length) {
+            progress.success++;
+            queue.shift(); renderQueue(); updateStats();
+            continue;
+        }
+
+        // 2. 逐页请求分析
+        let bookFailed = false;
+        const pageStatus = document.getElementById(`vq-page-${book.id}`);
+        for (let i = 0; i < pages.length; i++) {
+            if (!isRunning) break;
+            const pg = pages[i];
+            const label = `${book.title} 第${pg.page_number}页 (${i+1}/${pages.length})`;
+            updateProgressUI(label);
+            if (pageStatus) { pageStatus.classList.remove('hidden'); pageStatus.textContent = `正在分析第 ${pg.page_number} 页 (${i+1}/${pages.length})...`; }
+
+            try {
+                await fetchJson(`/picture-books/api/pages/${pg.id}/analyze-vocab`, { method: 'POST' });
+            } catch (e) {
+                if (e.status === 429 || e.retryAfterMs) {
+                    failedItems.unshift({ ...book, error: `第${pg.page_number}页触发限流` });
+                    progress.failed++;
+                    isRunning = false;
+                    updateProgressUI('触发限流保护，已暂停');
+                    showToast('触发 AI 限流保护，请稍后再继续', 'error');
+                    bookFailed = true;
+                    break;
+                }
+                failedItems.push({ ...book, error: `第${pg.page_number}页：${e.message}` });
+                progress.failed++;
+                bookFailed = true;
+                break;
+            }
+        }
+
+        if (!bookFailed && isRunning) progress.success++;
+        queue.shift(); renderQueue(); renderFailed(); updateStats();
     }
 
     isRunning = false;

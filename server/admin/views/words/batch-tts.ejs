@@ -4,7 +4,7 @@
             <h2 class="text-2xl font-bold bg-gradient-to-r from-blue-700 to-cyan-600 bg-clip-text text-transparent">
                 批量语音合成
             </h2>
-            <p class="text-gray-500 mt-1">为 words 表中缺少音频的单词/短语批量生成男声和女声</p>
+            <p class="text-gray-500 mt-1">为 words 表中缺少音频的单词/短语批量生成语音。Google 模式已改为更保守的串行节奏。</p>
         </div>
         <a href="/words"
             class="flex items-center gap-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 px-5 py-3 rounded-xl transition-all duration-300">
@@ -34,6 +34,10 @@
 
     <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div class="p-5 border-b border-gray-100 bg-gray-50 space-y-4">
+            <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                <div class="font-semibold">Google TTS 安全模式</div>
+                <div class="mt-1">默认每次只建议处理小批量，代理端会串行执行并在触发限流时自动冷却。若出现 429，本页会自动停止，避免继续触发风控。</div>
+            </div>
             <div class="flex flex-wrap items-center gap-3">
                 <select id="sel-engine"
                     class="px-4 py-2 border border-gray-200 rounded-lg outline-none focus:border-blue-500 bg-white text-sm">
@@ -55,7 +59,7 @@
                     <option value="male">缺少男声</option>
                 </select>
 
-                <input id="sel-limit" type="number" value="200" min="10" max="2000" onchange="loadCandidates()"
+                <input id="sel-limit" type="number" value="30" min="10" max="100" onchange="loadCandidates()"
                     class="w-24 px-4 py-2 border border-gray-200 rounded-lg outline-none focus:border-blue-500 bg-white text-sm"
                     placeholder="数量">
 
@@ -115,21 +119,49 @@
 <script>
 let queue = [], failedItems = [], isRunning = false;
 let progress = { total: 0, success: 0, failed: 0 };
+const GOOGLE_REQUEST_DELAY_MS = 15000;
+const WORD_SETTLE_DELAY_MS = 5000;
 
 function escapeHtml(v = '') {
     return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+function formatWait(ms = 0) {
+    const totalSeconds = Math.max(1, Math.ceil(ms / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    if (minutes > 0) return `${minutes}分${seconds ? `${seconds}秒` : ''}`;
+    return `${seconds}秒`;
+}
+
+async function fetchJson(url, options = {}) {
+    const res = await fetch(url, options);
+    const text = await res.text();
+    let data = null;
+    try {
+        data = text ? JSON.parse(text) : {};
+    } catch (e) {
+        throw new Error(text.startsWith('<') ? '接口返回了 HTML 页面，请刷新后台登录后重试' : '接口返回了非 JSON 数据');
+    }
+
+    if (!res.ok || !data.success) {
+        const err = new Error(data.message || data.error || `请求失败（${res.status}）`);
+        err.status = res.status;
+        err.retryAfterMs = data.retryAfterMs;
+        throw err;
+    }
+
+    return data;
+}
+
 async function loadCandidates() {
     const filter = document.getElementById('sel-filter').value;
-    const limit = document.getElementById('sel-limit').value || 200;
+    const limit = document.getElementById('sel-limit').value || 30;
     const list = document.getElementById('candidate-list');
     list.innerHTML = '<div class="text-center py-16 text-gray-400"><i class="fas fa-spinner fa-spin text-2xl mb-3"></i><p>正在加载...</p></div>';
 
     try {
-        const res = await fetch(`/api/admin/words/batch-tts/candidates?voice=${encodeURIComponent(filter)}&limit=${limit}`);
-        const r = await res.json();
-        if (!r.success) throw new Error(r.message);
+        const r = await fetchJson(`/api/admin/words/batch-tts/candidates?voice=${encodeURIComponent(filter)}&limit=${limit}`);
         queue = r.data || [];
         failedItems = [];
         progress = { total: queue.length, success: 0, failed: 0 };
@@ -190,14 +222,11 @@ function updateProgressUI(text) {
 }
 
 async function generateOne(wordItem, engine, voice) {
-    const res = await fetch('/api/admin/words/batch-tts/generate', {
+    return fetchJson('/api/admin/words/batch-tts/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ word_id: wordItem.id, engine, voice })
     });
-    const data = await res.json();
-    if (!data.success) throw new Error(data.message || '合成失败');
-    return data;
 }
 
 async function startBatch() {
@@ -217,6 +246,7 @@ async function startBatch() {
         updateProgressUI(`正在合成：${item.word}`);
 
         let itemFailed = false;
+        let rateLimited = false;
         for (const v of voices) {
             // 跳过已有音频的
             if (v === 'female' && item.audio_url_female) continue;
@@ -226,11 +256,28 @@ async function startBatch() {
                 await generateOne(item, engine, v);
             } catch(e) {
                 itemFailed = true;
-                failedItems.push({ ...item, error: `${v}: ${e.message}` });
+                if (e.status === 429 || e.retryAfterMs) {
+                    rateLimited = true;
+                    failedItems.unshift({ ...item, error: `${v}: ${e.message}` });
+                    isRunning = false;
+                    showToast(`已触发 Google 冷却保护，请 ${formatWait(e.retryAfterMs || 60000)} 后再继续`, 'error');
+                } else {
+                    failedItems.push({ ...item, error: `${v}: ${e.message}` });
+                }
                 break;
             }
-            // 间隔避免 429 限流
-            await new Promise(r => setTimeout(r, 3000));
+            if (engine === 'google') {
+                await new Promise(r => setTimeout(r, GOOGLE_REQUEST_DELAY_MS));
+            } else {
+                await new Promise(r => setTimeout(r, 1500));
+            }
+        }
+
+        if (rateLimited) {
+            renderFailed();
+            updateStats();
+            updateProgressUI('已触发冷却保护，批量暂停');
+            break;
         }
 
         if (itemFailed) {
@@ -242,8 +289,9 @@ async function startBatch() {
         queue.shift();
         renderQueue(); renderFailed(); updateStats();
 
-        // 每个词之间额外间隔
-        if (queue.length && isRunning) await new Promise(r => setTimeout(r, 1000));
+        if (queue.length && isRunning) {
+            await new Promise(r => setTimeout(r, engine === 'google' ? WORD_SETTLE_DELAY_MS : 1000));
+        }
     }
 
     isRunning = false;

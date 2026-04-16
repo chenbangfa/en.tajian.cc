@@ -378,6 +378,8 @@ router.put('/api/batch-status', async (req, res) => {
             INDEX idx_word (word_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='视频生成任务'`);
         console.log('[Marketing] video_jobs 表初始化完成');
+        // 新增封面图字段
+        await query(`ALTER TABLE marketing_video_jobs ADD COLUMN cover_url VARCHAR(500) DEFAULT '' COMMENT '封面图URL' AFTER video_url`).catch(() => {});
         // words 表新增例句图片字段
         await query(`ALTER TABLE words ADD COLUMN example_image_url VARCHAR(500) DEFAULT NULL COMMENT '例句配图URL' AFTER example_translation`).catch(() => {});
     } catch (e) {
@@ -513,6 +515,13 @@ router.delete('/api/video/job/:id', async (req, res) => {
             const filePath = path.join(__dirname, '../..', job.video_url);
             if (fs.existsSync(filePath)) {
                 fs.unlinkSync(filePath);
+            }
+        }
+        // 删除封面图
+        if (job.cover_url && job.cover_url.startsWith('/uploads/')) {
+            const coverPath = path.join(__dirname, '../..', job.cover_url);
+            if (fs.existsSync(coverPath)) {
+                fs.unlinkSync(coverPath);
             }
         }
 

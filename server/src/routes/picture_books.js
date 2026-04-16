@@ -4,6 +4,11 @@ const { authMiddleware, optionalAuth } = require('../middlewares/auth');
 const voiceService = require('../services/voice.service');
 const rewardService = require('../services/reward.service');
 const { ensurePictureBookPromptColumns } = require('../services/picturebookPrompt.service');
+const {
+    decoratePictureBook,
+    matchesFilter,
+    getV1ThemeOptions
+} = require('../utils/picturebook-reader-meta');
 
 const router = express.Router();
 
@@ -120,20 +125,85 @@ router.get('/categories', async (req, res) => {
     }
 });
 
+router.get('/filters', async (req, res) => {
+    try {
+        res.json({
+            success: true,
+            data: {
+                stages: [
+                    { id: 'all', name: '全部' },
+                    { id: 'v1', name: 'V1 启蒙' },
+                    { id: 'v2', name: 'V2 进阶' },
+                    { id: 'v3', name: 'V3 主题' }
+                ],
+                reader_levels: [
+                    { id: '', name: '全部等级' },
+                    { id: 'L0', name: 'L0' },
+                    { id: 'L1', name: 'L1' },
+                    { id: 'L2', name: 'L2' }
+                ],
+                age_groups: [
+                    { id: '', name: '全部年龄' },
+                    { id: '3-4', name: '3-4岁' },
+                    { id: '4-5', name: '4-5岁' },
+                    { id: '5-6', name: '5-6岁' }
+                ],
+                themes: getV1ThemeOptions()
+            }
+        });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
 // 占位：获取绘本列表
 router.get('/', async (req, res) => {
     try {
-        const { category_id, page = 1, limit = 20 } = req.query;
-        let sql = 'SELECT id, title, title_en, cover_url, difficulty_level, age_group, page_count, is_free FROM picture_books WHERE is_active = 1';
+        const {
+            category_id,
+            keyword = '',
+            reader_stage = 'all',
+            reader_level = '',
+            age_group = '',
+            display_theme = '',
+            page = 1,
+            limit = 20
+        } = req.query;
+
+        let sql = 'SELECT id, title, title_en, cover_url, category_id, difficulty_level, age_group, page_count, is_free, sort_order FROM picture_books WHERE is_active = 1';
         const params = [];
-        if (category_id) {
-            sql += ' AND category_id = ?';
-            params.push(parseInt(category_id));
+        if (keyword) {
+            sql += ' AND (title LIKE ? OR title_en LIKE ?)';
+            params.push(`%${keyword}%`, `%${keyword}%`);
         }
-        sql += ' ORDER BY sort_order ASC, id DESC LIMIT ? OFFSET ?';
-        params.push(parseInt(limit), (parseInt(page) - 1) * parseInt(limit));
-        const books = await query(sql, params);
-        res.json({ success: true, data: books });
+        sql += ' ORDER BY sort_order ASC, id DESC';
+
+        const rows = await query(sql, params);
+        const decorated = rows.map(decoratePictureBook);
+        const filtered = decorated.filter((book) =>
+            matchesFilter(book, {
+                categoryId: category_id ? parseInt(category_id) : 0,
+                readerStage: reader_stage,
+                readerLevel: reader_level,
+                ageGroup: age_group,
+                displayTheme: display_theme
+            })
+        );
+
+        const pageNum = parseInt(page) || 1;
+        const pageSize = parseInt(limit) || 20;
+        const total = filtered.length;
+        const paged = filtered.slice((pageNum - 1) * pageSize, pageNum * pageSize);
+
+        res.json({
+            success: true,
+            data: paged,
+            pagination: {
+                page: pageNum,
+                limit: pageSize,
+                total
+            }
+        });
     } catch (e) {
         res.status(500).json({ success: false, message: e.message });
     }

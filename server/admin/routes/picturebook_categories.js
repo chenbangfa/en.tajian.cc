@@ -11,7 +11,14 @@ router.get('/', (req, res) => {
 router.get('/api/list', async (req, res) => {
     try {
         const categories = await query(
-            'SELECT * FROM picture_book_categories ORDER BY sort_order ASC, id ASC'
+            `SELECT c.*,
+                    (
+                        SELECT COUNT(*)
+                        FROM picture_books b
+                        WHERE b.category_id = c.id
+                    ) AS book_count
+             FROM picture_book_categories c
+             ORDER BY c.sort_order ASC, c.id ASC`
         );
         res.json({ success: true, data: categories });
     } catch (e) {

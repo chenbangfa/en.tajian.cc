@@ -100,16 +100,29 @@
         <table class="w-full text-sm">
             <thead class="bg-gray-50">
                 <tr>
+                    <th class="px-4 py-3 text-left font-medium text-gray-500 w-24">封面</th>
                     <th class="px-4 py-3 text-left font-medium text-gray-500">单词</th>
                     <th class="px-4 py-3 text-left font-medium text-gray-500 w-24">模板</th>
                     <th class="px-4 py-3 text-left font-medium text-gray-500 w-40">状态</th>
                     <th class="px-4 py-3 text-left font-medium text-gray-500 w-36">创建时间</th>
-                    <th class="px-4 py-3 text-center font-medium text-gray-500 w-44">操作</th>
+                    <th class="px-4 py-3 text-center font-medium text-gray-500 w-52">操作</th>
                 </tr>
             </thead>
             <tbody class="divide-y">
                 <template x-for="job in jobs" :key="job.id">
                     <tr class="hover:bg-gray-50">
+                        <td class="px-4 py-3">
+                            <template x-if="job.cover_url">
+                                <a :href="job.cover_url" target="_blank" class="block">
+                                    <img :src="job.cover_url" class="w-14 h-24 object-cover rounded border border-gray-200 hover:border-purple-400 transition" />
+                                </a>
+                            </template>
+                            <template x-if="!job.cover_url">
+                                <div class="w-14 h-24 bg-gray-100 rounded flex items-center justify-center text-gray-300">
+                                    <i class="fas fa-image"></i>
+                                </div>
+                            </template>
+                        </td>
                         <td class="px-4 py-3 font-medium text-gray-800" x-text="job.word_text"></td>
                         <td class="px-4 py-3 text-gray-500 text-xs">
                             <span class="bg-purple-100 text-purple-700 px-2 py-0.5 rounded">每日一词</span>
@@ -147,9 +160,13 @@
                             <button x-show="job.status === 'done'" @click="previewVideo(job)" class="text-blue-600 hover:underline text-xs">
                                 <i class="fas fa-play"></i> 预览
                             </button>
-                            <!-- 下载 -->
+                            <!-- 下载视频 -->
                             <a x-show="job.status === 'done'" :href="job.video_url" download class="text-green-600 hover:underline text-xs">
-                                <i class="fas fa-download"></i> 下载
+                                <i class="fas fa-download"></i> 视频
+                            </a>
+                            <!-- 下载封面 -->
+                            <a x-show="job.status === 'done' && job.cover_url" :href="job.cover_url" download class="text-purple-600 hover:underline text-xs">
+                                <i class="fas fa-image"></i> 封面
                             </a>
                             <!-- 删除 -->
                             <button @click="deleteJob(job.id)" class="text-red-500 hover:underline text-xs">
@@ -159,7 +176,7 @@
                     </tr>
                 </template>
                 <tr x-show="jobs.length === 0">
-                    <td colspan="5" class="text-center py-12 text-gray-400">暂无任务，选择单词后点击"生成视频"开始</td>
+                    <td colspan="6" class="text-center py-12 text-gray-400">暂无任务，选择单词后点击"生成视频"开始</td>
                 </tr>
             </tbody>
         </table>
