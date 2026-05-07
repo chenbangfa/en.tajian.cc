@@ -49,6 +49,7 @@ page { background: #f4f7f0; color: #17231b; }
 .podcast-bind-card { padding: 24rpx; border-radius: 28rpx; background: linear-gradient(135deg, #eef8ff, #f7fbf2); border: 1rpx solid #dceefa; }
 .podcast-bind-card.speaking { background: linear-gradient(135deg, #f2fbf0, #fffaf0); border-color: #dfeeda; }
 .podcast-bind-card.writing { background: linear-gradient(135deg, #fff9ed, #f6fbf2); border-color: #f1e4c7; }
+.empty-bind-card { padding: 26rpx; border-radius: 24rpx; background: #fff8ed; color: #9a6418; border: 1rpx solid #f2dfbd; font-size: 25rpx; line-height: 1.5; font-weight: 800; }
 .podcast-bind-kicker { color: #2276c8; font-size: 22rpx; font-weight: 950; }
 .podcast-bind-title { margin-top: 10rpx; color: #17231b; font-size: 34rpx; line-height: 1.25; font-weight: 950; }
 .podcast-bind-sub { margin-top: 10rpx; color: #667166; font-size: 24rpx; line-height: 1.45; }

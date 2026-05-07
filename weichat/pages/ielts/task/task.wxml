@@ -80,15 +80,7 @@
           </view>
         </view>
       </view>
-      <block wx:else>
-        <view class="listen-text speaking-prompt">{{currentModule.content.prompt}}</view>
-        <view class="check-list compact">
-          <view wx:for="{{currentModule.content.checklist}}" wx:key="*this" class="check-row">✓ {{item}}</view>
-        </view>
-        <view class="action-btn record {{isRecording ? 'recording' : ''}}" bindtap="toggleRecord">
-          {{isRecording ? '停止录音 ' + recordingTime + 's' : (isAssessing ? '评测中...' : '开始录音评测')}}
-        </view>
-      </block>
+      <view wx:else class="empty-bind-card">本口语任务需要先在后台绑定磨耳朵文章。</view>
       <view class="score-card" wx:if="{{speakingResult.overall_score}}">
         <text class="score-num">{{speakingResult.overall_score}}</text>
         <text>分</text>
@@ -113,13 +105,7 @@
           {{isAssessing ? '保存中...' : (currentModule.items[0].completed ? '已提交写作' : '提交写作')}}
         </view>
       </view>
-      <block wx:else>
-        <view class="topic">{{currentModule.content.topic}}</view>
-        <view class="template-line" wx:for="{{currentModule.content.template}}" wx:key="*this">{{item}}</view>
-        <textarea class="writing-box" placeholder="在这里写你的 5 句英文" value="{{writingText}}" bindinput="onWritingInput" maxlength="1000"></textarea>
-        <view class="sample-title">参考</view>
-        <view class="listen-cn">{{currentModule.content.sample}}</view>
-      </block>
+      <view wx:else class="empty-bind-card">本写作任务需要先在后台绑定磨耳朵文章。</view>
     </block>
 
     <view

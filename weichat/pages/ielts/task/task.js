@@ -600,7 +600,7 @@ Page({
   async submitSpeaking(filePath) {
     const mod = this.data.currentModule;
     const podcast = mod.podcast_content || {};
-    const prompt = (podcast.content_text || (mod.content && mod.content.prompt) || '').trim();
+    const prompt = (podcast.content_text || '').trim();
     if (!filePath || !prompt) return;
     this.setData({ isAssessing: true });
     wx.showLoading({ title: '评测中...' });

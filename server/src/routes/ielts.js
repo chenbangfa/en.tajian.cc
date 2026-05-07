@@ -124,8 +124,8 @@ const DAY1_MODULES = [
         minutes: 20,
         required: true,
         content: {
-            prompt: 'My name is Chen. I am from China. I am Chinese. I work as a software engineer. I want to learn English. I want to take the IELTS General Training test. I study English for two hours every day.',
-            checklist: ['30 秒左右', '能说出 5 句以上', '慢一点没关系', '可以有错误', '目标是敢开口、能说完']
+            podcast_content_id: 58,
+            pass_score: 80
         }
     },
     {
@@ -134,15 +134,8 @@ const DAY1_MODULES = [
         minutes: 20,
         required: true,
         content: {
-            topic: 'About Me',
-            template: [
-                'My name is ______.',
-                'I am from ______.',
-                'I am ______ years old.',
-                'I work as a ______.',
-                'I want to learn English because ______.'
-            ],
-            sample: 'My name is Chen. I am from China. I am forty years old. I work as a software engineer. I want to learn English because I want more choices in the future.'
+            podcast_content_id: 62,
+            pass_score: 80
         }
     }
 ];
@@ -358,22 +351,9 @@ function buildModuleItems(module) {
         }, 0, type)];
     }
 
-    if (type === 'speaking' || type === 'speaking_output') {
-        return [makeItem({
-            type: 'speaking_output',
-            title: '口语输出',
-            subtitle: content.topic || '',
-            prompt: content.prompt || ''
-        }, 0, 'speaking_output')];
-    }
-
-    if (type === 'writing' || type === 'sentence_builder' || type === 'typing_writing') {
-        return [makeItem({
-            type: type === 'writing' ? 'sentence_builder' : type,
-            title: content.topic || '写作任务',
-            subtitle: content.translation || '',
-            prompt: content.sample || ''
-        }, 0, type === 'writing' ? 'sentence_builder' : type)];
+    if (type === 'speaking' || type === 'speaking_output' || type === 'writing' || type === 'sentence_builder' || type === 'typing_writing') {
+        // 口语/写作统一绑定磨耳朵文章；不再回退到旧 prompt/sample，避免课程内容和后台绑定文章不一致。
+        return [];
     }
 
     return [makeItem({
