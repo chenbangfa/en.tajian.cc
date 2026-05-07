@@ -9,22 +9,6 @@ const COURSE_CODE = 'ielts-general-7-foundation';
 
 const DAY1_MODULES = [
     {
-        type: 'goal',
-        title: '今日目标',
-        minutes: 5,
-        required: false,
-        content: {
-            summary: '今天只追求敢开口、会组成简单句。',
-            can_do: [
-                '能读出 20 个基础词',
-                '能理解 I am... / I want to... 两个句型',
-                '能完成一段 30 秒自我介绍',
-                '能写 5 句 About Me'
-            ],
-            target_output: 'My name is Chen. I am from China. I want to learn English.'
-        }
-    },
-    {
         type: 'vocabulary',
         title: '单词 20 个',
         minutes: 30,

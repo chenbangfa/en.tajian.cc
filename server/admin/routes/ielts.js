@@ -493,7 +493,7 @@ router.delete('/days/:id', async (req, res) => {
 
 router.post('/days/:dayId/modules', async (req, res) => {
     try {
-        const { module_type = 'goal', title, estimated_minutes = 10, is_required = 1, sort_order = 0, content_json = {}, grammar_items = [] } = req.body;
+        const { module_type = 'vocabulary', title, estimated_minutes = 10, is_required = 1, sort_order = 0, content_json = {}, grammar_items = [] } = req.body;
         if (!title) return res.status(400).json({ success: false, message: '模块标题不能为空' });
         const normalizedContent = isVocabularyLikeModule(module_type) ? await ensureVocabularyWords(content_json) : content_json;
 
@@ -520,7 +520,7 @@ router.post('/days/:dayId/modules', async (req, res) => {
 
 router.put('/modules/:id', async (req, res) => {
     try {
-        const { module_type = 'goal', title, estimated_minutes = 10, is_required = 1, sort_order = 0, content_json = {}, grammar_items = [] } = req.body;
+        const { module_type = 'vocabulary', title, estimated_minutes = 10, is_required = 1, sort_order = 0, content_json = {}, grammar_items = [] } = req.body;
         if (!title) return res.status(400).json({ success: false, message: '模块标题不能为空' });
         const normalizedContent = isVocabularyLikeModule(module_type) ? await ensureVocabularyWords(content_json) : content_json;
 

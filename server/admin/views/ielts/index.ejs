@@ -112,7 +112,7 @@
             <label class="space-y-1"><span class="text-sm text-gray-500">预计分钟</span><input id="dayMinutes" type="number" class="form-input"></label>
             <label class="space-y-1 md:col-span-2"><span class="text-sm text-gray-500">标题</span><input id="dayTitle" class="form-input"></label>
             <label class="space-y-1 md:col-span-2"><span class="text-sm text-gray-500">主题</span><input id="dayTheme" class="form-input"></label>
-            <label class="space-y-1 md:col-span-2"><span class="text-sm text-gray-500">今日目标</span><textarea id="dayObjective" rows="3" class="form-input"></textarea></label>
+            <label class="space-y-1 md:col-span-2"><span class="text-sm text-gray-500">学习目标</span><textarea id="dayObjective" rows="3" class="form-input"></textarea></label>
             <label class="space-y-1 md:col-span-2"><span class="text-sm text-gray-500">明日预告</span><textarea id="dayPreview" rows="3" class="form-input"></textarea></label>
             <label class="space-y-1"><span class="text-sm text-gray-500">状态</span><select id="dayActive" class="form-input"><option value="1">启用</option><option value="0">停用</option></select></label>
             <label class="space-y-1 md:col-span-2"><span class="text-sm text-gray-500">Metadata JSON</span><textarea id="dayMetadata" rows="6" class="font-mono text-xs form-input"></textarea></label>
@@ -135,7 +135,7 @@
         </div>
         <div class="p-6 grid grid-cols-1 md:grid-cols-4 gap-4">
             <input id="moduleId" type="hidden">
-            <label class="space-y-1"><span class="text-sm text-gray-500">类型</span><select id="moduleType" class="form-input"><option value="goal">goal</option><option value="vocabulary">vocabulary</option><option value="pronunciation">pronunciation</option><option value="grammar">grammar</option><option value="grammar_drill">grammar_drill</option><option value="listening">listening</option><option value="podcast_listening">podcast_listening</option><option value="shadowing">shadowing</option><option value="speaking">speaking</option><option value="speaking_output">speaking_output</option><option value="writing">writing</option><option value="sentence_builder">sentence_builder</option><option value="typing_writing">typing_writing</option><option value="review">review</option><option value="quiz">quiz</option></select></label>
+            <label class="space-y-1"><span class="text-sm text-gray-500">类型</span><select id="moduleType" class="form-input"><option value="vocabulary">vocabulary</option><option value="pronunciation">pronunciation</option><option value="grammar">grammar</option><option value="grammar_drill">grammar_drill</option><option value="listening">listening</option><option value="podcast_listening">podcast_listening</option><option value="shadowing">shadowing</option><option value="speaking">speaking</option><option value="speaking_output">speaking_output</option><option value="writing">writing</option><option value="sentence_builder">sentence_builder</option><option value="typing_writing">typing_writing</option><option value="review">review</option><option value="quiz">quiz</option></select></label>
             <label class="space-y-1 md:col-span-2"><span class="text-sm text-gray-500">标题</span><input id="moduleTitle" class="form-input"></label>
             <label class="space-y-1"><span class="text-sm text-gray-500">排序</span><input id="moduleSort" type="number" class="form-input"></label>
             <label class="space-y-1"><span class="text-sm text-gray-500">分钟</span><input id="moduleMinutes" type="number" class="form-input"></label>
@@ -981,7 +981,7 @@
         currentModule = mod;
         document.getElementById('moduleModalTitle').textContent = mod ? '编辑模块' : '新增模块';
         document.getElementById('moduleId').value = mod ? mod.id : '';
-        document.getElementById('moduleType').value = mod ? mod.module_type : 'goal';
+        document.getElementById('moduleType').value = mod ? mod.module_type : 'vocabulary';
         document.getElementById('moduleTitle').value = mod ? mod.title : '';
         document.getElementById('moduleSort').value = mod ? mod.sort_order : (modules.length ? Math.max(...modules.map(item => Number(item.sort_order) || 0)) + 1 : 1);
         document.getElementById('moduleMinutes').value = mod ? mod.estimated_minutes : 10;
