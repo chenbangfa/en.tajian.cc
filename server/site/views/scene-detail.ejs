@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><%- include('partials/head', { metaTitle, metaDescription, metaKeywords, canonicalUrl, metaImage }) %></head>
+<body data-page="scene-detail">
+  <div class="site-shell">
+    <%- include('partials/header', { ctaHref: '#scene-mini-program', ctaLabel: '扫码点读这个场景' }) %>
+    <main>
+      <section class="detail-hero-section">
+        <div class="container detail-hero-card wide">
+          <div class="detail-cover scene-cover">
+            <% if (scene.image_url) { %><img src="<%= scene.image_url %>" alt="<%= scene.name || '场景图' %>"><% } else { %><div class="cover-placeholder large"><span><%= (scene.name_en || scene.name || 'Scene').slice(0, 2).toUpperCase() %></span></div><% } %>
+          </div>
+          <div class="detail-copy">
+            <a class="crumb" href="/scenes">← 返回场景库</a>
+            <span class="eyebrow"><%= scene.category_name || 'Scene Learning' %></span>
+            <h1><%= scene.name || '场景详情' %></h1>
+            <p class="en-title"><%= scene.name_en || '' %></p>
+            <div class="pill-row"><span>Lv.<%= scene.difficulty_level || 3 %></span><span><%= scene.objects.length %> 个热点词汇</span></div>
+            <p><%= scene.description || '这个场景把孩子熟悉的生活画面变成自然英语输入，适合看图识词、点读听音和短句表达。' %></p>
+            <div class="word-tags"><% focusWords.slice(0, 8).forEach(word => { %><span><%= word %></span><% }) %></div>
+            <div class="hero-actions"><a class="primary-btn" href="#scene-mini-program">扫码点读</a><a class="secondary-btn" href="/scenes">更多场景</a></div>
+          </div>
+        </div>
+      </section>
+      <section class="container detail-layout">
+        <div class="detail-main">
+          <h2>重点词汇</h2>
+          <div class="hotspot-grid">
+            <% scene.objects.forEach(item => { %>
+              <article class="hotspot-card"><strong><%= item.text_en || item.custom_label || 'Word' %></strong><span><%= item.phonetic || '' %></span><p><%= item.translation || '小程序里可继续点读和跟读。' %></p></article>
+            <% }) %>
+          </div>
+          <% if (relatedScenes && relatedScenes.length) { %>
+            <h2>继续浏览同类场景</h2>
+            <div class="content-grid compact"><% relatedScenes.forEach(item => { %><%- include('partials/scene-card', { scene: item }) %><% }) %></div>
+          <% } %>
+        </div>
+        <aside class="detail-aside" id="scene-mini-program">
+          <div class="sticky-card">
+            <h3>小程序继续点读</h3>
+            <div class="qr-card"><img id="scene-mini-qr" class="qr-image" alt="场景小程序码" hidden><div class="qr-pattern" data-qr-pattern></div><div class="qr-loading" data-qr-loading>正在加载小程序码...</div></div>
+            <p>扫码后直接进入这个场景，继续点读、翻译和评测。</p>
+          </div>
+        </aside>
+      </section>
+    </main>
+    <%- include('partials/footer', {}) %>
+  </div>
+  <script>window.__SITE_INITIAL__ = <%- JSON.stringify(initialState) %>;</script>
+  <script src="/assets/site.js"></script>
+</body>
+</html>

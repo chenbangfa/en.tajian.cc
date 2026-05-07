@@ -7,8 +7,14 @@ const { query } = require('../../src/config/database');
 const voiceService = require('../../src/services/voice.service');
 const aiService = require('../../src/services/ai.service');
 const {
+    decoratePictureBook,
+    matchesFilter
+} = require('../../src/utils/picturebook-reader-meta');
+const {
     normalizeComparableText,
     normalizePromptBookTitleToEnglish,
+    sanitizePictureBookImagePromptForGeneration,
+    buildPictureBookImagePromptFallback,
     buildCoverSourceText,
     buildPictureBookCoverPrompt,
     computeCoverPromptSync,
@@ -114,7 +120,7 @@ router.get('/edit/:id', async (req, res) => {
 
 router.get('/api/list', async (req, res) => {
     try {
-        const { category_id, keyword } = req.query;
+        const { category_id, keyword, reader_stage = 'all' } = req.query;
         let sql = `SELECT b.*, c.name as category_name
             FROM picture_books b
             LEFT JOIN picture_book_categories c ON b.category_id = c.id
@@ -132,7 +138,14 @@ router.get('/api/list', async (req, res) => {
 
         sql += ' ORDER BY b.sort_order ASC, b.id DESC';
         const books = await query(sql, params);
-        res.json({ success: true, data: books });
+        const decorated = books.map(decoratePictureBook);
+        const filtered = decorated.filter((book) =>
+            matchesFilter(book, {
+                categoryId: category_id ? parseInt(category_id, 10) : 0,
+                readerStage: reader_stage
+            })
+        );
+        res.json({ success: true, data: filtered });
     } catch (e) {
         res.status(500).json({ success: false, message: e.message });
     }
@@ -607,8 +620,20 @@ router.post('/api/:id/pages/:pageId/generate-image', async (req, res) => {
         if (!finalPrompt) {
             return res.status(400).json({ success: false, message: '请先填写页面图片AI提示词' });
         }
+        const generationPrompt = sanitizePictureBookImagePromptForGeneration(finalPrompt);
+        const fallbackPrompt = buildPictureBookImagePromptFallback(finalPrompt);
 
-        const result = await aiService.generateImage(finalPrompt);
+        let result = await aiService.generateImage(generationPrompt, { aspectRatio: '9:16' });
+        const needsFallbackRetry = !result.success
+            && fallbackPrompt
+            && fallbackPrompt !== generationPrompt
+            && /未返回有效数据|invalid data|稍后重试/i.test(String(result.error || ''));
+
+        if (needsFallbackRetry) {
+            console.warn(`[PictureBooks] fallback page image generation retry book=${bookId} page=${pageId}`);
+            result = await aiService.generateImage(fallbackPrompt, { aspectRatio: '9:16' });
+        }
+
         if (!result.success || !result.imageUrl) {
             return res.status(result.statusCode || 500).json({
                 success: false,
@@ -933,7 +958,17 @@ router.post('/api/:id/generate-cover', async (req, res) => {
         const finalPromptRaw = inputPrompt || String(book.cover_prompt || '').trim() || generatedPrompt;
         const normalizedPrompt = normalizePromptBookTitleToEnglish(finalPromptRaw, book?.title || '', book?.title_en || '');
         if (!normalizedPrompt) return res.status(400).json({ success: false, message: '请先填写或重建封面提示词' });
-        const result = await aiService.generateImage(normalizedPrompt);
+        const generationPrompt = sanitizePictureBookImagePromptForGeneration(normalizedPrompt);
+        const fallbackPrompt = buildPictureBookImagePromptFallback(normalizedPrompt);
+        let result = await aiService.generateImage(generationPrompt, { aspectRatio: '9:16' });
+        const needsFallbackRetry = !result.success
+            && fallbackPrompt
+            && fallbackPrompt !== generationPrompt
+            && /未返回有效数据|invalid data|稍后重试/i.test(String(result.error || ''));
+        if (needsFallbackRetry) {
+            console.warn(`[PictureBooks] fallback cover generation retry book=${req.params.id}`);
+            result = await aiService.generateImage(fallbackPrompt, { aspectRatio: '9:16' });
+        }
         if (result.success) {
             const sourceText = buildCoverSourceText(book, pages);
             const mode = inputPrompt ? 'manual' : (book.cover_prompt_mode || 'auto');

@@ -1,0 +1,401 @@
+<div class="space-y-6">
+    <div class="flex justify-between items-center bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+        <div>
+            <h2 class="text-2xl font-bold bg-gradient-to-r from-violet-700 to-indigo-600 bg-clip-text text-transparent">
+                单词批量 AI 补全工坊
+            </h2>
+            <p class="text-gray-500 mt-1">按分类、难度和搜索条件筛出需要补全的词条，串行补齐缺失的音标、例句、例句翻译和语法详解。</p>
+        </div>
+        <div class="flex items-center gap-3">
+            <a href="/words"
+                class="flex items-center gap-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 px-5 py-3 rounded-xl transition-all duration-300">
+                <i class="fas fa-arrow-left"></i>
+                <span>返回单词管理</span>
+            </a>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+            <div class="text-sm text-gray-500">候选词条</div>
+            <div class="text-3xl font-bold text-gray-800 mt-2" id="stat-total">0</div>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+            <div class="text-sm text-gray-500">已选中</div>
+            <div class="text-3xl font-bold text-indigo-600 mt-2" id="stat-selected">0</div>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+            <div class="text-sm text-gray-500">已完成</div>
+            <div class="text-3xl font-bold text-green-600 mt-2" id="stat-success">0</div>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+            <div class="text-sm text-gray-500">失败</div>
+            <div class="text-3xl font-bold text-red-500 mt-2" id="stat-failed">0</div>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="p-5 border-b border-gray-100 bg-gray-50 space-y-4">
+            <div class="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+                <div class="font-semibold">缺省策略说明</div>
+                <div class="mt-1">本页只补空缺字段，不覆盖已有的 <code>音标 / 例句 / 例句翻译 / 语法详解</code>。`sentence` 类型也不会重新生成例句。</div>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-3">
+                <select id="sel-engine"
+                    class="px-4 py-2 border border-gray-200 rounded-lg outline-none focus:border-violet-500 bg-white text-sm">
+                    <option value="deepseek" selected>DeepSeek（默认）</option>
+                    <option value="gemini">Gemini</option>
+                </select>
+
+                <select id="sel-category"
+                    class="px-4 py-2 border border-gray-200 rounded-lg outline-none focus:border-violet-500 bg-white text-sm">
+                    <option value="">全部分类</option>
+                </select>
+
+                <select id="sel-difficulty"
+                    class="px-4 py-2 border border-gray-200 rounded-lg outline-none focus:border-violet-500 bg-white text-sm">
+                    <option value="">全部难度</option>
+                    <% for (let i = 1; i <= 12; i++) { %>
+                        <option value="<%= i %>">Lv.<%= i %></option>
+                    <% } %>
+                </select>
+
+                <select id="sel-type"
+                    class="px-4 py-2 border border-gray-200 rounded-lg outline-none focus:border-violet-500 bg-white text-sm">
+                    <option value="">全部类型</option>
+                    <option value="word">word</option>
+                    <option value="phrase">phrase</option>
+                    <option value="sentence">sentence</option>
+                </select>
+
+                <input id="sel-search" type="text" placeholder="搜索单词、翻译、例句"
+                    class="min-w-[220px] px-4 py-2 border border-gray-200 rounded-lg outline-none focus:border-violet-500 bg-white text-sm">
+
+                <input id="sel-limit" type="number" value="1000" min="50" max="2000"
+                    class="w-28 px-4 py-2 border border-gray-200 rounded-lg outline-none focus:border-violet-500 bg-white text-sm"
+                    title="一次最多拉取多少候选词条">
+
+                <button onclick="loadCandidates()"
+                    class="px-4 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-lg text-sm font-medium">
+                    <i class="fas fa-rotate-right mr-1"></i>刷新列表
+                </button>
+
+                <button onclick="selectAllVisible()"
+                    class="px-4 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-lg text-sm font-medium">
+                    <i class="fas fa-check-double mr-1"></i>全选当前结果
+                </button>
+
+                <button onclick="clearSelection()"
+                    class="px-4 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-lg text-sm font-medium">
+                    <i class="fas fa-eraser mr-1"></i>清空勾选
+                </button>
+
+                <button id="btn-start" onclick="startBatch()"
+                    class="px-5 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-lg text-sm font-medium">
+                    <i class="fas fa-wand-magic-sparkles mr-1"></i>开始批量补全
+                </button>
+
+                <button id="btn-stop" onclick="stopBatch()"
+                    class="hidden px-5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium animate-pulse">
+                    <i class="fas fa-stop mr-1"></i>停止
+                </button>
+            </div>
+
+            <div id="batch-progress" class="hidden">
+                <div class="flex justify-between text-sm mb-2 font-medium">
+                    <span id="progress-text" class="text-violet-600">准备中...</span>
+                    <span id="progress-count" class="text-gray-500">0/0</span>
+                </div>
+                <div class="h-2 bg-gray-100 rounded-full overflow-hidden">
+                    <div id="progress-bar" class="h-full bg-violet-600 transition-all duration-300" style="width:0%"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-0">
+            <div class="p-5 border-r border-gray-100 min-h-[560px]">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="font-bold text-gray-800">待补全词条</h3>
+                    <span class="text-xs text-gray-400" id="queue-hint">加载中...</span>
+                </div>
+                <div id="candidate-list" class="space-y-3 max-h-[720px] overflow-y-auto">
+                    <div class="text-center py-16 text-gray-400">
+                        <i class="fas fa-spinner fa-spin text-2xl mb-3"></i>
+                        <p>正在加载...</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-5 bg-gray-50/60 min-h-[560px]">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="font-bold text-gray-800">失败列表</h3>
+                    <button onclick="retryFailed()"
+                        class="px-3 py-1.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-lg text-xs font-medium">
+                        重试失败项
+                    </button>
+                </div>
+                <div id="failed-list" class="space-y-3 max-h-[720px] overflow-y-auto">
+                    <div class="text-center py-16 text-gray-400 text-sm">暂无失败项</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let queue = [];
+let failedItems = [];
+let selectedIds = new Set();
+let isRunning = false;
+let progress = { total: 0, success: 0, failed: 0 };
+
+function escapeHtml(v = '') {
+    return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function toast(message, type = 'success') {
+    if (typeof showToast === 'function') return showToast(message, type);
+    if (type === 'error') return alert(message);
+    console.log(message);
+}
+
+async function fetchJson(url, options = {}) {
+    const res = await fetch(url, options);
+    const text = await res.text();
+    let data;
+    try {
+        data = text ? JSON.parse(text) : {};
+    } catch (e) {
+        throw new Error(text.startsWith('<') ? '请刷新后台登录后重试' : '接口返回了非 JSON 数据');
+    }
+    if (!res.ok || !data.success) {
+        const err = new Error(data.message || data.error || `请求失败（${res.status}）`);
+        err.status = res.status;
+        throw err;
+    }
+    return data;
+}
+
+function getFilters() {
+    return {
+        category_id: document.getElementById('sel-category').value,
+        difficulty: document.getElementById('sel-difficulty').value,
+        word_type: document.getElementById('sel-type').value,
+        search: document.getElementById('sel-search').value.trim(),
+        limit: document.getElementById('sel-limit').value || 1000
+    };
+}
+
+function buildQuery(params) {
+    const q = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+        if (value !== '' && value !== null && value !== undefined) q.set(key, value);
+    });
+    return q.toString();
+}
+
+async function loadCategories() {
+    try {
+        const r = await fetchJson('/api/admin/categories');
+        const sel = document.getElementById('sel-category');
+        r.data.forEach(c => {
+            sel.innerHTML += `<option value="${c.id}">${escapeHtml(c.name)}</option>`;
+        });
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+function renderMissingChip(label, active, colorClass) {
+    const base = 'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium';
+    if (active) {
+        return `<span class="${base} ${colorClass}">${label}</span>`;
+    }
+    return `<span class="${base} bg-gray-100 text-gray-400">${label}</span>`;
+}
+
+function updateStats() {
+    document.getElementById('stat-total').textContent = queue.length;
+    document.getElementById('stat-selected').textContent = selectedIds.size;
+    document.getElementById('stat-success').textContent = progress.success;
+    document.getElementById('stat-failed').textContent = progress.failed;
+}
+
+function renderQueue() {
+    const list = document.getElementById('candidate-list');
+    document.getElementById('queue-hint').textContent = `当前候选 ${queue.length} 个`;
+    if (!queue.length) {
+        list.innerHTML = '<div class="text-center py-16 text-gray-400 bg-white rounded-xl border border-dashed border-gray-200"><i class="fas fa-circle-check text-3xl mb-3 text-green-500"></i><p>当前筛选下没有待补全词条</p></div>';
+        updateStats();
+        return;
+    }
+
+    list.innerHTML = queue.map((w) => `
+        <label class="block rounded-xl border border-gray-100 bg-white p-4 hover:border-violet-200 transition-colors" id="enhance-${w.id}">
+            <div class="flex items-start gap-3">
+                <input type="checkbox" class="mt-1 w-4 h-4 rounded border-gray-300 text-violet-600 focus:ring-violet-500"
+                    value="${w.id}" ${selectedIds.has(w.id) ? 'checked' : ''} onchange="toggleSelection(${w.id}, this.checked)">
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-3 flex-wrap">
+                        <div class="text-lg font-bold text-gray-800">${escapeHtml(w.word)}</div>
+                        <div class="text-xs text-gray-500 bg-gray-100 rounded-full px-3 py-1">${escapeHtml(w.content_type || 'word')}</div>
+                        <div class="text-xs text-indigo-600 bg-indigo-50 rounded-full px-3 py-1">ID ${w.id}</div>
+                    </div>
+                    <div class="text-sm text-gray-600 mt-1">${escapeHtml(w.translation || '')}</div>
+                    <div class="text-xs text-gray-400 mt-2">${escapeHtml(w.category_name || '未分类')}</div>
+                    <div class="mt-3 flex flex-wrap gap-2">
+                        ${renderMissingChip('缺音标', w.missing.phonetic, 'bg-blue-50 text-blue-700')}
+                        ${renderMissingChip('缺例句', w.missing.example_sentence, 'bg-amber-50 text-amber-700')}
+                        ${renderMissingChip('缺例句翻译', w.missing.example_translation, 'bg-emerald-50 text-emerald-700')}
+                        ${renderMissingChip('缺语法详解', w.missing.grammar_explanation, 'bg-purple-50 text-purple-700')}
+                    </div>
+                </div>
+            </div>
+        </label>
+    `).join('');
+
+    updateStats();
+}
+
+function renderFailed() {
+    const list = document.getElementById('failed-list');
+    if (!failedItems.length) {
+        list.innerHTML = '<div class="text-center py-16 text-gray-400 text-sm">暂无失败项</div>';
+        return;
+    }
+    list.innerHTML = failedItems.map(item => `
+        <div class="rounded-xl border border-red-100 bg-white p-4">
+            <div class="font-bold text-gray-800">${escapeHtml(item.word)}</div>
+            <div class="text-xs text-gray-500 mt-1">${escapeHtml(item.translation || '')}</div>
+            <div class="text-xs text-red-500 mt-2">${escapeHtml(item.error)}</div>
+        </div>
+    `).join('');
+}
+
+function toggleSelection(id, checked) {
+    if (checked) selectedIds.add(id);
+    else selectedIds.delete(id);
+    updateStats();
+}
+
+function selectAllVisible() {
+    queue.forEach(item => selectedIds.add(item.id));
+    renderQueue();
+}
+
+function clearSelection() {
+    selectedIds = new Set();
+    renderQueue();
+}
+
+function updateProgressUI(text) {
+    document.getElementById('progress-text').textContent = text;
+    const done = progress.success + progress.failed;
+    document.getElementById('progress-count').textContent = `${done}/${progress.total}`;
+    document.getElementById('progress-bar').style.width = `${(done / Math.max(progress.total, 1)) * 100}%`;
+}
+
+async function loadCandidates() {
+    const list = document.getElementById('candidate-list');
+    list.innerHTML = '<div class="text-center py-16 text-gray-400"><i class="fas fa-spinner fa-spin text-2xl mb-3"></i><p>正在加载...</p></div>';
+    try {
+        const q = buildQuery(getFilters());
+        const r = await fetchJson(`/api/admin/words/batch-enhance/candidates?${q}`);
+        queue = r.data || [];
+        failedItems = [];
+        selectedIds = new Set();
+        progress = { total: queue.length, success: 0, failed: 0 };
+        renderQueue();
+        renderFailed();
+    } catch (e) {
+        list.innerHTML = `<div class="text-center py-16 text-red-400">${escapeHtml(e.message)}</div>`;
+    }
+}
+
+function chunk(arr, size) {
+    const out = [];
+    for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+    return out;
+}
+
+async function startBatch(ids = null) {
+    const targetIds = ids && ids.length
+        ? ids
+        : (selectedIds.size ? Array.from(selectedIds) : queue.map(item => item.id));
+
+    if (!targetIds.length) {
+        toast('当前没有需要补全的词条', 'error');
+        return;
+    }
+
+    if (!confirm(`确定开始批量补全 ${targetIds.length} 个词条吗？\n\n只会补空缺字段，不覆盖已有内容。`)) {
+        return;
+    }
+
+    const engine = document.getElementById('sel-engine').value || 'deepseek';
+    const chunks = chunk(targetIds, 10);
+    isRunning = true;
+    progress = { total: targetIds.length, success: 0, failed: 0 };
+    failedItems = [];
+    renderFailed();
+    updateStats();
+
+    document.getElementById('btn-start').classList.add('hidden');
+    document.getElementById('btn-stop').classList.remove('hidden');
+    document.getElementById('batch-progress').classList.remove('hidden');
+
+    try {
+        for (let i = 0; i < chunks.length; i++) {
+            if (!isRunning) break;
+            updateProgressUI(`正在补全第 ${i + 1}/${chunks.length} 批（${engine === 'deepseek' ? 'DeepSeek' : 'Gemini'}）`);
+
+            const result = await fetchJson('/api/admin/batch/enhance-existing', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ word_ids: chunks[i], engine })
+            });
+
+            progress.success += result.data?.success?.length || 0;
+            progress.failed += result.data?.failed?.length || 0;
+            (result.data?.failed || []).forEach(item => failedItems.push(item));
+            renderFailed();
+            updateStats();
+        }
+
+        if (isRunning) {
+            toast(`批量补全完成：成功 ${progress.success}，失败 ${progress.failed}`);
+        } else {
+            toast('批量补全已停止', 'error');
+        }
+
+        await loadCandidates();
+    } catch (e) {
+        toast(`批量补全失败: ${e.message}`, 'error');
+    } finally {
+        isRunning = false;
+        document.getElementById('btn-start').classList.remove('hidden');
+        document.getElementById('btn-stop').classList.add('hidden');
+    }
+}
+
+function stopBatch() {
+    isRunning = false;
+}
+
+async function retryFailed() {
+    if (!failedItems.length) {
+        toast('当前没有失败项', 'error');
+        return;
+    }
+    const ids = failedItems.map(item => item.id).filter(Boolean);
+    failedItems = [];
+    renderFailed();
+    await startBatch(ids);
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+    await loadCategories();
+    await loadCandidates();
+});
+</script>

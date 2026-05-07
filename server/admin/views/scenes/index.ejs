@@ -6,11 +6,18 @@
                 场景内容管理</h2>
             <p class="text-gray-500 mt-1">创建和编辑互动场景，支持点读和AI语音</p>
         </div>
-        <a href="/scenes/edit"
-            class="flex items-center space-x-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-6 py-3 rounded-xl shadow-lg shadow-blue-200 transition-all duration-300 hover:-translate-y-0.5">
-            <i class="fas fa-plus"></i>
-            <span>新建场景</span>
-        </a>
+        <div class="flex items-center gap-3">
+            <a href="/marketing/category-videos"
+                class="flex items-center space-x-2 bg-white border border-purple-200 text-purple-700 hover:bg-purple-50 px-5 py-3 rounded-xl shadow-sm transition-all duration-300 hover:-translate-y-0.5">
+                <i class="fas fa-layer-group"></i>
+                <span>分类视频工坊</span>
+            </a>
+            <a href="/scenes/edit"
+                class="flex items-center space-x-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-6 py-3 rounded-xl shadow-lg shadow-blue-200 transition-all duration-300 hover:-translate-y-0.5">
+                <i class="fas fa-plus"></i>
+                <span>新建场景</span>
+            </a>
+        </div>
     </div>
 
     <!-- Filters -->
@@ -182,7 +189,7 @@
         <div class="waterfall-card bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden group hover:shadow-lg transition-all duration-300">
             <!-- Image -->
             <div class="relative bg-gray-100 overflow-hidden">
-                <img src="${scene.image_url || '/static/img/placeholder.png'}" class="w-full block" alt="${scene.name}" style="display:block">
+                <img src="${scene.image_url || '/static/img/placeholder.png'}" class="w-full block" alt="${scene.name}" loading="lazy" decoding="async" style="display:block">
                 <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-between p-4">
                     <span class="text-white text-xs font-medium bg-black/30 px-2 py-1 rounded backdrop-blur-sm">
                         ${scene.difficulty_level}级难度
@@ -202,6 +209,17 @@
                         <i class="fas fa-folder mr-0.5"></i>${scene.category_name || '未分类'}
                     </span>
                     <div class="flex space-x-1">
+                        <button onclick="openH5Scene(${scene.id})" class="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors text-xs" title="打开H5点读">
+                            <i class="fas fa-mobile-alt"></i>
+                        </button>
+                        ${Number(scene.has_reading_video || 0) ? `
+                            <span class="inline-flex items-center justify-center h-7 px-2 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-100 text-[10px] font-bold" title="已生成点读视频">
+                                <i class="fas fa-video mr-1"></i>已生成
+                            </span>
+                        ` : ''}
+                        <button onclick="copyH5SceneLink(${scene.id})" class="p-1.5 text-slate-600 hover:bg-slate-50 rounded-lg transition-colors text-xs" title="复制H5链接">
+                            <i class="fas fa-link"></i>
+                        </button>
                         <a href="/scenes/edit/${scene.id}" class="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors text-xs" title="编辑">
                             <i class="fas fa-edit"></i>
                         </a>
@@ -213,6 +231,43 @@
             </div>
         </div>
     `).join('');
+    }
+
+    async function fetchH5SceneUrl(id) {
+        const res = await fetch(`${API_BASE}/scenes/${id}/h5-link`);
+        const result = await res.json();
+        if (!result.success || !result.data?.path) {
+            throw new Error(result.message || '生成H5链接失败');
+        }
+        return new URL(result.data.path, window.location.origin).href;
+    }
+
+    async function openH5Scene(id) {
+        try {
+            const url = await fetchH5SceneUrl(id);
+            window.open(url, '_blank', 'noopener');
+        } catch (e) {
+            showToast(e.message || '打开H5失败', 'error');
+        }
+    }
+
+    async function copyH5SceneLink(id) {
+        try {
+            const url = await fetchH5SceneUrl(id);
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(url);
+            } else {
+                const input = document.createElement('input');
+                input.value = url;
+                document.body.appendChild(input);
+                input.select();
+                document.execCommand('copy');
+                input.remove();
+            }
+            showToast('H5 点读链接已复制');
+        } catch (e) {
+            showToast('复制失败，请手动复制链接', 'error');
+        }
     }
 
     async function deleteScene(id) {

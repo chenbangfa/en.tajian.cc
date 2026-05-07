@@ -1,0 +1,791 @@
+<div x-data="categoryVideoApp()" x-init="init()" class="space-y-6">
+
+    <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+            <h2 class="text-2xl font-bold text-gray-800">分类单词视频</h2>
+            <p class="text-sm text-gray-500 mt-1">按场景分类词表预览、生成和管理整条分类单词视频任务。</p>
+        </div>
+        <div class="flex items-center gap-3">
+            <a href="/marketing/videos" class="text-sm text-blue-600 hover:underline">
+                <i class="fas fa-film mr-1"></i>切换到每日一词视频
+            </a>
+            <a href="/marketing" class="text-sm text-gray-500 hover:text-gray-700 hover:underline">
+                <i class="fas fa-pen-nib mr-1"></i>内容工坊
+            </a>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 xl:grid-cols-[360px_minmax(0,1fr)] gap-6">
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="px-5 py-4 border-b border-gray-100 bg-gray-50">
+                <div class="font-semibold text-gray-800 flex items-center gap-2">
+                    <i class="fas fa-layer-group text-purple-500"></i> 选择分类
+                </div>
+                <p class="text-xs text-gray-500 mt-1">只显示已维护 `items` 词表的场景分类。</p>
+            </div>
+
+            <div class="p-4 border-b border-gray-100">
+                <div class="flex gap-2">
+                    <input type="text" x-model="keyword" @keyup.enter="loadCategories()" placeholder="搜索分类名..."
+                        class="flex-1 border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none">
+                    <button @click="loadCategories()" class="px-3 py-2 bg-gray-100 rounded-lg text-sm hover:bg-gray-200">
+                        <i class="fas fa-search"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="max-h-[70vh] overflow-y-auto divide-y divide-gray-100">
+                <template x-for="category in categories" :key="category.id">
+                    <button @click="selectCategory(category)"
+                        class="w-full text-left px-4 py-4 hover:bg-purple-50 transition"
+                        :class="selectedCategory && selectedCategory.id === category.id ? 'bg-purple-50 border-l-4 border-purple-500' : ''">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <div class="font-medium text-gray-800 truncate" x-text="category.display_name"></div>
+                                <div class="text-xs text-gray-400 truncate mt-1" x-text="category.name_en || '暂无英文分类名'"></div>
+                                <div class="flex flex-wrap gap-2 mt-2">
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-purple-100 text-purple-700">
+                                        <i class="fas fa-list-ul mr-1"></i>
+                                        <span x-text="`${category.items_count} 个词条`"></span>
+                                    </span>
+                                </div>
+                                <div class="flex flex-wrap gap-1 mt-2">
+                                    <template x-for="sample in category.sample_items" :key="sample">
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] bg-gray-100 text-gray-500" x-text="sample"></span>
+                                    </template>
+                                </div>
+                            </div>
+                            <i class="fas fa-chevron-right text-gray-300 mt-1"></i>
+                        </div>
+                    </button>
+                </template>
+
+                <div x-show="!loadingCategories && categories.length === 0" class="px-4 py-10 text-center text-sm text-gray-400">
+                    暂无符合条件的分类
+                </div>
+                <div x-show="loadingCategories" class="px-4 py-10 text-center text-sm text-gray-400">
+                    <i class="fas fa-spinner fa-spin mr-2"></i>正在加载分类...
+                </div>
+            </div>
+        </div>
+
+        <div class="space-y-6">
+            <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                <div class="px-5 py-4 border-b border-gray-100 bg-gray-50">
+                    <div class="font-semibold text-gray-800 flex items-center gap-2">
+                        <i class="fas fa-clapperboard text-blue-500"></i> 生成预览
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">按 `scene_categories.items -> words` 精确匹配，并按原顺序选取最多 N 个词进入视频。</p>
+                </div>
+
+                <div x-show="!selectedCategory" class="px-6 py-16 text-center text-gray-400 text-sm">
+                    先从左侧选择一个分类，我们就开始预览这个分类可生成的词表。
+                </div>
+
+                <div x-show="selectedCategory" class="p-6 space-y-6">
+                    <div class="flex flex-wrap items-center justify-between gap-4">
+                        <div>
+                            <div class="text-xs text-gray-400 uppercase tracking-wide">当前分类</div>
+                            <div class="text-xl font-bold text-gray-800 mt-1" x-text="preview.category?.display_name || selectedCategory?.display_name"></div>
+                            <div class="text-sm text-gray-500 mt-1" x-text="preview.category?.name_en || selectedCategory?.name_en || '暂无英文名'"></div>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-3">
+                            <label class="text-sm text-gray-500">最多词数</label>
+                            <select x-model="maxWords" @change="loadPreview()"
+                                class="border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none">
+                                <option value="8">8</option>
+                                <option value="10">10</option>
+                                <option value="12">12</option>
+                                <option value="16">16</option>
+                                <option value="20">20</option>
+                            </select>
+                            <button @click="loadPreview()" class="px-3 py-2 bg-gray-100 rounded-lg text-sm hover:bg-gray-200">
+                                <i class="fas fa-rotate-right mr-1"></i>刷新预览
+                            </button>
+                            <button @click="createJob()"
+                                :disabled="!canCreateJob() || creatingJob"
+                                class="px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg text-sm hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed">
+                                <i class="fas fa-video mr-1"></i>
+                                <span x-text="creatingJob ? '创建任务中...' : '创建生成任务'"></span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="rounded-2xl border border-gray-100 overflow-hidden">
+                        <div class="px-4 py-3 border-b border-gray-100 bg-gray-50">
+                            <div class="font-semibold text-gray-800">视频内显示名称</div>
+                            <div class="text-xs text-gray-400 mt-1">默认跟随所选分类，你可以在生成前手动改成更适合视频展示的中文/英文名称。</div>
+                        </div>
+                        <div class="p-4 grid grid-cols-1 xl:grid-cols-3 gap-4">
+                            <label class="block">
+                                <div class="text-xs text-gray-500 mb-1">父分类中文</div>
+                                <input type="text" x-model="editableParentCategoryName"
+                                    class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
+                                    placeholder="例如：食物与饮食类">
+                            </label>
+                            <label class="block">
+                                <div class="text-xs text-gray-500 mb-1">分类中文</div>
+                                <input type="text" x-model="editableCategoryName"
+                                    class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
+                                    placeholder="例如：常见水果">
+                            </label>
+                            <label class="block">
+                                <div class="text-xs text-gray-500 mb-1">分类英文</div>
+                                <input type="text" x-model="editableCategoryNameEn"
+                                    class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
+                                    placeholder="例如：Common Fruits">
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px] gap-6">
+                        <div class="rounded-2xl border border-gray-100 overflow-hidden">
+                            <div class="px-4 py-3 border-b border-gray-100 bg-gray-50">
+                                <div class="font-semibold text-gray-800">默认封面图</div>
+                                <div class="text-xs text-gray-400 mt-1">默认从当前分类下已有场景图片中自动取一张作为分类视频封面。</div>
+                            </div>
+                            <div class="p-4">
+                                <template x-if="preview.default_cover?.image_url">
+                                    <div class="space-y-3">
+                                        <img :src="preview.default_cover.image_url"
+                                            alt="默认场景封面"
+                                            class="w-full h-64 rounded-2xl object-cover border border-gray-200 bg-gray-50">
+                                        <div class="flex flex-wrap gap-2 text-xs text-gray-500">
+                                            <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-blue-50 text-blue-600 border border-blue-100">
+                                                <i class="fas fa-image mr-1"></i>默认场景封面
+                                            </span>
+                                            <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-gray-100 text-gray-600"
+                                                x-text="preview.default_cover.scene_name || '未命名场景'"></span>
+                                        </div>
+                                    </div>
+                                </template>
+                                <div x-show="!preview.default_cover?.image_url" class="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-4 py-10 text-center text-sm text-gray-400">
+                                    当前分类下还没有可直接作为封面的场景图片，生成时会回退到首个单词图片。
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="rounded-2xl border border-gray-100 overflow-hidden">
+                            <div class="px-4 py-3 border-b border-gray-100 bg-gray-50">
+                                <div class="font-semibold text-gray-800">上传覆盖封面</div>
+                                <div class="text-xs text-gray-400 mt-1">如果上传，将优先使用这张图；不上传就继续用默认场景封面。</div>
+                            </div>
+                            <div class="p-4 space-y-4">
+                                <div class="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-4">
+                                    <template x-if="customCoverUrl">
+                                        <div class="space-y-3">
+                                            <img :src="customCoverUrl"
+                                                alt="自定义封面"
+                                                class="w-full h-56 rounded-2xl object-cover border border-gray-200 bg-white">
+                                            <div class="text-xs text-gray-500 break-all" x-text="customCoverName || '已上传自定义封面'"></div>
+                                        </div>
+                                    </template>
+                                    <div x-show="!customCoverUrl" class="py-10 text-center text-sm text-gray-400">
+                                        当前没有上传自定义封面。
+                                    </div>
+                                </div>
+                                <div class="flex flex-wrap gap-2">
+                                    <button @click="$refs.customCoverInput.click()" type="button"
+                                        class="px-3 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700 disabled:opacity-40"
+                                        :disabled="uploadingCover">
+                                        <i class="fas fa-upload mr-1"></i>
+                                        <span x-text="uploadingCover ? '上传中...' : (customCoverUrl ? '重新上传封面' : '上传封面')"></span>
+                                    </button>
+                                    <button @click="clearCustomCover()" type="button"
+                                        class="px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50"
+                                        :disabled="!customCoverUrl">
+                                        <i class="fas fa-eraser mr-1"></i>清除上传封面
+                                    </button>
+                                </div>
+                                <input x-ref="customCoverInput" type="file" accept="image/*" class="hidden" @change="uploadCustomCover($event)">
+                                <div class="text-xs text-gray-400">推荐上传竖版图片；如果上传后想恢复默认封面，点“清除上传封面”即可。</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div x-show="loadingPreview" class="py-10 text-center text-sm text-gray-400">
+                        <i class="fas fa-spinner fa-spin mr-2"></i>正在分析分类词表...
+                    </div>
+
+                    <template x-if="preview.summary">
+                        <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+                            <div class="rounded-2xl border border-gray-100 bg-gradient-to-br from-white to-gray-50 p-4">
+                                <div class="text-xs text-gray-400">词表总数</div>
+                                <div class="text-2xl font-bold text-gray-800 mt-1" x-text="preview.summary.total_items"></div>
+                            </div>
+                            <div class="rounded-2xl border border-green-100 bg-green-50 p-4">
+                                <div class="text-xs text-green-600">匹配到单词</div>
+                                <div class="text-2xl font-bold text-green-700 mt-1" x-text="preview.summary.matched_count"></div>
+                            </div>
+                            <div class="rounded-2xl border border-blue-100 bg-blue-50 p-4">
+                                <div class="text-xs text-blue-600">可直接进视频</div>
+                                <div class="text-2xl font-bold text-blue-700 mt-1" x-text="preview.summary.ready_count"></div>
+                            </div>
+                            <div class="rounded-2xl border border-purple-100 bg-purple-50 p-4">
+                                <div class="text-xs text-purple-600">本次实际选入</div>
+                                <div class="text-2xl font-bold text-purple-700 mt-1" x-text="currentSelectedCount()"></div>
+                            </div>
+                            <div class="rounded-2xl border border-yellow-100 bg-yellow-50 p-4">
+                                <div class="text-xs text-yellow-700">可自动补音频</div>
+                                <div class="text-2xl font-bold text-yellow-700 mt-1" x-text="currentAutoFillCount()"></div>
+                            </div>
+                            <div class="rounded-2xl border border-red-100 bg-red-50 p-4">
+                                <div class="text-xs text-red-600">缺素材阻塞</div>
+                                <div class="text-2xl font-bold text-red-700 mt-1" x-text="preview.summary.blocked_count + preview.summary.missing_count"></div>
+                            </div>
+                        </div>
+                    </template>
+
+                    <div x-show="preview.summary" class="rounded-2xl border px-4 py-3 text-sm"
+                        :class="canCreateJob() ? 'border-green-200 bg-green-50 text-green-700' : 'border-yellow-200 bg-yellow-50 text-yellow-700'">
+                        <template x-if="canCreateJob()">
+                            <div><i class="fas fa-circle-check mr-2"></i>这个分类已经具备生成条件，你可以沿用推荐词表，也可以手动勾选想要进入视频的词。</div>
+                        </template>
+                        <template x-if="preview.summary && !canCreateJob()">
+                            <div><i class="fas fa-triangle-exclamation mr-2"></i>当前勾选的词少于 4 个，建议先补图片、音标或例句素材，或换一个词更多的分类。</div>
+                        </template>
+                    </div>
+
+                    <div class="grid grid-cols-1 2xl:grid-cols-[1.08fr_0.92fr] gap-6" x-show="preview.summary">
+                        <div class="rounded-2xl border border-gray-100 overflow-hidden">
+                            <div class="px-4 py-3 border-b border-gray-100 bg-gray-50 flex flex-wrap items-center justify-between gap-3">
+                                <div>
+                                    <div class="font-semibold text-gray-800">可进入视频的单词</div>
+                                    <div class="text-xs text-gray-400 mt-1">按词表顺序展示，可手动勾选。系统会先默认推荐前 <span x-text="maxWords"></span> 个可用词。</div>
+                                </div>
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-purple-100 text-purple-700 text-xs font-medium"
+                                        x-text="`已选 ${currentSelectedCount()} / ${maxWords}`"></span>
+                                    <button @click="restoreRecommendedSelection()" type="button"
+                                        class="px-3 py-1.5 rounded-lg border border-gray-200 text-xs text-gray-600 hover:bg-gray-50">
+                                        <i class="fas fa-wand-magic-sparkles mr-1"></i>恢复推荐
+                                    </button>
+                                    <button @click="clearSelectedWords()" type="button"
+                                        class="px-3 py-1.5 rounded-lg border border-gray-200 text-xs text-gray-600 hover:bg-gray-50">
+                                        <i class="fas fa-eraser mr-1"></i>清空
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="divide-y divide-gray-100 max-h-[560px] overflow-y-auto">
+                                <template x-for="entry in readyEntries()" :key="entry.index + '-' + entry.word.id">
+                                    <label class="px-4 py-4 flex gap-4 items-start cursor-pointer hover:bg-gray-50 transition">
+                                        <div class="pt-0.5">
+                                            <input type="checkbox"
+                                                class="w-4 h-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                                                :checked="isWordSelected(entry.word.id)"
+                                                @change="toggleWordSelection(entry)">
+                                        </div>
+                                        <div class="text-xs font-semibold text-purple-600 mt-1" x-text="entry.index"></div>
+                                        <img :src="entry.word.image_url" class="w-16 h-16 rounded-xl object-cover border border-gray-200 bg-gray-50">
+                                        <div class="min-w-0 flex-1">
+                                            <div class="flex items-center gap-2 flex-wrap">
+                                                <div class="font-semibold text-gray-800" x-text="entry.word.word"></div>
+                                                <div class="text-xs text-gray-400" x-text="entry.word.phonetic"></div>
+                                                <span x-show="entry.audio_needs_fill" class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] bg-yellow-100 text-yellow-700">
+                                                    生成时补音频
+                                                </span>
+                                                <span x-show="isWordSelected(entry.word.id)" class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] bg-purple-100 text-purple-700">
+                                                    已选中
+                                                </span>
+                                            </div>
+                                            <div class="text-sm text-gray-500 mt-1" x-text="entry.word.translation"></div>
+                                            <div class="text-sm text-gray-700 mt-2" x-text="entry.word.example_sentence"></div>
+                                            <div class="text-xs text-gray-400 mt-1" x-text="entry.word.example_translation"></div>
+                                        </div>
+                                    </label>
+                                </template>
+
+                                <div x-show="readyEntries().length === 0" class="px-4 py-10 text-center text-sm text-gray-400">
+                                    当前还没有可直接进入视频的单词
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="space-y-6">
+                            <div class="rounded-2xl border border-gray-100 overflow-hidden">
+                                <div class="px-4 py-3 border-b border-gray-100 bg-gray-50">
+                                    <div class="font-semibold text-gray-800">本次会进入视频的单词</div>
+                                    <div class="text-xs text-gray-400 mt-1">这里显示你当前勾选的实际生成词表。</div>
+                                </div>
+                                <div class="divide-y divide-gray-100 max-h-[260px] overflow-y-auto">
+                                    <template x-for="entry in selectedReadyEntries()" :key="entry.index + '-selected-' + entry.word.id">
+                                        <div class="px-4 py-4 flex gap-3 items-start">
+                                            <div class="text-xs font-semibold text-purple-600 mt-1" x-text="entry.index"></div>
+                                            <div class="min-w-0 flex-1">
+                                                <div class="font-semibold text-gray-800" x-text="entry.word.word"></div>
+                                                <div class="text-xs text-gray-400 mt-1" x-text="`${entry.word.translation}${entry.word.phonetic ? ' · ' + entry.word.phonetic : ''}`"></div>
+                                            </div>
+                                            <button @click="toggleWordSelection(entry)" type="button"
+                                                class="text-xs text-gray-400 hover:text-red-500">
+                                                <i class="fas fa-xmark"></i>
+                                            </button>
+                                        </div>
+                                    </template>
+
+                                    <div x-show="selectedReadyEntries().length === 0" class="px-4 py-10 text-center text-sm text-gray-400">
+                                        还没有勾选单词，至少选择 4 个后才能创建任务。
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="rounded-2xl border border-gray-100 overflow-hidden">
+                                <div class="px-4 py-3 border-b border-gray-100 bg-gray-50">
+                                    <div class="font-semibold text-gray-800">阻塞项与缺失素材</div>
+                                    <div class="text-xs text-gray-400 mt-1">这部分词条不会进入第一版分类视频。</div>
+                                </div>
+                                <div class="divide-y divide-gray-100 max-h-[280px] overflow-y-auto">
+                                    <template x-for="entry in blockedEntries()" :key="entry.index + '-' + entry.source_text">
+                                        <div class="px-4 py-4">
+                                            <div class="flex items-center justify-between gap-3">
+                                                <div>
+                                                    <div class="font-medium text-gray-800" x-text="entry.source_text"></div>
+                                                    <div class="text-xs text-gray-400 mt-1" x-text="entry.matched && entry.word ? `${entry.word.word} / ${entry.word.translation}` : '未匹配到 words 表'"></div>
+                                                </div>
+                                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px]"
+                                                    :class="entry.matched ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-500'"
+                                                    x-text="entry.matched ? '缺素材' : '未匹配'"></span>
+                                            </div>
+                                            <div class="flex flex-wrap gap-2 mt-3">
+                                                <template x-if="!entry.matched">
+                                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] bg-gray-100 text-gray-500">建议先创建单词</span>
+                                                </template>
+                                                <template x-for="field in entry.missing_fields" :key="field">
+                                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] bg-red-50 text-red-600 border border-red-100" x-text="field"></span>
+                                                </template>
+                                            </div>
+                                        </div>
+                                    </template>
+
+                                    <div x-show="blockedEntries().length === 0" class="px-4 py-10 text-center text-sm text-gray-400">
+                                        当前没有阻塞项，这个分类很适合直接做视频。
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                <div class="px-5 py-4 border-b border-gray-100 bg-gray-50 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div>
+                        <div class="font-semibold text-gray-800 flex items-center gap-2">
+                            <i class="fas fa-tasks text-indigo-500"></i> 分类视频任务
+                        </div>
+                        <p class="text-xs text-gray-500 mt-1">创建任务后会自动排队生成，列表支持查看进度、视频和封面。</p>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <select x-model="jobFilter" @change="loadJobs()"
+                            class="border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none">
+                            <option value="">全部状态</option>
+                            <option value="pending">等待中</option>
+                            <option value="processing">生成中</option>
+                            <option value="done">已完成</option>
+                            <option value="failed">失败</option>
+                        </select>
+                        <button @click="loadJobs()" class="px-3 py-2 bg-gray-100 rounded-lg text-sm hover:bg-gray-200">
+                            <i class="fas fa-rotate-right mr-1"></i>刷新任务
+                        </button>
+                    </div>
+                </div>
+
+                <div x-show="loadingJobs" class="px-6 py-10 text-center text-sm text-gray-400">
+                    <i class="fas fa-spinner fa-spin mr-2"></i>正在加载任务...
+                </div>
+
+                <div class="overflow-x-auto" x-show="!loadingJobs">
+                    <table class="min-w-full text-sm">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-4 py-3 text-left font-medium text-gray-500">分类</th>
+                                <th class="px-4 py-3 text-left font-medium text-gray-500 w-24">词数</th>
+                                <th class="px-4 py-3 text-left font-medium text-gray-500 w-44">状态</th>
+                                <th class="px-4 py-3 text-left font-medium text-gray-500 w-36">创建时间</th>
+                                <th class="px-4 py-3 text-center font-medium text-gray-500 w-64">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            <template x-for="job in jobs" :key="job.id">
+                                <tr class="hover:bg-gray-50">
+                                    <td class="px-4 py-4">
+                                        <div class="font-semibold text-gray-800" x-text="job.category_name"></div>
+                                        <div class="text-xs text-gray-400 mt-1" x-text="job.category_name_en || '暂无英文分类名'"></div>
+                                        <div class="text-xs text-gray-400 mt-1" x-show="job.parent_category_name" x-text="job.parent_category_name"></div>
+                                    </td>
+                                    <td class="px-4 py-4">
+                                        <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-purple-100 text-purple-700 font-medium" x-text="`${job.word_count} 词`"></span>
+                                    </td>
+                                    <td class="px-4 py-4">
+                                        <div class="flex items-center gap-2">
+                                            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium"
+                                                :class="statusBadgeClass(job.status)"
+                                                x-text="statusText(job.status)"></span>
+                                            <span class="text-xs text-gray-400" x-text="`${job.progress || 0}%`"></span>
+                                        </div>
+                                        <div class="mt-2 h-2 rounded-full bg-gray-100 overflow-hidden">
+                                            <div class="h-full rounded-full bg-gradient-to-r from-purple-500 to-blue-500 transition-all"
+                                                :style="`width: ${Math.max(0, Math.min(100, job.progress || 0))}%`"></div>
+                                        </div>
+                                        <div x-show="job.error_message" class="text-xs text-red-500 mt-2 line-clamp-2" x-text="job.error_message"></div>
+                                    </td>
+                                    <td class="px-4 py-4 text-xs text-gray-500" x-text="formatTime(job.created_at)"></td>
+                                    <td class="px-4 py-4">
+                                        <div class="flex flex-wrap justify-center gap-2">
+                                            <a x-show="job.cover_url" :href="job.cover_url" target="_blank"
+                                                class="inline-flex items-center px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50">
+                                                <i class="fas fa-image mr-1"></i>封面
+                                            </a>
+                                            <a x-show="job.video_url" :href="job.video_url" target="_blank"
+                                                class="inline-flex items-center px-3 py-1.5 rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50">
+                                                <i class="fas fa-play mr-1"></i>视频
+                                            </a>
+                                            <a x-show="job.video_url" :href="job.video_url" download
+                                                class="inline-flex items-center px-3 py-1.5 rounded-lg border border-emerald-200 text-emerald-600 hover:bg-emerald-50">
+                                                <i class="fas fa-download mr-1"></i>下载
+                                            </a>
+                                            <button @click="deleteJob(job)" :disabled="deletingJobId === job.id"
+                                                class="inline-flex items-center px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-40">
+                                                <i class="fas fa-trash mr-1"></i>
+                                                <span x-text="deletingJobId === job.id ? '删除中' : '删除'"></span>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </template>
+
+                            <tr x-show="!loadingJobs && jobs.length === 0">
+                                <td colspan="5" class="px-4 py-12 text-center text-sm text-gray-400">
+                                    当前还没有分类视频任务
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+<script>
+function categoryVideoApp() {
+    return {
+        keyword: '',
+        categories: [],
+        loadingCategories: false,
+        selectedCategory: null,
+        preview: {
+            category: null,
+            default_cover: null,
+            entries: [],
+            selected_entries: [],
+            summary: null
+        },
+        selectedWordIds: [],
+        customCoverUrl: '',
+        customCoverName: '',
+        uploadingCover: false,
+        editableParentCategoryName: '',
+        editableCategoryName: '',
+        editableCategoryNameEn: '',
+        loadingPreview: false,
+        creatingJob: false,
+        maxWords: 12,
+        jobs: [],
+        loadingJobs: false,
+        jobFilter: '',
+        deletingJobId: null,
+        pollTimer: null,
+
+        async init() {
+            await Promise.all([this.loadCategories(), this.loadJobs()]);
+            window.addEventListener('beforeunload', () => this.stopPolling());
+        },
+
+        async loadCategories() {
+            this.loadingCategories = true;
+            try {
+                const params = new URLSearchParams();
+                if (this.keyword) params.set('keyword', this.keyword);
+                const res = await fetch('/marketing/api/category-video/categories?' + params.toString()).then(r => r.json());
+                if (res.success) {
+                    this.categories = res.data || [];
+                    if (this.selectedCategory) {
+                        const stillExists = this.categories.find(c => c.id === this.selectedCategory.id);
+                        if (!stillExists) {
+                            this.selectedCategory = null;
+                            this.preview = { category: null, default_cover: null, entries: [], selected_entries: [], summary: null };
+                            this.selectedWordIds = [];
+                            this.clearCustomCover();
+                            this.editableParentCategoryName = '';
+                            this.editableCategoryName = '';
+                            this.editableCategoryNameEn = '';
+                        }
+                    }
+                } else {
+                    showToast(res.message || '加载分类失败', 'error');
+                }
+            } catch (e) {
+                showToast('加载分类失败: ' + e.message, 'error');
+            } finally {
+                this.loadingCategories = false;
+            }
+        },
+
+        async selectCategory(category) {
+            const previousId = this.selectedCategory?.id || 0;
+            this.selectedCategory = category;
+            if (previousId !== category.id) {
+                this.clearCustomCover();
+                this.editableParentCategoryName = category.parent_name || '';
+                this.editableCategoryName = category.name || '';
+                this.editableCategoryNameEn = category.name_en || '';
+            }
+            await this.loadPreview();
+        },
+
+        async loadPreview() {
+            if (!this.selectedCategory) return;
+            this.loadingPreview = true;
+            try {
+                const params = new URLSearchParams({
+                    category_id: this.selectedCategory.id,
+                    max_words: this.maxWords
+                });
+                const res = await fetch('/marketing/api/category-video/preview?' + params.toString()).then(r => r.json());
+                if (res.success) {
+                    this.preview = res.data;
+                    if (!this.editableCategoryName && this.preview.category?.name) {
+                        this.editableCategoryName = this.preview.category.name;
+                    }
+                    if (!this.editableCategoryNameEn && this.preview.category?.name_en) {
+                        this.editableCategoryNameEn = this.preview.category.name_en;
+                    }
+                    if (!this.editableParentCategoryName && this.preview.category?.parent_name) {
+                        this.editableParentCategoryName = this.preview.category.parent_name;
+                    }
+                    this.restoreRecommendedSelection();
+                } else {
+                    showToast(res.message || '加载预览失败', 'error');
+                }
+            } catch (e) {
+                showToast('加载预览失败: ' + e.message, 'error');
+            } finally {
+                this.loadingPreview = false;
+            }
+        },
+
+        blockedEntries() {
+            return (this.preview.entries || []).filter(entry => !entry.ready);
+        },
+
+        readyEntries() {
+            return (this.preview.entries || []).filter(entry => entry.ready && entry.word);
+        },
+
+        recommendedSelectedWordIds() {
+            return (this.preview.selected_entries || [])
+                .map(entry => entry.word?.id)
+                .filter(Boolean);
+        },
+
+        restoreRecommendedSelection() {
+            this.selectedWordIds = this.recommendedSelectedWordIds();
+        },
+
+        clearSelectedWords() {
+            this.selectedWordIds = [];
+        },
+
+        selectedReadyEntries() {
+            const selectedSet = new Set(this.selectedWordIds.map(id => parseInt(id, 10)));
+            return this.readyEntries().filter(entry => selectedSet.has(entry.word.id));
+        },
+
+        currentSelectedCount() {
+            return this.selectedReadyEntries().length;
+        },
+
+        currentAutoFillCount() {
+            return this.selectedReadyEntries().filter(entry => entry.audio_needs_fill).length;
+        },
+
+        canCreateJob() {
+            return this.currentSelectedCount() >= 4;
+        },
+
+        async uploadCustomCover(event) {
+            const file = event?.target?.files?.[0];
+            if (!file || this.uploadingCover) return;
+            this.uploadingCover = true;
+            try {
+                const formData = new FormData();
+                formData.append('image', file);
+                const res = await fetch('/marketing/api/category-video/upload-cover', {
+                    method: 'POST',
+                    body: formData
+                }).then(r => r.json());
+
+                if (!res.success) {
+                    showToast(res.message || '上传封面失败', 'error');
+                    return;
+                }
+
+                this.customCoverUrl = res.data?.url || '';
+                this.customCoverName = res.data?.original_name || file.name || '';
+                showToast('封面图上传成功');
+            } catch (e) {
+                showToast('上传封面失败: ' + e.message, 'error');
+            } finally {
+                this.uploadingCover = false;
+                if (this.$refs.customCoverInput) this.$refs.customCoverInput.value = '';
+            }
+        },
+
+        clearCustomCover() {
+            this.customCoverUrl = '';
+            this.customCoverName = '';
+            if (this.$refs.customCoverInput) this.$refs.customCoverInput.value = '';
+        },
+
+        isWordSelected(wordId) {
+            return this.selectedWordIds.includes(wordId);
+        },
+
+        toggleWordSelection(entry) {
+            if (!entry || !entry.word) return;
+            const wordId = entry.word.id;
+            const currentMax = Number(this.maxWords) || 12;
+            if (this.isWordSelected(wordId)) {
+                this.selectedWordIds = this.selectedWordIds.filter(id => id !== wordId);
+                return;
+            }
+            if (this.currentSelectedCount() >= currentMax) {
+                showToast(`最多只能选择 ${currentMax} 个词`, 'error');
+                return;
+            }
+            this.selectedWordIds = [...this.selectedWordIds, wordId];
+        },
+
+        async createJob() {
+            if (!this.selectedCategory || !this.canCreateJob() || this.creatingJob) return;
+            this.creatingJob = true;
+            try {
+                const res = await fetch('/marketing/api/category-video/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        category_id: this.selectedCategory.id,
+                        max_words: this.maxWords,
+                        selected_word_ids: this.selectedWordIds,
+                        custom_cover_url: this.customCoverUrl || '',
+                        category_name: (this.editableCategoryName || '').trim(),
+                        category_name_en: (this.editableCategoryNameEn || '').trim(),
+                        parent_category_name: (this.editableParentCategoryName || '').trim()
+                    })
+                }).then(r => r.json());
+
+                if (!res.success) {
+                    showToast(res.message || '创建任务失败', 'error');
+                    return;
+                }
+
+                showToast(res.message || '任务已创建');
+                await this.loadJobs();
+            } catch (e) {
+                showToast('创建任务失败: ' + e.message, 'error');
+            } finally {
+                this.creatingJob = false;
+            }
+        },
+
+        async loadJobs() {
+            this.loadingJobs = true;
+            try {
+                const params = new URLSearchParams({ page_size: 20 });
+                if (this.jobFilter) params.set('status', this.jobFilter);
+                const res = await fetch('/marketing/api/category-video/jobs?' + params.toString()).then(r => r.json());
+                if (res.success) {
+                    this.jobs = res.data.list || [];
+                    this.syncPolling();
+                } else {
+                    showToast(res.message || '加载任务失败', 'error');
+                }
+            } catch (e) {
+                showToast('加载任务失败: ' + e.message, 'error');
+            } finally {
+                this.loadingJobs = false;
+            }
+        },
+
+        async deleteJob(job) {
+            if (!job || this.deletingJobId) return;
+            if (!confirm(`确定删除任务「${job.category_name}」吗？`)) return;
+            this.deletingJobId = job.id;
+            try {
+                const res = await fetch(`/marketing/api/category-video/job/${job.id}`, {
+                    method: 'DELETE'
+                }).then(r => r.json());
+                if (!res.success) {
+                    showToast(res.message || '删除任务失败', 'error');
+                    return;
+                }
+                showToast('任务已删除');
+                await this.loadJobs();
+            } catch (e) {
+                showToast('删除任务失败: ' + e.message, 'error');
+            } finally {
+                this.deletingJobId = null;
+            }
+        },
+
+        statusText(status) {
+            return {
+                pending: '等待中',
+                processing: '生成中',
+                done: '已完成',
+                failed: '失败'
+            }[status] || status;
+        },
+
+        statusBadgeClass(status) {
+            return {
+                pending: 'bg-gray-100 text-gray-600',
+                processing: 'bg-yellow-100 text-yellow-700',
+                done: 'bg-green-100 text-green-700',
+                failed: 'bg-red-100 text-red-600'
+            }[status] || 'bg-gray-100 text-gray-600';
+        },
+
+        formatTime(value) {
+            if (!value) return '-';
+            const normalized = String(value).replace(' ', 'T');
+            const d = new Date(normalized);
+            if (Number.isNaN(d.getTime())) return value;
+            const pad = num => String(num).padStart(2, '0');
+            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        },
+
+        hasActiveJobs() {
+            return this.jobs.some(job => job.status === 'pending' || job.status === 'processing');
+        },
+
+        syncPolling() {
+            if (this.hasActiveJobs()) {
+                if (!this.pollTimer) {
+                    this.pollTimer = setInterval(() => this.loadJobs(), 8000);
+                }
+            } else {
+                this.stopPolling();
+            }
+        },
+
+        stopPolling() {
+            if (this.pollTimer) {
+                clearInterval(this.pollTimer);
+                this.pollTimer = null;
+            }
+        }
+    };
+}
+</script>

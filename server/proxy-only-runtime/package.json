@@ -1,0 +1,17 @@
+{
+  "name": "english-ai-proxy-runtime",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Standalone proxy-only runtime for the US AI relay host",
+  "main": "proxy/app.js",
+  "scripts": {
+    "start": "node proxy/app.js"
+  },
+  "dependencies": {
+    "axios": "^1.6.2",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "google-auth-library": "^10.6.2",
+    "sharp": "^0.33.5"
+  }
+}

@@ -1,0 +1,18 @@
+<article class="content-card book-card">
+  <a class="content-cover" href="/books/<%= book.id %>">
+    <% if (book.cover_url) { %>
+      <img src="<%= book.cover_url %>" alt="<%= book.title || book.title_en || '绘本封面' %>" loading="lazy">
+    <% } else { %>
+      <div class="cover-placeholder"><span><%= (book.title_en || book.title || 'Book').slice(0, 2).toUpperCase() %></span></div>
+    <% } %>
+  </a>
+  <div class="content-info">
+    <div class="pill-row">
+      <span><%= book.category_name || 'Picture Book' %></span>
+      <span>Lv.<%= book.difficulty_level || 3 %></span>
+    </div>
+    <h3><a href="/books/<%= book.id %>"><%= book.title || '绘本' %></a></h3>
+    <p><%= book.title_en || 'A story for visual English learning.' %></p>
+    <a class="circle-link" href="/books/<%= book.id %>" aria-label="查看绘本详情">›</a>
+  </div>
+</article>

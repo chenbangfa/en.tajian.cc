@@ -43,7 +43,10 @@ app.use('/api/voice', require('./routes/voice'));
 app.use('/api/podcast', require('./routes/podcast'));
 app.use('/api/podcast-categories', require('./routes/podcast_categories'));
 app.use('/api/checkin', require('./routes/checkin'));
+app.use('/api/ielts', require('./routes/ielts'));
 app.use('/api/users', require('./routes/users'));
+app.use('/api/pay', require('./routes/pay'));
+app.use('/api/promotion', require('./routes/promotion'));
 app.use('/api/photo-read', require('./routes/photo_read'));
 app.use('/api/dialogue', require('./routes/dialogue'));
 app.use('/api/picture-books', require('./routes/picture_books'));
@@ -63,9 +66,9 @@ app.use((err, req, res, next) => {
 
     return res.status(err.status || 500).render('404', {
         pageKey: '404',
-        metaTitle: '页面暂不可用 | 她简看图学英语',
+        metaTitle: '页面暂不可用 | 看图学英语',
         metaDescription: '页面暂时不可用，你可以先回到首页、绘本馆或场景学习页继续浏览。',
-        metaKeywords: '英语启蒙,她简看图学英语',
+        metaKeywords: '英语启蒙,看图学英语',
         canonicalUrl: `${process.env.BASE_URL || 'https://english.tajian.cc'}${req.path}`,
         metaImage: ''
     });
@@ -82,9 +85,9 @@ app.use((req, res) => {
 
     return res.status(404).render('404', {
         pageKey: '404',
-        metaTitle: '页面未找到 | 她简看图学英语',
+        metaTitle: '页面未找到 | 看图学英语',
         metaDescription: '这个页面暂时还没准备好，你可以先回到首页、绘本馆或场景学习页继续浏览。',
-        metaKeywords: '英语启蒙,她简看图学英语',
+        metaKeywords: '英语启蒙,看图学英语',
         canonicalUrl: `${process.env.BASE_URL || 'https://english.tajian.cc'}${req.path}`,
         metaImage: ''
     });

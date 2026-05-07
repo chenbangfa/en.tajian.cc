@@ -1,14 +1,27 @@
 /* pages/scene/detail/detail.wxss */
 page {
   background: #f5f6fa;
-  padding-bottom: env(safe-area-inset-bottom);
   overflow-x: hidden;
 }
-.container { min-height: 100vh; padding: 0 0 120rpx; overflow-x: hidden; }
+.container {
+  min-height: 100vh;
+  padding: 0;
+  box-sizing: border-box;
+  overflow-x: hidden;
+}
 
 /* 图片区域 */
-.image-wrap { position: relative; overflow: hidden; background: #111; width: 100%; }
-.main-img { width: 100%; display: block; }
+.image-wrap {
+  position: relative;
+  overflow: hidden;
+  background: #f5f6fa;
+  width: 100%;
+  line-height: 0;
+}
+.main-img {
+  width: 100%;
+  display: block;
+}
 
 /* 热点框 */
 .hotspot {
@@ -49,16 +62,26 @@ page {
 
 /* ===== 词条面板 ===== */
 .word-panel {
-  background: #fff;
-  padding: 28rpx 32rpx;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 45;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1rpx solid rgba(255, 255, 255, 0.9);
+  border-bottom: 0;
+  border-radius: 30rpx 30rpx 0 0;
+  padding: 16rpx 24rpx calc(env(safe-area-inset-bottom) + 14rpx);
+  box-shadow: 0 -8rpx 36rpx rgba(15, 23, 42, 0.13);
 }
-.word-panel.has-assess { padding-bottom: 460rpx; }
 
 /* 词条内容 + 录音按钮 水平布局 */
 .word-row {
   display: flex;
-  align-items: flex-start;
-  gap: 24rpx;
+  align-items: center;
+  gap: 18rpx;
 }
 
 /* 左侧：单词信息 */
@@ -66,42 +89,53 @@ page {
 .word-title-row {
   display: flex;
   align-items: center;
-  gap: 12rpx;
-  margin-bottom: 4rpx;
+  gap: 10rpx;
+  margin-bottom: 8rpx;
 }
 .word-en {
-  font-size: 48rpx;
+  font-size: 40rpx;
   font-weight: 700;
   color: #1a1a2e;
   letter-spacing: 1rpx;
+  line-height: 1.15;
+  max-width: 410rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .word-phonetic {
-  display: block;
-  font-size: 24rpx;
+  display: inline;
+  flex-shrink: 0;
+  font-size: 22rpx;
   color: #888;
   font-style: italic;
-  margin-bottom: 6rpx;
+  line-height: 1.2;
 }
 .word-zh {
   display: block;
-  font-size: 30rpx;
+  font-size: 25rpx;
   color: #444;
   font-weight: 500;
-  margin-bottom: 16rpx;
+  margin-bottom: 12rpx;
+  line-height: 1.2;
+  max-width: 430rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 播放按钮 */
 .voice-actions {
   display: flex;
-  gap: 16rpx;
+  gap: 10rpx;
 }
 .v-btn {
   display: flex;
   align-items: center;
-  gap: 6rpx;
-  padding: 8rpx 20rpx;
-  border-radius: 30rpx;
-  font-size: 22rpx;
+  gap: 5rpx;
+  padding: 7rpx 14rpx;
+  border-radius: 999rpx;
+  font-size: 20rpx;
   font-weight: 500;
 }
 .v-btn.female {
@@ -115,19 +149,20 @@ page {
   color: #0984E3;
 }
 .v-btn.disabled { opacity: 0.35; pointer-events: none; }
-.v-icon { width: 28rpx; height: 28rpx; }
+.v-icon { width: 24rpx; height: 24rpx; }
 
 /* 右侧：录音区 */
 .record-area {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10rpx;
+  gap: 6rpx;
   flex-shrink: 0;
+  width: 104rpx;
 }
 .record-btn {
-  width: 120rpx;
-  height: 120rpx;
+  width: 82rpx;
+  height: 82rpx;
   border-radius: 50%;
   background: linear-gradient(135deg, #e8f5e9, #c8e6c9);
   display: flex;
@@ -147,7 +182,7 @@ page {
   background: linear-gradient(135deg, #fff3cd, #ffe69c);
   box-shadow: 0 8rpx 20rpx rgba(243, 156, 18, 0.25);
 }
-.record-icon { width: 52rpx; height: 52rpx; z-index: 2; }
+.record-icon { width: 36rpx; height: 36rpx; z-index: 2; }
 .record-icon.spin { animation: spin 1.2s linear infinite; }
 .record-time {
   position: absolute;
@@ -162,54 +197,8 @@ page {
   z-index: 3;
 }
 .record-label {
-  font-size: 20rpx;
+  font-size: 19rpx;
   color: #999;
-}
-
-/* ===== 场景翻页导航（底部固定） ===== */
-.scene-nav-bar {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  padding: 20rpx 32rpx calc(env(safe-area-inset-bottom) + 16rpx);
-  box-shadow: 0 -4rpx 20rpx rgba(0, 0, 0, 0.06);
-  z-index: 40;
-}
-.scene-nav-btn {
-  display: flex;
-  align-items: center;
-  gap: 6rpx;
-  font-size: 26rpx;
-  color: #4F46E5;
-  font-weight: 500;
-  padding: 12rpx 24rpx;
-  background: #f0efff;
-  border-radius: 30rpx;
-}
-.scene-nav-btn.disabled {
-  color: #ccc;
-  background: #f5f5f5;
-  pointer-events: none;
-}
-.nav-arrow {
-  font-size: 36rpx;
-  font-weight: 700;
-  line-height: 1;
-}
-.scene-nav-page {
-  font-size: 24rpx;
-  color: #999;
-  max-width: 40%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* ===== 评测结果面板（固定底部全宽，参考 checkin） ===== */

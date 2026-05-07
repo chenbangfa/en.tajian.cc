@@ -1,0 +1,1112 @@
+<div class="space-y-6">
+    <div class="rounded-3xl bg-gradient-to-r from-emerald-900 via-emerald-700 to-teal-600 text-white p-7 shadow-sm overflow-hidden relative">
+        <div class="absolute -right-10 -top-10 w-48 h-48 rounded-full bg-white/10"></div>
+        <div class="absolute right-20 bottom-0 w-28 h-28 rounded-full bg-lime-200/10"></div>
+        <div class="relative z-10 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-5">
+            <div>
+                <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 text-sm mb-4">
+                    <i class="fas fa-graduation-cap"></i>
+                    IELTS Learning Path
+                </div>
+                <h1 class="text-3xl font-bold tracking-tight">IELTS 课程管理</h1>
+                <p class="mt-2 text-emerald-50 max-w-2xl">把 IELTS 做成长期计划：Day 2、Day 30、Day 100、Day 200 都可以在后台维护，每个模块可拆成多个 items，让小程序逐关通关。</p>
+            </div>
+            <button onclick="openCourseModal(true)" class="px-5 py-3 rounded-2xl bg-white text-emerald-800 font-semibold hover:bg-emerald-50 transition shadow-sm">
+                <i class="fas fa-plus mr-2"></i>新增课程
+            </button>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
+        <section class="xl:col-span-4 bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+            <div class="p-5 border-b border-gray-100 flex items-center justify-between">
+                <div>
+                    <h2 class="text-lg font-bold text-gray-900">课程包</h2>
+                    <p class="text-sm text-gray-400 mt-1">选择一个课程后编辑 Day 内容</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button onclick="openCourseModal(false)" class="w-10 h-10 rounded-xl bg-gray-50 hover:bg-gray-100 text-gray-500" title="编辑当前课程">
+                        <i class="fas fa-pen"></i>
+                    </button>
+                    <button onclick="loadCourses()" class="w-10 h-10 rounded-xl bg-gray-50 hover:bg-gray-100 text-gray-500" title="刷新">
+                        <i class="fas fa-rotate"></i>
+                    </button>
+                </div>
+            </div>
+            <div id="courseList" class="divide-y divide-gray-100 max-h-[680px] overflow-y-auto"></div>
+        </section>
+
+        <section class="xl:col-span-3 bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+            <div class="p-5 border-b border-gray-100 flex items-center justify-between">
+                <div>
+                    <h2 class="text-lg font-bold text-gray-900">学习 Day</h2>
+                    <p class="text-sm text-gray-400 mt-1">按天管理课程节奏</p>
+                </div>
+                <button onclick="openDayModal()" class="px-3 py-2 rounded-xl bg-emerald-50 text-emerald-700 text-sm font-semibold hover:bg-emerald-100">
+                    <i class="fas fa-plus mr-1"></i>Day
+                </button>
+            </div>
+            <div id="dayList" class="divide-y divide-gray-100 max-h-[680px] overflow-y-auto">
+                <div class="p-6 text-sm text-gray-400">请先选择课程</div>
+            </div>
+        </section>
+
+        <section class="xl:col-span-5 bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+            <div class="p-5 border-b border-gray-100 flex items-center justify-between gap-4">
+                <div>
+                    <h2 id="detailTitle" class="text-lg font-bold text-gray-900">Day 内容</h2>
+                    <p id="detailSub" class="text-sm text-gray-400 mt-1">选择 Day 后编辑模块</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button onclick="openDayModal(true)" class="px-3 py-2 rounded-xl bg-gray-50 text-gray-700 text-sm font-semibold hover:bg-gray-100">
+                        <i class="fas fa-pen mr-1"></i>编辑 Day
+                    </button>
+                    <button onclick="openModuleModal()" class="px-3 py-2 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700">
+                        <i class="fas fa-plus mr-1"></i>模块
+                    </button>
+                </div>
+            </div>
+            <div id="moduleList" class="p-5 space-y-3 max-h-[680px] overflow-y-auto">
+                <div class="rounded-2xl border border-dashed border-gray-200 p-8 text-center text-gray-400">请先选择 Day</div>
+            </div>
+        </section>
+    </div>
+</div>
+
+<div id="courseModal" class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-3xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+        <div class="p-6 border-b border-gray-100 flex items-center justify-between">
+            <h3 id="courseModalTitle" class="text-xl font-bold text-gray-900">课程信息</h3>
+            <button onclick="closeModal('courseModal')" class="w-10 h-10 rounded-full bg-gray-50 hover:bg-gray-100"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <input id="courseId" type="hidden">
+            <label class="space-y-1 md:col-span-2"><span class="text-sm text-gray-500">课程 Code</span><input id="courseCode" class="form-input" placeholder="ielts-general-7-foundation"></label>
+            <label class="space-y-1"><span class="text-sm text-gray-500">中文标题</span><input id="courseTitle" class="form-input"></label>
+            <label class="space-y-1"><span class="text-sm text-gray-500">英文标题</span><input id="courseTitleEn" class="form-input"></label>
+            <label class="space-y-1 md:col-span-2"><span class="text-sm text-gray-500">描述</span><textarea id="courseDescription" rows="3" class="form-input"></textarea></label>
+            <label class="space-y-1"><span class="text-sm text-gray-500">目标分数</span><input id="courseTarget" class="form-input" placeholder="7.0"></label>
+            <label class="space-y-1"><span class="text-sm text-gray-500">阶段标签</span><input id="courseLevel" class="form-input" placeholder="基础薄弱 / 长期路线"></label>
+            <label class="space-y-1"><span class="text-sm text-gray-500">总天数</span><input id="courseDuration" type="number" class="form-input"></label>
+            <label class="space-y-1"><span class="text-sm text-gray-500">每日分钟</span><input id="courseMinutes" type="number" class="form-input"></label>
+            <label class="space-y-1"><span class="text-sm text-gray-500">排序</span><input id="courseSort" type="number" class="form-input"></label>
+            <label class="space-y-1"><span class="text-sm text-gray-500">状态</span><select id="courseActive" class="form-input"><option value="1">启用</option><option value="0">停用</option></select></label>
+            <label class="space-y-1 md:col-span-2"><span class="text-sm text-gray-500">Metadata JSON</span><textarea id="courseMetadata" rows="8" class="font-mono text-xs form-input"></textarea></label>
+        </div>
+        <div class="p-6 border-t border-gray-100 flex justify-end gap-3">
+            <button onclick="closeModal('courseModal')" class="px-5 py-2.5 rounded-xl bg-gray-100 text-gray-700">取消</button>
+            <button onclick="saveCourse()" class="px-5 py-2.5 rounded-xl bg-emerald-600 text-white font-semibold">保存课程</button>
+        </div>
+    </div>
+</div>
+
+<div id="dayModal" class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-3xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+        <div class="p-6 border-b border-gray-100 flex items-center justify-between">
+            <h3 id="dayModalTitle" class="text-xl font-bold text-gray-900">Day 信息</h3>
+            <button onclick="closeModal('dayModal')" class="w-10 h-10 rounded-full bg-gray-50 hover:bg-gray-100"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <input id="dayId" type="hidden">
+            <label class="space-y-1"><span class="text-sm text-gray-500">Day 编号</span><input id="dayNumber" type="number" class="form-input"></label>
+            <label class="space-y-1"><span class="text-sm text-gray-500">预计分钟</span><input id="dayMinutes" type="number" class="form-input"></label>
+            <label class="space-y-1 md:col-span-2"><span class="text-sm text-gray-500">标题</span><input id="dayTitle" class="form-input"></label>
+            <label class="space-y-1 md:col-span-2"><span class="text-sm text-gray-500">主题</span><input id="dayTheme" class="form-input"></label>
+            <label class="space-y-1 md:col-span-2"><span class="text-sm text-gray-500">今日目标</span><textarea id="dayObjective" rows="3" class="form-input"></textarea></label>
+            <label class="space-y-1 md:col-span-2"><span class="text-sm text-gray-500">明日预告</span><textarea id="dayPreview" rows="3" class="form-input"></textarea></label>
+            <label class="space-y-1"><span class="text-sm text-gray-500">状态</span><select id="dayActive" class="form-input"><option value="1">启用</option><option value="0">停用</option></select></label>
+            <label class="space-y-1 md:col-span-2"><span class="text-sm text-gray-500">Metadata JSON</span><textarea id="dayMetadata" rows="6" class="font-mono text-xs form-input"></textarea></label>
+        </div>
+        <div class="p-6 border-t border-gray-100 flex justify-between gap-3">
+            <button onclick="deleteCurrentDay()" class="px-5 py-2.5 rounded-xl bg-red-50 text-red-600">删除 Day</button>
+            <div class="flex gap-3">
+                <button onclick="closeModal('dayModal')" class="px-5 py-2.5 rounded-xl bg-gray-100 text-gray-700">取消</button>
+                <button onclick="saveDay()" class="px-5 py-2.5 rounded-xl bg-emerald-600 text-white font-semibold">保存 Day</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="moduleModal" class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-3xl shadow-xl w-full max-w-4xl max-h-[92vh] overflow-y-auto">
+        <div class="p-6 border-b border-gray-100 flex items-center justify-between">
+            <h3 id="moduleModalTitle" class="text-xl font-bold text-gray-900">模块内容</h3>
+            <button onclick="closeModal('moduleModal')" class="w-10 h-10 rounded-full bg-gray-50 hover:bg-gray-100"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="p-6 grid grid-cols-1 md:grid-cols-4 gap-4">
+            <input id="moduleId" type="hidden">
+            <label class="space-y-1"><span class="text-sm text-gray-500">类型</span><select id="moduleType" class="form-input"><option value="goal">goal</option><option value="vocabulary">vocabulary</option><option value="pronunciation">pronunciation</option><option value="grammar">grammar</option><option value="grammar_drill">grammar_drill</option><option value="listening">listening</option><option value="podcast_listening">podcast_listening</option><option value="shadowing">shadowing</option><option value="speaking">speaking</option><option value="speaking_output">speaking_output</option><option value="writing">writing</option><option value="sentence_builder">sentence_builder</option><option value="typing_writing">typing_writing</option><option value="review">review</option><option value="quiz">quiz</option></select></label>
+            <label class="space-y-1 md:col-span-2"><span class="text-sm text-gray-500">标题</span><input id="moduleTitle" class="form-input"></label>
+            <label class="space-y-1"><span class="text-sm text-gray-500">排序</span><input id="moduleSort" type="number" class="form-input"></label>
+            <label class="space-y-1"><span class="text-sm text-gray-500">分钟</span><input id="moduleMinutes" type="number" class="form-input"></label>
+            <label class="space-y-1"><span class="text-sm text-gray-500">必修</span><select id="moduleRequired" class="form-input"><option value="1">必修</option><option value="0">选修</option></select></label>
+            <div id="vocabularyEditor" class="hidden md:col-span-4 rounded-3xl border border-emerald-100 bg-emerald-50/60 p-4">
+                <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-4">
+                    <div>
+                        <div class="text-sm font-bold text-emerald-900">词库关联列表</div>
+                        <div class="text-xs text-emerald-700 mt-1">输入单词后添加：词库已存在则复用，不存在则保存模块时自动插入 words 表。</div>
+                    </div>
+                    <button type="button" onclick="hydrateVocabularyFromJson()" class="px-3 py-2 rounded-xl bg-white text-emerald-700 border border-emerald-100 text-sm font-semibold hover:bg-emerald-50">
+                        <i class="fas fa-code mr-1"></i>从 JSON 读取词表
+                    </button>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-12 gap-3">
+                    <label class="md:col-span-3 space-y-1">
+                        <span class="text-xs text-emerald-700">英文单词</span>
+                        <input id="vocabWordInput" class="form-input bg-white" placeholder="例如 improve">
+                    </label>
+                    <label class="md:col-span-3 space-y-1">
+                        <span class="text-xs text-emerald-700">中文释义（新词可填）</span>
+                        <input id="vocabTranslationInput" class="form-input bg-white" placeholder="例如 提高">
+                    </label>
+                    <label class="md:col-span-4 space-y-1">
+                        <span class="text-xs text-emerald-700">搜索词库</span>
+                        <input id="vocabSearchInput" class="form-input bg-white" placeholder="搜索已有 words 表">
+                    </label>
+                    <div class="md:col-span-2 flex items-end">
+                        <button type="button" onclick="addVocabularyWordFromInputs()" class="w-full px-4 py-3 rounded-2xl bg-emerald-600 text-white font-semibold hover:bg-emerald-700">
+                            <i class="fas fa-plus mr-1"></i>添加
+                        </button>
+                    </div>
+                </div>
+                <div id="vocabSearchResults" class="mt-3 flex flex-wrap gap-2"></div>
+                <div id="vocabWordList" class="mt-4 space-y-2"></div>
+            </div>
+            <div id="grammarEditor" class="hidden md:col-span-4 rounded-3xl border border-blue-100 bg-blue-50/60 p-4">
+                <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-4">
+                    <div>
+                        <div class="text-sm font-bold text-blue-900">语法训练列表</div>
+                        <div class="text-xs text-blue-700 mt-1">语法独立管理，不关联 words 表；每条语法可配置结构、讲解、例句、翻译和过关分数。</div>
+                    </div>
+                    <button type="button" onclick="hydrateGrammarFromJson()" class="px-3 py-2 rounded-xl bg-white text-blue-700 border border-blue-100 text-sm font-semibold hover:bg-blue-50">
+                        <i class="fas fa-code mr-1"></i>从 JSON 读取语法
+                    </button>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-12 gap-3">
+                    <label class="md:col-span-3 space-y-1">
+                        <span class="text-xs text-blue-700">语法点标题</span>
+                        <input id="grammarTitleInput" class="form-input bg-white" placeholder="例如 I want to...">
+                    </label>
+                    <label class="md:col-span-3 space-y-1">
+                        <span class="text-xs text-blue-700">句型结构</span>
+                        <input id="grammarPatternInput" class="form-input bg-white" placeholder="I want to + verb">
+                    </label>
+                    <label class="md:col-span-3 space-y-1">
+                        <span class="text-xs text-blue-700">中文含义</span>
+                        <input id="grammarMeaningInput" class="form-input bg-white" placeholder="我想要做……">
+                    </label>
+                    <label class="md:col-span-3 space-y-1">
+                        <span class="text-xs text-blue-700">过关分数</span>
+                        <input id="grammarPassScoreInput" type="number" class="form-input bg-white" value="80">
+                    </label>
+                    <label class="md:col-span-6 space-y-1">
+                        <span class="text-xs text-blue-700">训练例句</span>
+                        <input id="grammarExampleInput" class="form-input bg-white" placeholder="I want to learn English.">
+                    </label>
+                    <label class="md:col-span-6 space-y-1">
+                        <span class="text-xs text-blue-700">例句翻译</span>
+                        <input id="grammarTranslationInput" class="form-input bg-white" placeholder="我想学英语。">
+                    </label>
+                    <label class="md:col-span-10 space-y-1">
+                        <span class="text-xs text-blue-700">语法讲解</span>
+                        <input id="grammarExplanationInput" class="form-input bg-white" placeholder="说明结构、用法和注意点">
+                    </label>
+                    <div class="md:col-span-2 flex items-end">
+                        <button type="button" onclick="addGrammarItemFromInputs()" class="w-full px-4 py-3 rounded-2xl bg-blue-600 text-white font-semibold hover:bg-blue-700">
+                            <i class="fas fa-plus mr-1"></i>添加
+                        </button>
+                    </div>
+                </div>
+                <div id="grammarItemList" class="mt-4 space-y-2"></div>
+            </div>
+            <div id="podcastEditor" class="hidden md:col-span-4 rounded-3xl border border-sky-100 bg-sky-50/60 p-4">
+                <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-4">
+                    <div>
+                        <div class="text-sm font-bold text-sky-900">绑定磨耳朵文章</div>
+                        <div class="text-xs text-sky-700 mt-1">听力/口语/写作模块绑定 podcast_contents 后，小程序会复用磨耳朵文章完成对应任务，不再单独维护 Content JSON。</div>
+                    </div>
+                    <span id="podcastBoundBadge" class="px-3 py-1 rounded-full bg-white text-sky-700 border border-sky-100 text-xs">未绑定</span>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-12 gap-3">
+                    <label class="md:col-span-3 space-y-1">
+                        <span class="text-xs text-sky-700">文章ID</span>
+                        <input id="podcastContentIdInput" type="number" class="form-input bg-white" placeholder="podcast_content_id" oninput="syncPodcastToJson()">
+                    </label>
+                    <label class="md:col-span-7 space-y-1">
+                        <span class="text-xs text-sky-700">搜索文章</span>
+                        <input id="podcastSearchInput" class="form-input bg-white" placeholder="输入标题关键词">
+                    </label>
+                    <label class="md:col-span-2 space-y-1">
+                        <span class="text-xs text-sky-700">过关分</span>
+                        <input id="podcastPassScoreInput" type="number" class="form-input bg-white" value="80" oninput="syncPodcastToJson()">
+                    </label>
+                </div>
+                <div id="podcastSearchResults" class="mt-3 space-y-2"></div>
+            </div>
+            <label id="moduleContentWrap" class="space-y-1 md:col-span-4"><span class="text-sm text-gray-500">Content JSON</span><textarea id="moduleContent" rows="18" class="font-mono text-xs form-input" spellcheck="false"></textarea></label>
+            <div id="moduleHintBox" class="md:col-span-4 rounded-2xl bg-emerald-50 border border-emerald-100 p-4 text-sm text-emerald-800 leading-6">
+                <b>计划型模块提示：</b>可以直接写 <code>items</code> 数组控制小任务。没有写 items 时，系统会自动从 words / patterns / sentences / prompt 拆任务。
+                听力、口语、写作模块可直接绑定磨耳朵文章；其他模块仍可用 JSON 的 <code>items</code> 数组控制小任务。
+            </div>
+        </div>
+        <div class="p-6 border-t border-gray-100 flex justify-between gap-3">
+            <button onclick="deleteCurrentModule()" class="px-5 py-2.5 rounded-xl bg-red-50 text-red-600">删除模块</button>
+            <div class="flex gap-3">
+                <button onclick="formatModuleJson()" class="px-5 py-2.5 rounded-xl bg-gray-100 text-gray-700">格式化 JSON</button>
+                <button onclick="closeModal('moduleModal')" class="px-5 py-2.5 rounded-xl bg-gray-100 text-gray-700">取消</button>
+                <button onclick="saveModule()" class="px-5 py-2.5 rounded-xl bg-emerald-600 text-white font-semibold">保存模块</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .form-input { width: 100%; border: 1px solid #e5e7eb; border-radius: 0.9rem; padding: 0.72rem 0.9rem; outline: none; background: #fff; }
+    .form-input:focus { border-color: #10b981; box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12); }
+</style>
+
+<script>
+    let courses = [];
+    let days = [];
+    let modules = [];
+    let currentCourse = null;
+    let currentDay = null;
+    let currentModule = null;
+    let moduleVocabularyWords = [];
+    let moduleGrammarItems = [];
+    let vocabSearchCandidates = [];
+    let podcastSearchCandidates = [];
+    let modulePodcastContent = null;
+
+    function prettyJson(value) {
+        return JSON.stringify(value || {}, null, 2);
+    }
+
+    function readJson(id) {
+        const raw = document.getElementById(id).value.trim();
+        if (!raw) return {};
+        return JSON.parse(raw);
+    }
+
+    function normalizeVocabularyEntry(entry) {
+        if (Array.isArray(entry)) {
+            return {
+                word_id: entry[4] || null,
+                word: entry[0] || '',
+                translation: entry[1] || '',
+                example_sentence: entry[2] || '',
+                example_translation: entry[3] || ''
+            };
+        }
+        if (typeof entry === 'string') return { word_id: null, word: entry, translation: '' };
+        const raw = entry || {};
+        return {
+            word_id: raw.word_id || raw.wordId || raw.id || null,
+            word: raw.word || raw.text || raw.title || '',
+            translation: raw.translation || raw.meaning || raw.cn || '',
+            phonetic: raw.phonetic || '',
+            example_sentence: raw.example_sentence || raw.example || raw.sentence || '',
+            example_translation: raw.example_translation || raw.exampleTranslation || raw.example_cn || '',
+            grammar_explanation: raw.grammar_explanation || raw.grammarExplanation || raw.grammar || '',
+            audio_url_female: raw.audio_url_female || '',
+            audio_url_male: raw.audio_url_male || '',
+            example_audio_female: raw.example_audio_female || '',
+            example_audio_male: raw.example_audio_male || ''
+        };
+    }
+
+    function getVocabularyWordsFromContent(content) {
+        const source = Array.isArray(content.words) ? content.words : (Array.isArray(content.word_refs) ? content.word_refs : []);
+        return source.map(normalizeVocabularyEntry).filter(item => item.word_id || item.word);
+    }
+
+    function isDuplicateVocabularyWord(word) {
+        const key = String(word.word || '').trim().toLowerCase();
+        const id = Number(word.word_id || 0);
+        return moduleVocabularyWords.some(item => (id && Number(item.word_id) === id) || (key && String(item.word || '').trim().toLowerCase() === key));
+    }
+
+    function addVocabularyWord(word) {
+        const normalized = normalizeVocabularyEntry(word);
+        if (!normalized.word) return showToast('请先输入英文单词', 'error');
+        if (isDuplicateVocabularyWord(normalized)) return showToast('这个单词已在列表中', 'error');
+        moduleVocabularyWords.push(normalized);
+        renderVocabularyWords();
+        syncVocabularyToJson();
+    }
+
+    function addVocabularyWordFromInputs() {
+        addVocabularyWord({
+            word: document.getElementById('vocabWordInput').value.trim(),
+            translation: document.getElementById('vocabTranslationInput').value.trim()
+        });
+        document.getElementById('vocabWordInput').value = '';
+        document.getElementById('vocabTranslationInput').value = '';
+    }
+
+    function addVocabularyCandidate(index) {
+        const candidate = vocabSearchCandidates[Number(index)];
+        if (candidate) addVocabularyWord(candidate);
+    }
+
+    function removeVocabularyWord(index) {
+        moduleVocabularyWords.splice(Number(index), 1);
+        renderVocabularyWords();
+        syncVocabularyToJson();
+    }
+
+    function moveVocabularyWord(index, delta) {
+        const from = Number(index);
+        const to = from + Number(delta);
+        if (to < 0 || to >= moduleVocabularyWords.length) return;
+        const [item] = moduleVocabularyWords.splice(from, 1);
+        moduleVocabularyWords.splice(to, 0, item);
+        renderVocabularyWords();
+        syncVocabularyToJson();
+    }
+
+    function renderVocabularyWords() {
+        const box = document.getElementById('vocabWordList');
+        if (!box) return;
+        if (!moduleVocabularyWords.length) {
+            box.innerHTML = '<div class="rounded-2xl border border-dashed border-emerald-200 bg-white/70 p-5 text-center text-sm text-emerald-700">还没有单词。可以输入新词，或搜索 words 表后点选加入。</div>';
+            return;
+        }
+        box.innerHTML = moduleVocabularyWords.map((word, index) => `
+            <div class="rounded-2xl bg-white border border-emerald-100 p-3 flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span class="w-7 h-7 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xs font-bold">${index + 1}</span>
+                        <span class="font-bold text-gray-900">${escapeHtml(word.word)}</span>
+                        ${word.word_id ? `<span class="px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 text-xs">words#${word.word_id}</span>` : '<span class="px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 text-xs">新词待入库</span>'}
+                        ${word.phonetic ? `<span class="text-xs text-gray-400">${escapeHtml(word.phonetic)}</span>` : ''}
+                    </div>
+                    <div class="mt-1 text-sm text-gray-600">${escapeHtml(word.translation || '未填中文释义')}</div>
+                    ${word.example_sentence ? `<div class="mt-1 text-xs text-gray-500">${escapeHtml(word.example_sentence)}</div>` : ''}
+                    ${word.grammar_explanation ? `<div class="mt-1 text-xs text-emerald-700 line-clamp-2">${escapeHtml(word.grammar_explanation)}</div>` : ''}
+                </div>
+                <div class="flex items-center gap-1 shrink-0">
+                    <button type="button" onclick="moveVocabularyWord(${index}, -1)" class="w-8 h-8 rounded-lg bg-gray-50 text-gray-500 hover:bg-gray-100" title="上移"><i class="fas fa-arrow-up"></i></button>
+                    <button type="button" onclick="moveVocabularyWord(${index}, 1)" class="w-8 h-8 rounded-lg bg-gray-50 text-gray-500 hover:bg-gray-100" title="下移"><i class="fas fa-arrow-down"></i></button>
+                    <button type="button" onclick="removeVocabularyWord(${index})" class="w-8 h-8 rounded-lg bg-red-50 text-red-500 hover:bg-red-100" title="删除"><i class="fas fa-times"></i></button>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function syncVocabularyToJson() {
+        if (!['vocabulary', 'pronunciation'].includes(document.getElementById('moduleType').value)) return;
+        let content = {};
+        try { content = readJson('moduleContent'); } catch (_) { content = {}; }
+        content.words = moduleVocabularyWords.map(word => ({
+            word_id: word.word_id || null,
+            word: word.word || '',
+            translation: word.translation || '',
+            phonetic: word.phonetic || '',
+            example_sentence: word.example_sentence || '',
+            example_translation: word.example_translation || '',
+            grammar_explanation: word.grammar_explanation || ''
+        }));
+        document.getElementById('moduleContent').value = prettyJson(content);
+    }
+
+    function hydrateVocabularyFromJson() {
+        try {
+            const content = readJson('moduleContent');
+            moduleVocabularyWords = getVocabularyWordsFromContent(content);
+            renderVocabularyWords();
+            showToast('已从 JSON 读取词表');
+        } catch (error) {
+            showToast('JSON 格式不正确', 'error');
+        }
+    }
+
+    function toggleVocabularyEditor() {
+        const editor = document.getElementById('vocabularyEditor');
+        if (!editor) return;
+        const isVocabularyLike = ['vocabulary', 'pronunciation'].includes(document.getElementById('moduleType').value);
+        editor.classList.toggle('hidden', !isVocabularyLike);
+        if (isVocabularyLike) renderVocabularyWords();
+    }
+
+    function isGrammarModuleType(type) {
+        return type === 'grammar' || type === 'grammar_drill';
+    }
+
+    function normalizeGrammarEntry(entry, index = 0) {
+        const raw = entry || {};
+        const exampleSentence = raw.example_sentence || raw.exampleSentence || raw.sentence || raw.prompt || '';
+        return {
+            id: raw.id || null,
+            sort_order: Number(raw.sort_order || raw.sortOrder || index + 1),
+            title: raw.title || raw.pattern || exampleSentence || `语法训练 ${index + 1}`,
+            pattern: raw.pattern || raw.structure || '',
+            meaning: raw.meaning || raw.translation || raw.cn || '',
+            explanation: raw.explanation || raw.grammar_explanation || raw.grammar || '',
+            example_sentence: exampleSentence,
+            example_translation: raw.example_translation || raw.exampleTranslation || raw.translation || '',
+            target_output: raw.target_output || raw.targetOutput || exampleSentence,
+            pass_score: Number(raw.pass_score || raw.passScore || 80),
+            is_active: raw.is_active === 0 || raw.is_active === false ? 0 : 1,
+            metadata: raw.metadata || {}
+        };
+    }
+
+    function getGrammarItemsFromContent(content) {
+        if (Array.isArray(content.grammar_items)) {
+            return content.grammar_items.map(normalizeGrammarEntry).filter(item => item.title || item.example_sentence || item.pattern);
+        }
+        if (!Array.isArray(content.patterns)) return [];
+        const items = [];
+        content.patterns.forEach((pattern) => {
+            if (Array.isArray(pattern.examples) && pattern.examples.length) {
+                pattern.examples.forEach((example) => {
+                    const en = Array.isArray(example) ? example[0] : (example.text || example.en || example.sentence || '');
+                    const cn = Array.isArray(example) ? example[1] : (example.translation || example.cn || '');
+                    items.push(normalizeGrammarEntry({
+                        title: pattern.title || en,
+                        pattern: pattern.structure || pattern.pattern || '',
+                        meaning: pattern.meaning || '',
+                        explanation: pattern.explanation || pattern.grammar_explanation || '',
+                        example_sentence: en,
+                        example_translation: cn,
+                        target_output: en
+                    }, items.length));
+                });
+            } else {
+                items.push(normalizeGrammarEntry({
+                    title: pattern.title || pattern.structure || '',
+                    pattern: pattern.structure || pattern.pattern || '',
+                    meaning: pattern.meaning || '',
+                    explanation: pattern.explanation || pattern.grammar_explanation || '',
+                    example_sentence: pattern.example_sentence || '',
+                    example_translation: pattern.example_translation || '',
+                    target_output: pattern.target_output || pattern.example_sentence || pattern.structure || ''
+                }, items.length));
+            }
+        });
+        return items;
+    }
+
+    function addGrammarItem(item) {
+        const normalized = normalizeGrammarEntry(item, moduleGrammarItems.length);
+        if (!normalized.title && !normalized.example_sentence && !normalized.pattern) {
+            return showToast('请至少填写语法点、结构或例句', 'error');
+        }
+        moduleGrammarItems.push(normalized);
+        renderGrammarItems();
+    }
+
+    function addGrammarItemFromInputs() {
+        addGrammarItem({
+            title: document.getElementById('grammarTitleInput').value.trim(),
+            pattern: document.getElementById('grammarPatternInput').value.trim(),
+            meaning: document.getElementById('grammarMeaningInput').value.trim(),
+            explanation: document.getElementById('grammarExplanationInput').value.trim(),
+            example_sentence: document.getElementById('grammarExampleInput').value.trim(),
+            example_translation: document.getElementById('grammarTranslationInput').value.trim(),
+            pass_score: Number(document.getElementById('grammarPassScoreInput').value || 80)
+        });
+        ['grammarTitleInput', 'grammarPatternInput', 'grammarMeaningInput', 'grammarExplanationInput', 'grammarExampleInput', 'grammarTranslationInput'].forEach(id => {
+            document.getElementById(id).value = '';
+        });
+        document.getElementById('grammarPassScoreInput').value = 80;
+    }
+
+    function updateGrammarField(index, field, value) {
+        const item = moduleGrammarItems[Number(index)];
+        if (!item) return;
+        item[field] = field === 'pass_score' || field === 'sort_order' ? Number(value || 0) : value;
+    }
+
+    function removeGrammarItem(index) {
+        moduleGrammarItems.splice(Number(index), 1);
+        renderGrammarItems();
+    }
+
+    function moveGrammarItem(index, delta) {
+        const from = Number(index);
+        const to = from + Number(delta);
+        if (to < 0 || to >= moduleGrammarItems.length) return;
+        const [item] = moduleGrammarItems.splice(from, 1);
+        moduleGrammarItems.splice(to, 0, item);
+        renderGrammarItems();
+    }
+
+    function renderGrammarItems() {
+        const box = document.getElementById('grammarItemList');
+        if (!box) return;
+        if (!moduleGrammarItems.length) {
+            box.innerHTML = '<div class="rounded-2xl border border-dashed border-blue-200 bg-white/70 p-5 text-center text-sm text-blue-700">还没有语法训练。可以新增一条，或从旧 JSON patterns 读取。</div>';
+            return;
+        }
+        box.innerHTML = moduleGrammarItems.map((item, index) => `
+            <div class="rounded-2xl bg-white border border-blue-100 p-3">
+                <div class="flex items-start justify-between gap-3">
+                    <div class="min-w-0 flex-1 grid grid-cols-1 md:grid-cols-12 gap-2">
+                        <div class="md:col-span-12 flex flex-wrap items-center gap-2">
+                            <span class="w-7 h-7 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold">${index + 1}</span>
+                            <span class="font-bold text-gray-900">${escapeHtml(item.title || '未命名语法')}</span>
+                            <span class="px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 text-xs">${Number(item.pass_score || 80)} 分过关</span>
+                        </div>
+                        <label class="md:col-span-3 space-y-1"><span class="text-xs text-gray-400">语法点</span><input class="form-input text-sm" value="${escapeHtml(item.title || '')}" oninput="updateGrammarField(${index}, 'title', this.value)"></label>
+                        <label class="md:col-span-3 space-y-1"><span class="text-xs text-gray-400">结构</span><input class="form-input text-sm" value="${escapeHtml(item.pattern || '')}" oninput="updateGrammarField(${index}, 'pattern', this.value)"></label>
+                        <label class="md:col-span-3 space-y-1"><span class="text-xs text-gray-400">含义</span><input class="form-input text-sm" value="${escapeHtml(item.meaning || '')}" oninput="updateGrammarField(${index}, 'meaning', this.value)"></label>
+                        <label class="md:col-span-3 space-y-1"><span class="text-xs text-gray-400">过关分</span><input type="number" class="form-input text-sm" value="${Number(item.pass_score || 80)}" oninput="updateGrammarField(${index}, 'pass_score', this.value)"></label>
+                        <label class="md:col-span-6 space-y-1"><span class="text-xs text-gray-400">例句</span><input class="form-input text-sm" value="${escapeHtml(item.example_sentence || '')}" oninput="updateGrammarField(${index}, 'example_sentence', this.value); updateGrammarField(${index}, 'target_output', this.value)"></label>
+                        <label class="md:col-span-6 space-y-1"><span class="text-xs text-gray-400">翻译</span><input class="form-input text-sm" value="${escapeHtml(item.example_translation || '')}" oninput="updateGrammarField(${index}, 'example_translation', this.value)"></label>
+                        <label class="md:col-span-12 space-y-1"><span class="text-xs text-gray-400">讲解</span><textarea rows="2" class="form-input text-sm" oninput="updateGrammarField(${index}, 'explanation', this.value)">${escapeHtml(item.explanation || '')}</textarea></label>
+                    </div>
+                    <div class="flex items-center gap-1 shrink-0">
+                        <button type="button" onclick="moveGrammarItem(${index}, -1)" class="w-8 h-8 rounded-lg bg-gray-50 text-gray-500 hover:bg-gray-100" title="上移"><i class="fas fa-arrow-up"></i></button>
+                        <button type="button" onclick="moveGrammarItem(${index}, 1)" class="w-8 h-8 rounded-lg bg-gray-50 text-gray-500 hover:bg-gray-100" title="下移"><i class="fas fa-arrow-down"></i></button>
+                        <button type="button" onclick="removeGrammarItem(${index})" class="w-8 h-8 rounded-lg bg-red-50 text-red-500 hover:bg-red-100" title="删除"><i class="fas fa-times"></i></button>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function hydrateGrammarFromJson() {
+        try {
+            const content = readJson('moduleContent');
+            moduleGrammarItems = getGrammarItemsFromContent(content);
+            renderGrammarItems();
+            showToast('已从 JSON 读取语法列表');
+        } catch (error) {
+            showToast('JSON 格式不正确', 'error');
+        }
+    }
+
+    function toggleModuleEditors() {
+        toggleVocabularyEditor();
+        const moduleType = document.getElementById('moduleType').value;
+        const grammarEditor = document.getElementById('grammarEditor');
+        const podcastEditor = document.getElementById('podcastEditor');
+        const contentWrap = document.getElementById('moduleContentWrap');
+        const isGrammar = isGrammarModuleType(moduleType);
+        const isPodcastListening = isPodcastModuleType(moduleType);
+        if (grammarEditor) {
+            grammarEditor.classList.toggle('hidden', !isGrammar);
+            if (isGrammar) renderGrammarItems();
+        }
+        if (podcastEditor) {
+            podcastEditor.classList.toggle('hidden', !isPodcastListening);
+            if (isPodcastListening) hydratePodcastFromJson();
+        }
+        if (contentWrap) {
+            contentWrap.classList.toggle('hidden', isGrammar || isPodcastListening);
+        }
+        renderModuleHint();
+    }
+
+    function getCurrentModuleType() {
+        return document.getElementById('moduleType').value;
+    }
+
+    function isPodcastModuleType(type) {
+        return [
+            'listening', 'podcast_listening', 'shadowing',
+            'speaking', 'speaking_output',
+            'writing', 'sentence_builder', 'typing_writing'
+        ].includes(type);
+    }
+
+    function renderModuleHint() {
+        const box = document.getElementById('moduleHintBox');
+        if (!box) return;
+        const moduleType = getCurrentModuleType();
+        if (isPodcastModuleType(moduleType)) {
+            const title = modulePodcastContent && modulePodcastContent.title ? modulePodcastContent.title : '';
+            const text = modulePodcastContent && modulePodcastContent.content_text ? modulePodcastContent.content_text : '';
+            const translation = modulePodcastContent && modulePodcastContent.translation ? modulePodcastContent.translation : '';
+            box.className = 'md:col-span-4 rounded-2xl bg-sky-50 border border-sky-100 p-4 text-sm text-sky-900 leading-6';
+            const modeText = ['speaking', 'speaking_output'].includes(moduleType)
+                ? '整篇朗读评测'
+                : (['writing', 'sentence_builder', 'typing_writing'].includes(moduleType) ? '文章写作任务' : '磨耳朵播放器、点词释义和逐句评测');
+            box.innerHTML = title ? `
+                <div class="font-bold text-sky-950">已绑定文章：${escapeHtml(title)}</div>
+                ${modulePodcastContent.title_en ? `<div class="mt-1 text-xs text-sky-600">${escapeHtml(modulePodcastContent.title_en)}</div>` : ''}
+                ${text ? `<div class="mt-3 max-h-32 overflow-y-auto rounded-xl bg-white/70 p-3 text-xs text-gray-700 leading-5">${escapeHtml(text)}</div>` : ''}
+                ${translation ? `<div class="mt-2 max-h-24 overflow-y-auto rounded-xl bg-white/70 p-3 text-xs text-gray-500 leading-5">${escapeHtml(translation)}</div>` : ''}
+            ` : `<b>绑定磨耳朵文章：</b>请选择一篇文章。保存后小程序会直接使用${modeText}。`;
+            return;
+        }
+        box.className = 'md:col-span-4 rounded-2xl bg-emerald-50 border border-emerald-100 p-4 text-sm text-emerald-800 leading-6';
+        box.innerHTML = '<b>计划型模块提示：</b>可以直接写 <code>items</code> 数组控制小任务。没有写 items 时，系统会自动从 words / patterns / sentences / prompt 拆任务。';
+    }
+
+    function hydratePodcastFromJson() {
+        let content = {};
+        try { content = readJson('moduleContent'); } catch (_) { content = {}; }
+        const idInput = document.getElementById('podcastContentIdInput');
+        const passInput = document.getElementById('podcastPassScoreInput');
+        const badge = document.getElementById('podcastBoundBadge');
+        if (idInput) idInput.value = content.podcast_content_id || content.podcast_id || '';
+        if (passInput) passInput.value = content.pass_score || 80;
+        if (badge) badge.textContent = modulePodcastContent && modulePodcastContent.title
+            ? `已绑定：${modulePodcastContent.title}`
+            : (idInput && idInput.value ? `已绑定 #${idInput.value}` : '未绑定');
+        renderModuleHint();
+    }
+
+    function syncPodcastToJson() {
+        const moduleType = document.getElementById('moduleType').value;
+        if (!isPodcastModuleType(moduleType)) return;
+        let content = {};
+        try { content = readJson('moduleContent'); } catch (_) { content = {}; }
+        const podcastId = Number(document.getElementById('podcastContentIdInput').value || 0);
+        const passScore = Number(document.getElementById('podcastPassScoreInput').value || 80);
+        if (podcastId) content.podcast_content_id = podcastId;
+        else delete content.podcast_content_id;
+        content.pass_score = passScore;
+        if (modulePodcastContent && modulePodcastContent.id && Number(modulePodcastContent.id) !== podcastId) {
+            modulePodcastContent = null;
+        }
+        document.getElementById('moduleContent').value = prettyJson(content);
+        hydratePodcastFromJson();
+    }
+
+    function choosePodcastCandidate(index) {
+        const item = podcastSearchCandidates[Number(index)];
+        if (!item) return;
+        modulePodcastContent = item;
+        document.getElementById('podcastContentIdInput').value = item.id;
+        syncPodcastToJson();
+        document.getElementById('podcastSearchResults').innerHTML = '';
+        showToast('已绑定磨耳朵文章');
+    }
+
+    let podcastSearchTimer = null;
+    async function searchPodcastContents() {
+        const input = document.getElementById('podcastSearchInput');
+        const box = document.getElementById('podcastSearchResults');
+        if (!input || !box) return;
+        const keyword = input.value.trim();
+        podcastSearchCandidates = [];
+        if (!keyword) {
+            box.innerHTML = '';
+            return;
+        }
+        try {
+            const data = await requestJson(`/api/admin/ielts/podcasts/search?q=${encodeURIComponent(keyword)}`);
+            podcastSearchCandidates = data.data || [];
+            if (!podcastSearchCandidates.length) {
+                box.innerHTML = '<div class="text-xs text-amber-700 bg-amber-50 px-3 py-2 rounded-xl">没有找到文章</div>';
+                return;
+            }
+            box.innerHTML = podcastSearchCandidates.map((item, index) => `
+                <button type="button" onclick="choosePodcastCandidate(${index})" class="w-full text-left p-3 rounded-2xl bg-white border border-sky-100 hover:bg-sky-50">
+                    <div class="font-bold text-gray-900">${escapeHtml(item.title || '')}</div>
+                    <div class="mt-1 text-xs text-gray-500">#${item.id} · ${escapeHtml(item.title_en || '')} · ${item.has_sentences > 0 ? '已分析句子' : item.has_sentences < 0 ? '分析中' : '未分析句子'}</div>
+                </button>
+            `).join('');
+        } catch (error) {
+            box.innerHTML = `<div class="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-xl">${escapeHtml(error.message || '搜索失败')}</div>`;
+        }
+    }
+
+    let vocabSearchTimer = null;
+    async function searchVocabularyWords() {
+        const input = document.getElementById('vocabSearchInput');
+        const box = document.getElementById('vocabSearchResults');
+        const keyword = input.value.trim();
+        vocabSearchCandidates = [];
+        if (!keyword) {
+            box.innerHTML = '';
+            return;
+        }
+        try {
+            const data = await requestJson(`/api/admin/ielts/words/search?q=${encodeURIComponent(keyword)}`);
+            vocabSearchCandidates = data.data || [];
+            if (!vocabSearchCandidates.length) {
+                box.innerHTML = '<span class="text-xs text-amber-700 bg-amber-50 px-3 py-2 rounded-full">词库暂无，保存模块时会作为新词插入</span>';
+                return;
+            }
+            box.innerHTML = vocabSearchCandidates.map((word, index) => `
+                <button type="button" onclick="addVocabularyCandidate(${index})" class="px-3 py-2 rounded-full bg-white border border-emerald-100 text-sm hover:bg-emerald-50">
+                    <b>${escapeHtml(word.word)}</b>
+                    <span class="text-gray-400 ml-1">${escapeHtml(word.translation || '')}</span>
+                </button>
+            `).join('');
+        } catch (error) {
+            box.innerHTML = `<span class="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-full">${escapeHtml(error.message || '搜索失败')}</span>`;
+        }
+    }
+
+    async function requestJson(url, options = {}) {
+        const res = await fetch(url, {
+            headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+            ...options
+        });
+        const data = await res.json().catch(() => ({ success: false, message: '响应解析失败' }));
+        if (!res.ok || data.success === false) throw new Error(data.message || '请求失败');
+        return data;
+    }
+
+    function closeModal(id) {
+        document.getElementById(id).classList.add('hidden');
+        document.getElementById(id).classList.remove('flex');
+    }
+
+    function openModal(id) {
+        document.getElementById(id).classList.remove('hidden');
+        document.getElementById(id).classList.add('flex');
+    }
+
+    async function loadCourses() {
+        const data = await requestJson('/api/admin/ielts/courses');
+        courses = data.data || [];
+        if (!currentCourse && courses.length) currentCourse = courses[0];
+        renderCourses();
+        if (currentCourse) await selectCourse(currentCourse.id, false);
+    }
+
+    function renderCourses() {
+        const box = document.getElementById('courseList');
+        if (!courses.length) {
+            box.innerHTML = '<div class="p-6 text-sm text-gray-400">还没有 IELTS 课程，先新增一个课程包。</div>';
+            return;
+        }
+        box.innerHTML = courses.map(course => `
+            <button onclick="selectCourse(${course.id})" class="w-full text-left p-5 hover:bg-emerald-50/60 transition ${currentCourse && currentCourse.id === course.id ? 'bg-emerald-50' : ''}">
+                <div class="flex items-start justify-between gap-3">
+                    <div>
+                        <div class="font-bold text-gray-900">${escapeHtml(course.title)}</div>
+                        <div class="text-xs text-gray-400 mt-1">${escapeHtml(course.title_en || course.code)}</div>
+                    </div>
+                    <span class="px-2 py-1 rounded-full text-xs ${course.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}">${course.is_active ? '启用' : '停用'}</span>
+                </div>
+                <div class="mt-4 grid grid-cols-3 gap-2 text-center text-xs">
+                    <div class="rounded-xl bg-white border border-gray-100 p-2"><b class="block text-gray-900">${course.day_count || 0}</b>Days</div>
+                    <div class="rounded-xl bg-white border border-gray-100 p-2"><b class="block text-gray-900">${course.module_count || 0}</b>模块</div>
+                    <div class="rounded-xl bg-white border border-gray-100 p-2"><b class="block text-gray-900">${course.enrollment_count || 0}</b>学习者</div>
+                </div>
+            </button>
+        `).join('');
+    }
+
+    async function selectCourse(id, shouldRender = true) {
+        currentCourse = courses.find(item => item.id === Number(id)) || currentCourse;
+        currentDay = null;
+        modules = [];
+        if (shouldRender) renderCourses();
+        const data = await requestJson(`/api/admin/ielts/courses/${id}/days`);
+        days = data.data || [];
+        renderDays();
+        if (days.length) await selectDay(days[0].id);
+        else renderModules();
+    }
+
+    function renderDays() {
+        const box = document.getElementById('dayList');
+        if (!currentCourse) {
+            box.innerHTML = '<div class="p-6 text-sm text-gray-400">请先选择课程</div>';
+            return;
+        }
+        if (!days.length) {
+            box.innerHTML = '<div class="p-6 text-sm text-gray-400">这个课程还没有 Day。</div>';
+            return;
+        }
+        box.innerHTML = days.map(day => `
+            <button onclick="selectDay(${day.id})" class="w-full text-left p-4 hover:bg-emerald-50 transition ${currentDay && currentDay.id === day.id ? 'bg-emerald-50' : ''}">
+                <div class="flex items-start justify-between gap-3">
+                    <div>
+                        <div class="text-sm text-emerald-700 font-bold">Day ${day.day_number}</div>
+                        <div class="font-semibold text-gray-900 mt-1">${escapeHtml(day.title)}</div>
+                        <div class="text-xs text-gray-400 mt-1 line-clamp-2">${escapeHtml(day.theme || '')}</div>
+                    </div>
+                    <span class="text-xs text-gray-400">${day.module_count || 0} 模块</span>
+                </div>
+            </button>
+        `).join('');
+    }
+
+    async function selectDay(id) {
+        const data = await requestJson(`/api/admin/ielts/days/${id}`);
+        currentDay = data.data.day;
+        modules = data.data.modules || [];
+        renderDays();
+        renderModules();
+    }
+
+    function renderModules() {
+        const title = document.getElementById('detailTitle');
+        const sub = document.getElementById('detailSub');
+        const box = document.getElementById('moduleList');
+        if (!currentDay) {
+            title.textContent = 'Day 内容';
+            sub.textContent = '选择 Day 后编辑模块';
+            box.innerHTML = '<div class="rounded-2xl border border-dashed border-gray-200 p-8 text-center text-gray-400">请先选择 Day</div>';
+            return;
+        }
+        title.textContent = `Day ${currentDay.day_number} · ${currentDay.title}`;
+        sub.textContent = currentDay.objective || currentDay.theme || '编辑本日学习目标与模块内容';
+        if (!modules.length) {
+            box.innerHTML = '<div class="rounded-2xl border border-dashed border-gray-200 p-8 text-center text-gray-400">这个 Day 还没有模块。</div>';
+            return;
+        }
+        const getPodcast = (mod) => {
+            if (mod.podcast_content && mod.podcast_content.title) return mod.podcast_content;
+            const content = mod.content_json || {};
+            const id = content.podcast_content_id || content.podcast_id;
+            return id ? { id, title: `磨耳朵文章 #${id}`, content_text: '' } : null;
+        };
+        box.innerHTML = modules.map(mod => `
+            <div class="rounded-2xl border border-gray-100 p-4 hover:border-emerald-200 hover:bg-emerald-50/30 transition">
+                <div class="flex items-start justify-between gap-4">
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <span class="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-sm">${mod.sort_order}</span>
+                            <span class="px-2 py-1 rounded-lg bg-gray-100 text-gray-500 text-xs">${mod.module_type}</span>
+                            ${mod.is_required ? '<span class="px-2 py-1 rounded-lg bg-amber-50 text-amber-600 text-xs">必修</span>' : '<span class="px-2 py-1 rounded-lg bg-gray-50 text-gray-400 text-xs">选修</span>'}
+                        </div>
+                        <div class="mt-3 font-bold text-gray-900">${escapeHtml(mod.title)}</div>
+                        <div class="mt-1 text-xs text-gray-400">预计 ${mod.estimated_minutes || 0} 分钟</div>
+                        ${getPodcast(mod) ? `<div class="mt-3 rounded-xl bg-sky-50 border border-sky-100 px-3 py-2 text-sm text-sky-800"><span class="font-semibold">绑定文章：</span>${escapeHtml(getPodcast(mod).title || '')}</div>` : ''}
+                    </div>
+                    <button onclick="openModuleModal(${mod.id})" class="px-3 py-2 rounded-xl bg-white border border-gray-200 text-gray-600 hover:text-emerald-700 hover:border-emerald-200 text-sm">
+                        <i class="fas fa-pen mr-1"></i>编辑
+                    </button>
+                </div>
+                ${getPodcast(mod) ? '' : `<pre class="mt-4 p-3 rounded-xl bg-gray-50 text-xs text-gray-500 overflow-x-auto max-h-32">${escapeHtml(prettyJson(mod.content_json))}</pre>`}
+            </div>
+        `).join('');
+    }
+
+    function openCourseModal(createNew = false) {
+        const course = createNew ? null : currentCourse;
+        if (!createNew && !course) return showToast('请先选择课程', 'error');
+        document.getElementById('courseModalTitle').textContent = course ? '编辑 IELTS 课程' : '新增 IELTS 课程';
+        document.getElementById('courseId').value = course ? course.id : '';
+        document.getElementById('courseCode').value = course ? course.code : '';
+        document.getElementById('courseCode').disabled = !!course;
+        document.getElementById('courseTitle').value = course ? course.title : '';
+        document.getElementById('courseTitleEn').value = course ? (course.title_en || '') : '';
+        document.getElementById('courseDescription').value = course ? (course.description || '') : '';
+        document.getElementById('courseTarget').value = course ? (course.target_score || '') : '';
+        document.getElementById('courseLevel').value = course ? (course.level_label || '') : '';
+        document.getElementById('courseDuration').value = course ? course.duration_days : 30;
+        document.getElementById('courseMinutes').value = course ? course.daily_minutes : 120;
+        document.getElementById('courseSort').value = course ? course.sort_order : 0;
+        document.getElementById('courseActive').value = course && !course.is_active ? '0' : '1';
+        document.getElementById('courseMetadata').value = course ? prettyJson(course.metadata) : '{}';
+        openModal('courseModal');
+    }
+
+    async function saveCourse() {
+        try {
+            const id = document.getElementById('courseId').value;
+            const payload = {
+                code: document.getElementById('courseCode').value.trim(),
+                title: document.getElementById('courseTitle').value.trim(),
+                title_en: document.getElementById('courseTitleEn').value.trim(),
+                description: document.getElementById('courseDescription').value.trim(),
+                target_score: document.getElementById('courseTarget').value.trim(),
+                level_label: document.getElementById('courseLevel').value.trim(),
+                duration_days: Number(document.getElementById('courseDuration').value || 30),
+                daily_minutes: Number(document.getElementById('courseMinutes').value || 120),
+                sort_order: Number(document.getElementById('courseSort').value || 0),
+                is_active: document.getElementById('courseActive').value === '1' ? 1 : 0,
+                metadata: readJson('courseMetadata')
+            };
+            const url = id ? `/api/admin/ielts/courses/${id}` : '/api/admin/ielts/courses';
+            await requestJson(url, { method: id ? 'PUT' : 'POST', body: JSON.stringify(payload) });
+            closeModal('courseModal');
+            currentCourse = null;
+            await loadCourses();
+            showToast('课程已保存');
+        } catch (error) {
+            showToast(error.message, 'error');
+        }
+    }
+
+    function openDayModal(editCurrent = false) {
+        if (!currentCourse) return showToast('请先选择课程', 'error');
+        const day = editCurrent ? currentDay : null;
+        document.getElementById('dayModalTitle').textContent = day ? '编辑 Day' : '新增 Day';
+        document.getElementById('dayId').value = day ? day.id : '';
+        document.getElementById('dayNumber').value = day ? day.day_number : (days.length ? Math.max(...days.map(item => Number(item.day_number) || 0)) + 1 : 1);
+        document.getElementById('dayMinutes').value = day ? day.estimated_minutes : 120;
+        document.getElementById('dayTitle').value = day ? day.title : '';
+        document.getElementById('dayTheme').value = day ? (day.theme || '') : '';
+        document.getElementById('dayObjective').value = day ? (day.objective || '') : '';
+        document.getElementById('dayPreview').value = day ? (day.preview_next || '') : '';
+        document.getElementById('dayActive').value = day && !day.is_active ? '0' : '1';
+        document.getElementById('dayMetadata').value = day ? prettyJson(day.metadata) : '{}';
+        openModal('dayModal');
+    }
+
+    async function saveDay() {
+        try {
+            const id = document.getElementById('dayId').value;
+            const payload = {
+                day_number: Number(document.getElementById('dayNumber').value || 1),
+                title: document.getElementById('dayTitle').value.trim(),
+                theme: document.getElementById('dayTheme').value.trim(),
+                objective: document.getElementById('dayObjective').value.trim(),
+                estimated_minutes: Number(document.getElementById('dayMinutes').value || 120),
+                preview_next: document.getElementById('dayPreview').value.trim(),
+                is_active: document.getElementById('dayActive').value === '1' ? 1 : 0,
+                metadata: readJson('dayMetadata')
+            };
+            const url = id ? `/api/admin/ielts/days/${id}` : `/api/admin/ielts/courses/${currentCourse.id}/days`;
+            await requestJson(url, { method: id ? 'PUT' : 'POST', body: JSON.stringify(payload) });
+            closeModal('dayModal');
+            await selectCourse(currentCourse.id);
+            showToast('Day 已保存');
+        } catch (error) {
+            showToast(error.message, 'error');
+        }
+    }
+
+    async function deleteCurrentDay() {
+        const id = document.getElementById('dayId').value;
+        if (!id) return closeModal('dayModal');
+        if (!confirm('确定删除这个 Day 吗？模块和学习进度会一起删除。')) return;
+        try {
+            await requestJson(`/api/admin/ielts/days/${id}`, { method: 'DELETE' });
+            closeModal('dayModal');
+            await selectCourse(currentCourse.id);
+            showToast('Day 已删除');
+        } catch (error) {
+            showToast(error.message, 'error');
+        }
+    }
+
+    function openModuleModal(id) {
+        if (!currentDay) return showToast('请先选择 Day', 'error');
+        const mod = id ? modules.find(item => item.id === Number(id)) : null;
+        const content = mod ? (mod.content_json || {}) : {};
+        currentModule = mod;
+        document.getElementById('moduleModalTitle').textContent = mod ? '编辑模块' : '新增模块';
+        document.getElementById('moduleId').value = mod ? mod.id : '';
+        document.getElementById('moduleType').value = mod ? mod.module_type : 'goal';
+        document.getElementById('moduleTitle').value = mod ? mod.title : '';
+        document.getElementById('moduleSort').value = mod ? mod.sort_order : (modules.length ? Math.max(...modules.map(item => Number(item.sort_order) || 0)) + 1 : 1);
+        document.getElementById('moduleMinutes').value = mod ? mod.estimated_minutes : 10;
+        document.getElementById('moduleRequired').value = mod && !mod.is_required ? '0' : '1';
+        document.getElementById('moduleContent').value = mod ? prettyJson(content) : '{\n  "items": []\n}';
+        modulePodcastContent = mod && mod.podcast_content ? mod.podcast_content : null;
+        moduleVocabularyWords = mod && ['vocabulary', 'pronunciation'].includes(mod.module_type) ? getVocabularyWordsFromContent(content) : [];
+        moduleGrammarItems = mod && isGrammarModuleType(mod.module_type)
+            ? ((mod.grammar_items && mod.grammar_items.length) ? mod.grammar_items.map(normalizeGrammarEntry) : getGrammarItemsFromContent(content))
+            : [];
+        document.getElementById('vocabWordInput').value = '';
+        document.getElementById('vocabTranslationInput').value = '';
+        document.getElementById('vocabSearchInput').value = '';
+        document.getElementById('vocabSearchResults').innerHTML = '';
+        document.getElementById('podcastSearchInput').value = '';
+        document.getElementById('podcastSearchResults').innerHTML = '';
+        ['grammarTitleInput', 'grammarPatternInput', 'grammarMeaningInput', 'grammarExplanationInput', 'grammarExampleInput', 'grammarTranslationInput'].forEach(inputId => {
+            const input = document.getElementById(inputId);
+            if (input) input.value = '';
+        });
+        document.getElementById('grammarPassScoreInput').value = 80;
+        toggleModuleEditors();
+        openModal('moduleModal');
+    }
+
+    function formatModuleJson() {
+        try {
+            document.getElementById('moduleContent').value = prettyJson(readJson('moduleContent'));
+        } catch (error) {
+            showToast('JSON 格式不正确', 'error');
+        }
+    }
+
+    async function saveModule() {
+        try {
+            const id = document.getElementById('moduleId').value;
+            const moduleType = document.getElementById('moduleType').value;
+            let contentJson = readJson('moduleContent');
+            if (['vocabulary', 'pronunciation'].includes(moduleType) && moduleVocabularyWords.length) {
+                contentJson = {
+                    ...contentJson,
+                    words: moduleVocabularyWords.map(word => ({
+                        word_id: word.word_id || null,
+                        word: word.word || '',
+                        translation: word.translation || '',
+                        phonetic: word.phonetic || '',
+                        example_sentence: word.example_sentence || '',
+                        example_translation: word.example_translation || '',
+                        grammar_explanation: word.grammar_explanation || ''
+                    }))
+                };
+            }
+            const grammarItems = isGrammarModuleType(moduleType)
+                ? moduleGrammarItems.map((item, index) => ({
+                    sort_order: index + 1,
+                    title: item.title || '',
+                    pattern: item.pattern || '',
+                    meaning: item.meaning || '',
+                    explanation: item.explanation || '',
+                    example_sentence: item.example_sentence || '',
+                    example_translation: item.example_translation || '',
+                    target_output: item.target_output || item.example_sentence || '',
+                    pass_score: Number(item.pass_score || 80),
+                    is_active: item.is_active === 0 ? 0 : 1,
+                    metadata: item.metadata || {}
+                }))
+                : [];
+            const payload = {
+                module_type: moduleType,
+                title: document.getElementById('moduleTitle').value.trim(),
+                sort_order: Number(document.getElementById('moduleSort').value || 0),
+                estimated_minutes: Number(document.getElementById('moduleMinutes').value || 10),
+                is_required: document.getElementById('moduleRequired').value === '1' ? 1 : 0,
+                content_json: contentJson,
+                grammar_items: grammarItems
+            };
+            const url = id ? `/api/admin/ielts/modules/${id}` : `/api/admin/ielts/days/${currentDay.id}/modules`;
+            await requestJson(url, { method: id ? 'PUT' : 'POST', body: JSON.stringify(payload) });
+            closeModal('moduleModal');
+            await selectDay(currentDay.id);
+            showToast('模块已保存');
+        } catch (error) {
+            showToast(error.message, 'error');
+        }
+    }
+
+    async function deleteCurrentModule() {
+        const id = document.getElementById('moduleId').value;
+        if (!id) return closeModal('moduleModal');
+        if (!confirm('确定删除这个模块吗？相关学习进度会一起删除。')) return;
+        try {
+            await requestJson(`/api/admin/ielts/modules/${id}`, { method: 'DELETE' });
+            closeModal('moduleModal');
+            await selectDay(currentDay.id);
+            showToast('模块已删除');
+        } catch (error) {
+            showToast(error.message, 'error');
+        }
+    }
+
+    function escapeHtml(value) {
+        return String(value == null ? '' : value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        document.getElementById('moduleType').addEventListener('change', toggleModuleEditors);
+        document.getElementById('vocabWordInput').addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                addVocabularyWordFromInputs();
+            }
+        });
+        document.getElementById('vocabSearchInput').addEventListener('input', () => {
+            clearTimeout(vocabSearchTimer);
+            vocabSearchTimer = setTimeout(searchVocabularyWords, 300);
+        });
+        document.getElementById('podcastSearchInput').addEventListener('input', () => {
+            clearTimeout(podcastSearchTimer);
+            podcastSearchTimer = setTimeout(searchPodcastContents, 300);
+        });
+        loadCourses().catch(error => showToast(error.message, 'error'));
+    });
+</script>

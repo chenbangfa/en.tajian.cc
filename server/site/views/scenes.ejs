@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><%- include('partials/head', { metaTitle, metaDescription, metaKeywords, canonicalUrl, metaImage }) %></head>
+<body data-page="scenes">
+  <div class="site-shell">
+    <%- include('partials/header', { ctaHref: '#mini-program', ctaLabel: '立即体验' }) %>
+    <main>
+      <section class="sub-hero">
+        <div class="container sub-hero-inner">
+          <span>Scene Words</span>
+          <h1>把孩子每天见到的世界，变成自然英语输入。</h1>
+          <p>真实画面、重点词汇、标准发音和中文辅助，一页就能开始点读。</p>
+        </div>
+      </section>
+      <section class="container library-layout">
+        <aside class="filter-panel">
+          <h2>场景分类</h2>
+          <div id="scene-categories" class="filter-list">
+            <button class="filter-chip active" data-scene-category="">全部场景</button>
+            <% categories.forEach(item => { %><button class="filter-chip" data-scene-category="<%= item.id %>"><%= item.name %></button><% }) %>
+          </div>
+          <div class="tip-box">进入小程序后可以继续：点读发音、查看翻译、跟读评测。</div>
+        </aside>
+        <div class="library-main">
+          <div class="library-head"><div><span>Live Content</span><h2>持续更新的场景学习库</h2></div><a href="#mini-program" class="secondary-btn small">扫码点读</a></div>
+          <div id="scene-grid" class="content-grid"><% scenes.forEach(scene => { %><%- include('partials/scene-card', { scene }) %><% }) %></div>
+          <div class="load-more-wrap"><button id="scenes-load-more" class="secondary-btn" type="button" <%= hasMore ? '' : 'style="display:none;"' %>>加载更多场景</button></div>
+        </div>
+      </section>
+      <%- include('partials/footer-cta', { title: '看到场景以后，最好的下一步是直接进去点读。', text: '小程序继续做看图、听音、翻译、点读和评测体验。' }) %>
+    </main>
+    <%- include('partials/footer', {}) %>
+  </div>
+  <script>window.__SITE_INITIAL__ = <%- JSON.stringify(initialState) %>;</script>
+  <script src="/assets/site.js"></script>
+</body>
+</html>

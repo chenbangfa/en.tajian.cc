@@ -125,31 +125,34 @@ class DialogueVideoService {
             await this._renderBaseFrame(baseFrame, coverLocal, scene);
             await this._updateJob(jobId, { progress: 20 });
 
-            // 4. 生成封面图（分享缩略图）
             const baseName = `dlg_${sceneId}_${(scene.title_en || scene.title).replace(/[^a-zA-Z0-9]+/g, '_').toLowerCase().slice(0, 40)}_${Date.now()}`;
-            const coverOut = path.join(OUTPUT_DIR, `${baseName}.jpg`);
-            await this._renderCoverImage(coverOut, baseFrame, scene);
 
-            // 5. 段构造
+            // 4. 标题页（同时作为视频首帧封面图来源）
+            const titleFrame = path.join(tempDir, 'title.png');
+            await this._renderTitleFrame(titleFrame, scene, coverLocal);
+
+            // 5. 生成封面图（分享缩略图/视频首帧）
+            const coverOut = path.join(OUTPUT_DIR, `${baseName}.jpg`);
+            await this._renderCoverImage(coverOut, titleFrame);
+
+            // 6. 段构造
             const segDir = path.join(tempDir, 'seg');
             fs.mkdirSync(segDir, { recursive: true });
             const segments = [];
             let segIdx = 0;
 
-            // 5a. 封面首帧（0.8s，静态）
+            // 6a. 封面首帧（0.8s，静态）
             const coverSeg = path.join(segDir, `s${String(segIdx++).padStart(3, '0')}_cover.mp4`);
             await this._imgToVideo(coverOut, null, 0.8, coverSeg, { noZoom: true });
             segments.push(coverSeg);
 
-            // 5b. 标题页（2.5s）
-            const titleFrame = path.join(tempDir, 'title.png');
-            await this._renderTitleFrame(titleFrame, scene, coverLocal);
+            // 6b. 标题页（2.5s）
             const titleSeg = path.join(segDir, `s${String(segIdx++).padStart(3, '0')}_title.mp4`);
             await this._imgToVideo(titleFrame, null, 2.5, titleSeg);
             segments.push(titleSeg);
             await this._updateJob(jobId, { progress: 25 });
 
-            // 5c. 每句对话段
+            // 6c. 每句对话段
             const progPerLine = 55 / lineAssets.length;
             for (let i = 0; i < lineAssets.length; i++) {
                 const lineSeg = path.join(segDir, `line_${String(i).padStart(3, '0')}.mp4`);
@@ -158,14 +161,7 @@ class DialogueVideoService {
                 await this._updateJob(jobId, { progress: Math.round(25 + (i + 1) * progPerLine) });
             }
 
-            // 5d. 复习页（3.0s）
-            const reviewFrame = path.join(tempDir, 'review.png');
-            await this._renderReviewFrame(reviewFrame, lineAssets, scene, coverLocal);
-            const reviewSeg = path.join(segDir, `s${String(segIdx++).padStart(3, '0')}_review.mp4`);
-            await this._imgToVideo(reviewFrame, null, 3.0, reviewSeg);
-            segments.push(reviewSeg);
-
-            // 5e. 结尾帧（1.5s）
+            // 6d. 结尾帧（1.5s）
             const endFrame = path.join(tempDir, 'end.png');
             await this._renderEndFrame(endFrame, coverLocal);
             const endSeg = path.join(segDir, `s${String(segIdx++).padStart(3, '0')}_end.mp4`);
@@ -363,17 +359,6 @@ class DialogueVideoService {
 
             svgContent += `<g opacity="${opacity}">`;
 
-            // 角色标签
-            if (b.showLabel) {
-                const labelX = b.isGuide ? BUBBLE_PAD_X + 10 : W - BUBBLE_PAD_X - 10;
-                const anchor = b.isGuide ? 'start' : 'end';
-                const labelText = b.isGuide
-                    ? (scene.guide_role || 'Guide')
-                    : (scene.user_role || 'You');
-                svgContent += `<text x="${labelX}" y="${Math.round(y + 22)}" text-anchor="${anchor}" font-size="22" fill="#9CA3AF" font-family="sans-serif">${e(labelText)}</text>`;
-                y += ROLE_LABEL_H;
-            }
-
             // 气泡背景
             const bubbleColor = b.isGuide ? GUIDE_COLOR : USER_COLOR;
             const bx = b.isGuide ? BUBBLE_PAD_X : (W - BUBBLE_PAD_X - b.width);
@@ -398,7 +383,8 @@ class DialogueVideoService {
             if (isActive) {
                 // 逐词高亮
                 const tokens = this._tokenize(allLines[activeLineIdx].line_en || '');
-                const enCharsPerLine = Math.max(12, Math.floor(MAX_BUBBLE_W / (EN_FONT * 0.55)));
+                const maxContentW = MAX_BUBBLE_W - BUBBLE_PAD * 2;
+                const enCharsPerLine = Math.max(10, Math.floor(maxContentW / (EN_FONT * 0.55)));
                 const wrappedLines = this._wrapTokens(tokens, enCharsPerLine);
                 let globalIdx = 0;
                 for (const wl of wrappedLines) {
@@ -441,18 +427,19 @@ class DialogueVideoService {
     /** 计算单个气泡的尺寸和布局信息 */
     _calcBubble(line, lineIdx, allLines, scene, showCn, isActive, highlightWordIdx) {
         const isGuide = line.role === 'guide';
-        const showLabel = lineIdx === 0 || allLines[lineIdx].role !== allLines[lineIdx - 1].role;
+        const showLabel = false;
+        const maxContentW = MAX_BUBBLE_W - BUBBLE_PAD * 2;
 
         // 英文换行
         const tokens = this._tokenize(line.line_en || '');
-        const enCharsPerLine = Math.max(12, Math.floor(MAX_BUBBLE_W / (EN_FONT * 0.55)));
+        const enCharsPerLine = Math.max(10, Math.floor(maxContentW / (EN_FONT * 0.55)));
         const enLines = this._wrapTokens(tokens.length ? tokens : ['...'], enCharsPerLine);
         const enBlockH = enLines.length * Math.round(EN_FONT * 1.2);
 
         // 中文换行
         let cnLines = [];
         if (showCn && line.line_cn) {
-            const cnCharsPerLine = Math.max(8, Math.floor(MAX_BUBBLE_W / (CN_FONT * 1.02)));
+            const cnCharsPerLine = Math.max(8, Math.floor(maxContentW / (CN_FONT * 1.02)));
             cnLines = this._wrapChinese(String(line.line_cn).trim(), cnCharsPerLine, 2);
         }
         const cnBlockH = cnLines.length * Math.round(CN_FONT * 1.2);
@@ -471,7 +458,7 @@ class DialogueVideoService {
             const lw = cl.length * CN_FONT * 1.02;
             if (lw > maxLineW) maxLineW = lw;
         }
-        const width = Math.min(MAX_BUBBLE_W, Math.max(120, Math.round(maxLineW))) + BUBBLE_PAD * 2;
+        const width = Math.min(MAX_BUBBLE_W, Math.max(120, Math.round(maxLineW) + BUBBLE_PAD * 2));
 
         return { isGuide, showLabel, enLines, cnLines, height, width };
     }
@@ -483,16 +470,17 @@ class DialogueVideoService {
         // 上方：封面模糊 or 渐变
         let topBuffer;
         if (coverLocal) {
-            topBuffer = await sharp(coverLocal)
+            const blurredBg = await sharp(coverLocal)
                 .resize(W, TOP_H, { fit: 'cover' })
                 .blur(8)
                 .toBuffer();
-            // 加暗色遮罩
-            const darkOverlay = `<svg width="${W}" height="${TOP_H}" xmlns="http://www.w3.org/2000/svg">
-                <rect width="${W}" height="${TOP_H}" fill="#000" fill-opacity="0.3"/>
-            </svg>`;
-            topBuffer = await sharp(topBuffer)
-                .composite([{ input: Buffer.from(darkOverlay), left: 0, top: 0 }])
+            const topCard = await this._renderContainedCoverCard(coverLocal, W, TOP_H, {
+                insetX: 48,
+                insetY: 48,
+                overlayOpacity: 0.28
+            });
+            topBuffer = await sharp(blurredBg)
+                .composite([{ input: topCard, left: 0, top: 0 }])
                 .toBuffer();
         } else {
             // 渐变背景
@@ -557,14 +545,31 @@ class DialogueVideoService {
 
         const e = this._svgEsc;
         const stars = '★'.repeat(scene.difficulty || 1) + '☆'.repeat(3 - (scene.difficulty || 1));
+        const titleEnLines = this._wrapText(String(scene.title_en || '').trim(), 20, 3);
+        const titleCnLines = this._wrapChinese(String(scene.title || '').trim(), 12, 2);
+        const titleEnLineH = 84;
+        const titleCnLineH = 54;
+        const titleGap = titleCnLines.length ? 26 : 0;
+        const titleBlockH = (titleEnLines.length * titleEnLineH) + (titleCnLines.length * titleCnLineH) + titleGap;
+        let titleY = 700 - Math.round(titleBlockH / 2);
+        let titleSvg = '';
+        for (const line of titleEnLines) {
+            titleSvg += `<text x="540" y="${titleY}" text-anchor="middle" font-size="72" fill="#FFFFFF" font-weight="800" font-family="sans-serif">${e(line)}</text>`;
+            titleY += titleEnLineH;
+        }
+        if (titleCnLines.length) {
+            titleY += titleGap;
+            for (const line of titleCnLines) {
+                titleSvg += `<text x="540" y="${titleY}" text-anchor="middle" font-size="44" fill="#E0E0E0" font-weight="500" font-family="sans-serif">${e(line)}</text>`;
+                titleY += titleCnLineH;
+            }
+        }
+        const starsY = titleY + 36;
         const overlaySvg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
             <rect width="${W}" height="${H}" fill="#000" fill-opacity="0.55"/>
-            <text x="540" y="700" text-anchor="middle" font-size="72" fill="#FFFFFF" font-weight="800" font-family="sans-serif">${e(scene.title_en || '')}</text>
-            <text x="540" y="780" text-anchor="middle" font-size="44" fill="#E0E0E0" font-weight="500" font-family="sans-serif">${e(scene.title || '')}</text>
-            <text x="540" y="860" text-anchor="middle" font-size="36" fill="#FFD84A" font-family="sans-serif">${stars}</text>
-            <line x1="400" y1="910" x2="680" y2="910" stroke="#4B5563" stroke-width="2"/>
-            <text x="540" y="980" text-anchor="middle" font-size="36" fill="${GUIDE_COLOR}" font-weight="600" font-family="sans-serif">🗣 ${e(scene.guide_role || 'Guide')}</text>
-            <text x="540" y="1040" text-anchor="middle" font-size="36" fill="${USER_COLOR}" font-weight="600" font-family="sans-serif">🙋 ${e(scene.user_role || 'You')}</text>
+            ${titleSvg}
+            <text x="540" y="${starsY}" text-anchor="middle" font-size="36" fill="#FFD84A" font-family="sans-serif">${stars}</text>
+            <line x1="400" y1="${starsY + 50}" x2="680" y2="${starsY + 50}" stroke="#4B5563" stroke-width="2"/>
             <text x="540" y="1200" text-anchor="middle" font-size="28" fill="#6B7280" font-family="sans-serif">BookMelo</text>
         </svg>`;
         const overlay = await sharp(Buffer.from(overlaySvg)).png().toBuffer();
@@ -592,7 +597,7 @@ class DialogueVideoService {
         const lineCount = lineAssets.length;
         const fontSize = lineCount > 12 ? 24 : lineCount > 8 ? 28 : 32;
         const lineH = Math.round(fontSize * 1.6);
-        const startY = 300;
+        const startY = 220;
 
         let textSvg = '';
         for (let i = 0; i < lineAssets.length; i++) {
@@ -602,14 +607,12 @@ class DialogueVideoService {
 
             const isGuide = line.role === 'guide';
             const color = isGuide ? '#93C5FD' : '#86EFAC';
-            const prefix = isGuide ? (scene.guide_role || 'A') : (scene.user_role || 'B');
-            const text = `${prefix}: ${line.line_en || ''}`;
+            const text = `${line.line_en || ''}`;
             textSvg += `<text x="80" y="${y}" font-size="${fontSize}" fill="${color}" font-weight="500" font-family="sans-serif">${e(text.length > 48 ? text.slice(0, 46) + '...' : text)}</text>`;
         }
 
         const overlaySvg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
             <rect width="${W}" height="${H}" fill="#000" fill-opacity="0.65"/>
-            <text x="540" y="200" text-anchor="middle" font-size="52" fill="#FFFFFF" font-weight="700" font-family="sans-serif">📝 Dialogue Review</text>
             ${textSvg}
             <text x="540" y="${H - 100}" text-anchor="middle" font-size="24" fill="#6B7280" font-family="sans-serif">BookMelo</text>
         </svg>`;
@@ -646,17 +649,10 @@ class DialogueVideoService {
     }
 
     /** 分享封面图 */
-    async _renderCoverImage(outPath, baseFrame, scene) {
-        const base = await sharp(baseFrame).resize(W, H, { fit: 'cover' }).toBuffer();
-        const e = this._svgEsc;
-        const wmSvg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
-            <rect width="${W}" height="${H}" fill="#000" fill-opacity="0.15"/>
-            <text x="48" y="96" font-size="44" fill="white" fill-opacity="0.78" font-weight="700" font-family="sans-serif" paint-order="stroke" stroke="#000" stroke-opacity="0.5" stroke-width="3" stroke-linejoin="round">BookMelo</text>
-        </svg>`;
-        const overlay = await sharp(Buffer.from(wmSvg)).png().toBuffer();
-        await sharp(base)
-            .composite([{ input: overlay, left: 0, top: 0 }])
-            .jpeg({ quality: 88 }).toFile(outPath);
+    async _renderCoverImage(outPath, sourceFramePath) {
+        await sharp(sourceFramePath)
+            .jpeg({ quality: 88 })
+            .toFile(outPath);
     }
 
     // ==================== FFmpeg 通用 ====================
@@ -775,6 +771,22 @@ class DialogueVideoService {
         return lines;
     }
 
+    _wrapText(text, maxCharsPerLine, maxLines = 3) {
+        const tokens = this._tokenize(text);
+        if (!tokens.length) return [];
+        const lines = this._wrapTokens(tokens, maxCharsPerLine).map(line => line.join(' '));
+        if (lines.length <= maxLines) return lines;
+        const truncated = lines.slice(0, maxLines);
+        truncated[maxLines - 1] = this._trimWithEllipsis(truncated[maxLines - 1], maxCharsPerLine);
+        return truncated;
+    }
+
+    _trimWithEllipsis(text, maxChars) {
+        if (!text || text.length <= maxChars) return text;
+        if (maxChars <= 1) return '…';
+        return text.slice(0, maxChars - 1).trimEnd() + '…';
+    }
+
     _wrapChinese(text, maxCharsPerLine, maxLines = 2) {
         if (!text) return [];
         const lines = [];
@@ -788,6 +800,31 @@ class DialogueVideoService {
             lines[lines.length - 1] = (last.length > 1 ? last.slice(0, -1) : last) + '…';
         }
         return lines;
+    }
+
+    async _renderContainedCoverCard(coverLocal, targetW, targetH, { insetX = 48, insetY = 48, overlayOpacity = 0.28 } = {}) {
+        const cardW = targetW - insetX * 2;
+        const cardH = targetH - insetY * 2;
+        const darkOverlay = `<svg width="${targetW}" height="${targetH}" xmlns="http://www.w3.org/2000/svg">
+            <rect width="${targetW}" height="${targetH}" fill="#000" fill-opacity="${overlayOpacity}"/>
+            <rect x="${insetX - 2}" y="${insetY - 2}" width="${cardW + 4}" height="${cardH + 4}" rx="34" ry="34" fill="#FFFFFF" fill-opacity="0.08"/>
+        </svg>`;
+        const contained = await sharp(coverLocal)
+            .resize(cardW, cardH, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+            .png()
+            .toBuffer({ resolveWithObject: true });
+        const left = Math.round((targetW - contained.info.width) / 2);
+        const top = Math.round((targetH - contained.info.height) / 2);
+
+        return sharp({
+            create: { width: targetW, height: targetH, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } }
+        })
+            .composite([
+                { input: Buffer.from(darkOverlay), left: 0, top: 0 },
+                { input: contained.data, left, top }
+            ])
+            .png()
+            .toBuffer();
     }
 
     async _resolveUrl(url, tempDir, name) {

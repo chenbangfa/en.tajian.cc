@@ -71,7 +71,7 @@
                     <div class="flex bg-purple-50 p-1 rounded-lg text-xs font-medium">
                         <button type="button" onclick="switchAiStyle('poster')" id="style-poster"
                             class="flex-1 py-1.5 rounded-md bg-purple-600 text-white transition-all">
-                            <i class="fas fa-th mr-1"></i>词汇海报
+                            <i class="fas fa-th mr-1"></i>英文海报
                         </button>
                         <button type="button" onclick="switchAiStyle('scene')" id="style-scene"
                             class="flex-1 py-1.5 rounded-md text-purple-600 hover:bg-purple-100 transition-all">
@@ -79,14 +79,25 @@
                         </button>
                         <button type="button" onclick="switchAiStyle('custom')" id="style-custom"
                             class="flex-1 py-1.5 rounded-md text-purple-600 hover:bg-purple-100 transition-all">
-                            <i class="fas fa-pen mr-1"></i>自定义
+                            <i class="fas fa-language mr-1"></i>中文海报
                         </button>
                     </div>
 
                     <!-- Scene Style Info -->
                     <div id="ai-style-info" class="text-xs text-gray-500 bg-gray-50 px-3 py-2 rounded-lg">
-                        <span id="ai-style-desc">生成词汇卡片网格海报 (9:16 竖版)</span>
+                        <span id="ai-style-desc">生成英文词汇卡片网格海报 (9:16 竖版)</span>
                     </div>
+
+                    <label id="sceneChineseLabelsWrap"
+                        class="hidden items-center justify-between gap-3 text-xs text-gray-600 bg-green-50 border border-green-100 px-3 py-2 rounded-lg">
+                        <span>
+                            <i class="fas fa-language text-green-600 mr-1"></i>
+                            场景图标注显示中文
+                        </span>
+                        <input id="sceneLabelChinese" type="checkbox"
+                            class="w-4 h-4 accent-green-600"
+                            onchange="handleSceneLabelChineseChange()">
+                    </label>
 
                     <textarea id="aiPrompt" rows="3"
                         class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm outline-none focus:border-blue-500"
@@ -115,6 +126,30 @@
 
             <div class="flex space-x-2">
                 <% if (typeof scene !== 'undefined' && scene) { %>
+                <button onclick="openH5SceneReader()"
+                    class="flex items-center space-x-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-xs px-3 py-1.5 rounded-lg transition-colors shadow-sm">
+                    <i class="fas fa-mobile-alt"></i>
+                    <span>H5点读</span>
+                </button>
+
+                <button onclick="copyH5SceneReaderLink()"
+                    class="flex items-center space-x-1.5 bg-slate-500 hover:bg-slate-600 text-white text-xs px-3 py-1.5 rounded-lg transition-colors shadow-sm">
+                    <i class="fas fa-link"></i>
+                    <span>复制H5</span>
+                </button>
+
+                <label class="flex items-center space-x-1.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs px-2.5 py-1.5 rounded-lg cursor-pointer select-none">
+                    <input id="sceneReadingVideoChineseToggle" type="checkbox" checked
+                        class="w-3.5 h-3.5 rounded border-rose-300 text-rose-500 focus:ring-rose-400">
+                    <span>中文+中文发音</span>
+                </label>
+
+                <button id="sceneReadingVideoBtn" onclick="generateSceneReadingVideo()"
+                    class="flex items-center space-x-1.5 bg-rose-500 hover:bg-rose-600 text-white text-xs px-3 py-1.5 rounded-lg transition-colors shadow-sm">
+                    <i class="fas fa-video"></i>
+                    <span>点读视频</span>
+                </button>
+
                 <button onclick="generateWxacode()"
                     class="flex items-center space-x-1.5 bg-green-500 hover:bg-green-600 text-white text-xs px-3 py-1.5 rounded-lg transition-colors shadow-sm">
                     <i class="fas fa-qrcode"></i>
@@ -126,6 +161,18 @@
                     class="flex items-center space-x-1.5 bg-yellow-500 hover:bg-yellow-600 text-white text-xs px-3 py-1.5 rounded-lg transition-colors shadow-sm">
                     <i class="fas fa-bolt"></i>
                     <span>智能识别(OCR)</span>
+                </button>
+
+                <button onclick="autoDetectCards()"
+                    class="flex items-center space-x-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-xs px-3 py-1.5 rounded-lg transition-colors shadow-sm">
+                    <i class="fas fa-border-all"></i>
+                    <span>一键识别卡片</span>
+                </button>
+
+                <button id="posterAdjustBtn" type="button" onclick="togglePosterAdjustPanel()"
+                    class="flex items-center space-x-1.5 bg-cyan-600 hover:bg-cyan-700 text-white text-xs px-3 py-1.5 rounded-lg transition-colors shadow-sm">
+                    <i class="fas fa-sliders-h"></i>
+                    <span>模板微调</span>
                 </button>
 
                 <button id="drawModeBtn" type="button" onclick="toggleDrawMode()"
@@ -140,6 +187,71 @@
                     <option value="tencent">腾讯云OCR</option>
                     <option value="gemini">Gemini</option>
                 </select>
+            </div>
+        </div>
+
+        <% if (typeof scene !== 'undefined' && scene) { %>
+        <div id="sceneReadingVideoStatus" class="hidden px-3 py-2 bg-rose-50 border-b border-rose-100 text-xs text-rose-800"></div>
+        <% } %>
+
+        <div id="posterAdjustPanel" class="hidden px-3 py-2 bg-cyan-50 border-b border-cyan-100">
+            <div class="flex items-center justify-between mb-2">
+                <div>
+                    <div class="text-xs font-semibold text-cyan-900">海报模板百分比微调</div>
+                    <div class="text-[11px] text-cyan-700">用于英文海报/中文海报。正数表示往右/往下推，负数表示往左/往上收。</div>
+                </div>
+                <button type="button" onclick="resetPosterTemplateAdjustments()"
+                    class="text-[11px] text-cyan-700 hover:text-cyan-900">重置为 0</button>
+            </div>
+            <div class="grid grid-cols-4 gap-2">
+                <label class="text-[11px] text-gray-700">
+                    <span class="block mb-1">上边距(%)</span>
+                    <input id="posterAdjustTop" type="number" step="0.1" value="0"
+                        class="w-full px-2 py-1 border border-cyan-200 rounded bg-white text-xs outline-none focus:border-cyan-500"
+                        oninput="persistPosterTemplateAdjustments()">
+                </label>
+                <label class="text-[11px] text-gray-700">
+                    <span class="block mb-1">下边界(%)</span>
+                    <input id="posterAdjustBottom" type="number" step="0.1" value="0"
+                        class="w-full px-2 py-1 border border-cyan-200 rounded bg-white text-xs outline-none focus:border-cyan-500"
+                        oninput="persistPosterTemplateAdjustments()">
+                </label>
+                <label class="text-[11px] text-gray-700">
+                    <span class="block mb-1">左边距(%)</span>
+                    <input id="posterAdjustLeft" type="number" step="0.1" value="0"
+                        class="w-full px-2 py-1 border border-cyan-200 rounded bg-white text-xs outline-none focus:border-cyan-500"
+                        oninput="persistPosterTemplateAdjustments()">
+                </label>
+                <label class="text-[11px] text-gray-700">
+                    <span class="block mb-1">右边界(%)</span>
+                    <input id="posterAdjustRight" type="number" step="0.1" value="0"
+                        class="w-full px-2 py-1 border border-cyan-200 rounded bg-white text-xs outline-none focus:border-cyan-500"
+                        oninput="persistPosterTemplateAdjustments()">
+                </label>
+                <label class="text-[11px] text-gray-700">
+                    <span class="block mb-1">框宽增减(%)</span>
+                    <input id="posterAdjustCardWidth" type="number" step="0.1" value="0"
+                        class="w-full px-2 py-1 border border-cyan-200 rounded bg-white text-xs outline-none focus:border-cyan-500"
+                        oninput="persistPosterTemplateAdjustments()">
+                </label>
+                <label class="text-[11px] text-gray-700">
+                    <span class="block mb-1">框高增减(%)</span>
+                    <input id="posterAdjustCardHeight" type="number" step="0.1" value="0"
+                        class="w-full px-2 py-1 border border-cyan-200 rounded bg-white text-xs outline-none focus:border-cyan-500"
+                        oninput="persistPosterTemplateAdjustments()">
+                </label>
+                <label class="text-[11px] text-gray-700">
+                    <span class="block mb-1">横向间距(%)</span>
+                    <input id="posterAdjustGapX" type="number" step="0.1" value="0"
+                        class="w-full px-2 py-1 border border-cyan-200 rounded bg-white text-xs outline-none focus:border-cyan-500"
+                        oninput="persistPosterTemplateAdjustments()">
+                </label>
+                <label class="text-[11px] text-gray-700">
+                    <span class="block mb-1">纵向间距(%)</span>
+                    <input id="posterAdjustGapY" type="number" step="0.1" value="0"
+                        class="w-full px-2 py-1 border border-cyan-200 rounded bg-white text-xs outline-none focus:border-cyan-500"
+                        oninput="persistPosterTemplateAdjustments()">
+                </label>
             </div>
         </div>
 
@@ -207,7 +319,8 @@
         border: 2px solid #3b82f6;
         background-color: rgba(59, 130, 246, 0.2);
         cursor: pointer;
-        transition: all 0.2s;
+        transition: background-color 0.2s, border-color 0.2s;
+        box-sizing: border-box;
     }
 
     .hotspot-box:hover {
@@ -219,6 +332,70 @@
         border-color: #ef4444;
         background-color: rgba(239, 68, 68, 0.3);
         z-index: 20;
+        cursor: move;
+    }
+
+    .hotspot-resize-handle {
+        position: absolute;
+        width: 10px;
+        height: 10px;
+        border: 2px solid #ffffff;
+        background: #ef4444;
+        border-radius: 999px;
+        box-shadow: 0 1px 4px rgba(15, 23, 42, 0.35);
+        z-index: 25;
+    }
+
+    .hotspot-resize-handle.nw {
+        left: -6px;
+        top: -6px;
+        cursor: nwse-resize;
+    }
+
+    .hotspot-resize-handle.n {
+        left: 50%;
+        top: -6px;
+        transform: translateX(-50%);
+        cursor: ns-resize;
+    }
+
+    .hotspot-resize-handle.ne {
+        right: -6px;
+        top: -6px;
+        cursor: nesw-resize;
+    }
+
+    .hotspot-resize-handle.e {
+        right: -6px;
+        top: 50%;
+        transform: translateY(-50%);
+        cursor: ew-resize;
+    }
+
+    .hotspot-resize-handle.se {
+        right: -6px;
+        bottom: -6px;
+        cursor: nwse-resize;
+    }
+
+    .hotspot-resize-handle.s {
+        left: 50%;
+        bottom: -6px;
+        transform: translateX(-50%);
+        cursor: ns-resize;
+    }
+
+    .hotspot-resize-handle.sw {
+        left: -6px;
+        bottom: -6px;
+        cursor: nesw-resize;
+    }
+
+    .hotspot-resize-handle.w {
+        left: -6px;
+        top: 50%;
+        transform: translateY(-50%);
+        cursor: ew-resize;
     }
 
     #hotspotLayer.draw-mode {
@@ -247,10 +424,325 @@
     let isDrawingHotspot = false;
     let drawStartPoint = null;
     let drawPreviewEl = null;
+    let activeHotspotIndex = -1;
+    let posterAdjustPreviewTimer = null;
+    let posterAdjustPreviewRequestId = 0;
+    let hotspotAdjustState = null;
+    const MIN_HOTSPOT_SIZE = 1;
+
+    async function fetchH5SceneReaderUrl() {
+        if (!sceneId) throw new Error('请先保存场景');
+        const res = await fetch(`${API_BASE}/scenes/${sceneId}/h5-link`);
+        const result = await res.json();
+        if (!result.success || !result.data?.path) {
+            throw new Error(result.message || '生成H5链接失败');
+        }
+        return new URL(result.data.path, window.location.origin).href;
+    }
+
+    async function openH5SceneReader() {
+        if (!sceneId) return showToast('请先保存场景', 'error');
+        try {
+            const url = await fetchH5SceneReaderUrl();
+            window.open(url, '_blank', 'noopener');
+        } catch (e) {
+            showToast(e.message || '打开H5失败', 'error');
+        }
+    }
+
+    async function copyH5SceneReaderLink() {
+        if (!sceneId) return showToast('请先保存场景', 'error');
+        try {
+            const url = await fetchH5SceneReaderUrl();
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(url);
+            } else {
+                const input = document.createElement('input');
+                input.value = url;
+                document.body.appendChild(input);
+                input.select();
+                document.execCommand('copy');
+                input.remove();
+            }
+            showToast('H5 点读链接已复制');
+        } catch (e) {
+            showToast('复制失败，请手动复制链接', 'error');
+        }
+    }
+
+    let sceneReadingVideoPollTimer = null;
+
+    function setSceneReadingVideoButtonBusy(isBusy) {
+        const btn = document.getElementById('sceneReadingVideoBtn');
+        if (btn) {
+            btn.disabled = !!isBusy;
+            btn.classList.toggle('opacity-60', !!isBusy);
+            btn.classList.toggle('cursor-not-allowed', !!isBusy);
+        }
+        const chineseToggle = document.getElementById('sceneReadingVideoChineseToggle');
+        if (chineseToggle) chineseToggle.disabled = !!isBusy;
+    }
+
+    function renderSceneReadingVideoStatus(job) {
+        const box = document.getElementById('sceneReadingVideoStatus');
+        if (!box) return;
+        if (!job) {
+            box.classList.add('hidden');
+            box.innerHTML = '';
+            return;
+        }
+
+        box.classList.remove('hidden');
+        const statusMap = {
+            pending: '排队中',
+            processing: `生成中 ${Number(job.progress || 0)}%`,
+            done: '已完成',
+            failed: '失败'
+        };
+        const statusText = statusMap[job.status] || job.status || '未知';
+        const actions = job.status === 'done' && job.video_url
+            ? `<a href="${job.video_url}" target="_blank" class="ml-3 text-green-700 underline">预览</a>
+               <a href="${job.video_url}" download class="ml-2 text-green-700 underline">下载</a>`
+            : '';
+        const error = job.status === 'failed' && job.error_message
+            ? `<span class="ml-3 text-red-600">${job.error_message}</span>`
+            : '';
+        box.innerHTML = `<i class="fas fa-video mr-1"></i> 点读视频：${statusText}${actions}${error}`;
+    }
+
+    async function loadSceneReadingVideoStatus({ silent = true } = {}) {
+        if (!sceneId) return null;
+        try {
+            const res = await fetch(`${API_BASE}/scenes/${sceneId}/reading-video/status`);
+            const result = await res.json();
+            if (!result.success) throw new Error(result.message || '查询点读视频失败');
+            renderSceneReadingVideoStatus(result.data);
+            const active = result.data && ['pending', 'processing'].includes(result.data.status);
+            setSceneReadingVideoButtonBusy(active);
+            if (active) startSceneReadingVideoPolling();
+            return result.data;
+        } catch (e) {
+            if (!silent) showToast(e.message || '查询点读视频失败', 'error');
+            return null;
+        }
+    }
+
+    function startSceneReadingVideoPolling() {
+        if (sceneReadingVideoPollTimer) return;
+        sceneReadingVideoPollTimer = setInterval(async () => {
+            const job = await loadSceneReadingVideoStatus({ silent: true });
+            if (!job || !['pending', 'processing'].includes(job.status)) {
+                clearInterval(sceneReadingVideoPollTimer);
+                sceneReadingVideoPollTimer = null;
+                setSceneReadingVideoButtonBusy(false);
+            }
+        }, 5000);
+    }
+
+    async function generateSceneReadingVideo() {
+        if (!sceneId) return showToast('请先保存场景', 'error');
+        const includeChinese = document.getElementById('sceneReadingVideoChineseToggle')?.checked !== false;
+        const flowText = includeChinese
+            ? '播放顺序：中文词义 → 英文女声 → 英文男声 → 下一个。'
+            : '播放顺序：英文女声 → 英文男声 → 下一个，底部不显示中文。';
+        if (!confirm(`生成场景自动点读视频？${flowText}`)) return;
+        setSceneReadingVideoButtonBusy(true);
+        try {
+            const saved = await saveSceneData({ silent: true, reloadAfterSave: true });
+            if (!saved.success) throw new Error(saved.message || '保存场景失败');
+
+            const res = await fetch(`${API_BASE}/scenes/${sceneId}/reading-video/generate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ includeChinese })
+            });
+            const result = await res.json();
+            if (!result.success) throw new Error(result.message || '创建点读视频任务失败');
+            showToast('点读视频任务已创建');
+            await loadSceneReadingVideoStatus({ silent: false });
+            startSceneReadingVideoPolling();
+        } catch (e) {
+            setSceneReadingVideoButtonBusy(false);
+            showToast(e.message || '创建点读视频任务失败', 'error');
+        }
+    }
 
     // --- AI Style & Prompt Builder ---
 
     let currentAiStyle = 'poster'; // 'poster' | 'scene' | 'custom'
+
+    function getPosterAdjustmentStorageKey() {
+        return `scenePosterTemplateAdjustments:${sceneId || initialCategoryId || 'default'}`;
+    }
+
+    function getPosterTemplateAdjustmentInputs() {
+        return {
+            top: document.getElementById('posterAdjustTop'),
+            bottom: document.getElementById('posterAdjustBottom'),
+            left: document.getElementById('posterAdjustLeft'),
+            right: document.getElementById('posterAdjustRight'),
+            cardWidth: document.getElementById('posterAdjustCardWidth'),
+            cardHeight: document.getElementById('posterAdjustCardHeight'),
+            gapX: document.getElementById('posterAdjustGapX'),
+            gapY: document.getElementById('posterAdjustGapY')
+        };
+    }
+
+    function getPosterTemplateAdjustments() {
+        const inputs = getPosterTemplateAdjustmentInputs();
+        return {
+            topPct: Number(inputs.top?.value || 0),
+            bottomPct: Number(inputs.bottom?.value || 0),
+            leftPct: Number(inputs.left?.value || 0),
+            rightPct: Number(inputs.right?.value || 0),
+            cardWidthPct: Number(inputs.cardWidth?.value || 0),
+            cardHeightPct: Number(inputs.cardHeight?.value || 0),
+            gapXPct: Number(inputs.gapX?.value || 0),
+            gapYPct: Number(inputs.gapY?.value || 0)
+        };
+    }
+
+    function setPosterTemplateAdjustments(values = {}) {
+        const inputs = getPosterTemplateAdjustmentInputs();
+        if (inputs.top) inputs.top.value = Number(values.topPct || 0);
+        if (inputs.bottom) inputs.bottom.value = Number(values.bottomPct || 0);
+        if (inputs.left) inputs.left.value = Number(values.leftPct || 0);
+        if (inputs.right) inputs.right.value = Number(values.rightPct || 0);
+        if (inputs.cardWidth) inputs.cardWidth.value = Number(values.cardWidthPct || 0);
+        if (inputs.cardHeight) inputs.cardHeight.value = Number(values.cardHeightPct || 0);
+        if (inputs.gapX) inputs.gapX.value = Number(values.gapXPct || 0);
+        if (inputs.gapY) inputs.gapY.value = Number(values.gapYPct || 0);
+    }
+
+    function persistPosterTemplateAdjustments() {
+        try {
+            localStorage.setItem(getPosterAdjustmentStorageKey(), JSON.stringify(getPosterTemplateAdjustments()));
+        } catch (e) {
+            console.warn('[PosterTemplateAdjustments] save failed:', e.message);
+        }
+        schedulePosterTemplatePreview();
+    }
+
+    function loadPosterTemplateAdjustments() {
+        try {
+            const raw = localStorage.getItem(getPosterAdjustmentStorageKey());
+            if (!raw) return;
+            const parsed = JSON.parse(raw);
+            setPosterTemplateAdjustments(parsed);
+        } catch (e) {
+            console.warn('[PosterTemplateAdjustments] load failed:', e.message);
+        }
+    }
+
+    function resetPosterTemplateAdjustments() {
+        setPosterTemplateAdjustments({
+            topPct: 0,
+            bottomPct: 0,
+            leftPct: 0,
+            rightPct: 0,
+            cardWidthPct: 0,
+            cardHeightPct: 0,
+            gapXPct: 0,
+            gapYPct: 0
+        });
+        persistPosterTemplateAdjustments();
+        showToast('模板微调已重置为 0', 'info');
+    }
+
+    function togglePosterAdjustPanel() {
+        const panel = document.getElementById('posterAdjustPanel');
+        if (!panel) return;
+        panel.classList.toggle('hidden');
+    }
+
+    function schedulePosterTemplatePreview() {
+        if (currentAiStyle !== 'poster' && currentAiStyle !== 'custom') return;
+        if (!hotspots.length) return;
+        if (posterAdjustPreviewTimer) clearTimeout(posterAdjustPreviewTimer);
+        posterAdjustPreviewTimer = setTimeout(() => {
+            previewPosterTemplateAdjustments();
+        }, 180);
+    }
+
+    async function previewPosterTemplateAdjustments() {
+        const imageUrl = document.getElementById('image_url').value;
+        if (!imageUrl || (currentAiStyle !== 'poster' && currentAiStyle !== 'custom') || !hotspots.length) return;
+
+        const categoryItems = getSelectedCategoryItems();
+        const expectedCount = Math.max(categoryItems.length, hotspots.length, 1);
+        const requestId = ++posterAdjustPreviewRequestId;
+        const previousHotspots = hotspots.map((h) => ({
+            ...h,
+            rect: { ...h.rect }
+        }));
+        const previousActiveIndex = activeHotspotIndex;
+
+        try {
+            const res = await fetch(`${API_BASE}/scenes/detect-cards`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    imageUrl,
+                    expectedColumns: 4,
+                    expectedCount,
+                    layoutMode: 'poster_template',
+                    layoutAdjustments: getPosterTemplateAdjustments()
+                })
+            });
+            const data = await res.json();
+            if (requestId !== posterAdjustPreviewRequestId) return;
+            if (!data.success || !data.data || !Array.isArray(data.data.cards) || !data.data.cards.length) {
+                return;
+            }
+
+            const cards = data.data.cards;
+            hotspots = cards.map((card, index) => {
+                const existing = previousHotspots[index];
+                return {
+                    ...(existing || {}),
+                    id: existing?.id || (Date.now() + Math.random() + index),
+                    custom_label: existing?.custom_label || categoryItems[index] || '',
+                    rect: card.rect
+                };
+            });
+
+            if (previousActiveIndex >= 0 && previousActiveIndex < hotspots.length) {
+                activeHotspotIndex = previousActiveIndex;
+            } else if (hotspots.length) {
+                activeHotspotIndex = 0;
+            } else {
+                activeHotspotIndex = -1;
+            }
+
+            renderHotspots();
+            renderHotspotList();
+        } catch (e) {
+            console.warn('[PosterTemplatePreview] failed:', e.message);
+        }
+    }
+
+    function syncPosterAdjustVisibility() {
+        const btn = document.getElementById('posterAdjustBtn');
+        if (btn) btn.style.display = '';
+    }
+
+    function syncSceneLabelOptionsVisibility() {
+        const wrap = document.getElementById('sceneChineseLabelsWrap');
+        if (!wrap) return;
+        wrap.classList.toggle('hidden', currentAiStyle !== 'scene');
+        wrap.classList.toggle('flex', currentAiStyle === 'scene');
+    }
+
+    function shouldSceneShowChineseLabels() {
+        const checkbox = document.getElementById('sceneLabelChinese');
+        return !!checkbox?.checked;
+    }
+
+    function handleSceneLabelChineseChange() {
+        if (currentAiStyle === 'scene') {
+            applyCategoryPromptFromSelection({ forcePrompt: true });
+        }
+    }
 
     function switchAiStyle(style) {
         currentAiStyle = style;
@@ -269,15 +761,18 @@
             promptInput.readOnly = false;
             applyCategoryPromptFromSelection({ forcePrompt: true });
         } else if (style === 'poster') {
-            descEl.textContent = '生成词汇卡片网格海报 (9:16 竖版)';
+            descEl.textContent = '生成英文词汇卡片网格海报 (9:16 竖版)';
             promptInput.readOnly = false;
             applyPosterPromptFromSelection();
         } else {
-            descEl.textContent = '自定义提示词，直接发送给 AI（服务端仍会增强风格）';
+            descEl.textContent = '生成中文词汇卡片网格海报：标题和卡片增加中文';
             promptInput.readOnly = false;
             promptInput.value = '';
-            promptInput.placeholder = '描述场景，例如：A messy bedroom with toys on the floor...';
+            promptInput.placeholder = '选择分类后自动生成中文海报提示词，也可手动修改...';
+            applyCategoryPromptFromSelection({ forcePrompt: true });
         }
+        syncPosterAdjustVisibility();
+        syncSceneLabelOptionsVisibility();
     }
 
     function applyPosterPromptFromSelection() {
@@ -285,47 +780,287 @@
         const opt = select.options[select.selectedIndex];
         if (!opt) return;
         const items = opt.getAttribute('data-items');
-        const nameEn = opt.getAttribute('data-name-en');
-        const nameCn = opt.getAttribute('data-name');
+        const optionNameEn = opt.getAttribute('data-name-en');
+        const optionNameCn = opt.getAttribute('data-name');
+        const parentName = opt.getAttribute('data-parent-name') || '';
+        const inputNameCn = document.querySelector('input[name="name"]').value.trim();
+        const inputNameEn = document.querySelector('input[name="name_en"]').value.trim();
+        const nameCn = inputNameCn || optionNameCn || optionNameEn;
+        const nameEn = inputNameEn || optionNameEn || '';
         if (!items || !items.trim()) {
             document.getElementById('aiPrompt').value = '';
             document.getElementById('aiPrompt').placeholder = '请先选择一个有物品列表的分类';
             return;
         }
-        document.getElementById('aiPrompt').value = buildPosterPrompt(nameEn || nameCn, items);
+        document.getElementById('aiPrompt').value = buildPosterPrompt(nameCn || nameEn, nameEn, items, parentName);
     }
 
-    function buildSceneExplorePrompt(theme, itemsStr) {
-        const items = itemsStr.split(',').map(s => s.trim()).filter(Boolean);
+    function buildSceneExplorePrompt(theme, itemsStr, options = {}) {
+        const includeChinese = options.includeChinese === true;
+        const items = itemsStr.split(',').map(s => s.trim()).filter(Boolean).map(item => toTitleCase(item));
         if (!items.length) return '';
         const itemList = items.join(', ');
-        return `A colorful, cheerful ${theme} scene for children's English learning. The scene naturally contains these objects: ${itemList}. Each object should be clearly visible and easy to identify by tapping. Friendly, inviting illustration that makes children want to explore and find objects.`;
+        const labelContentRule = includeChinese
+            ? `Each label must contain three lines in this order: simplified Chinese meaning, English word, IPA phonetic transcription. Example label format: 苹果 / Apple / /ˈæpəl/.`
+            : `Each label must contain two lines in this order: English word, IPA phonetic transcription. Example label format: Apple / /ˈæpəl/. Do not include Chinese text.`;
+
+        return `LABELED_SCENE_PROMPT
+Create a colorful, cheerful ${theme} scene for children's English learning, square 1:1 composition.
+
+The scene must naturally contain these objects: ${itemList}.
+
+Core goal:
+- This is not a plain illustration. It must be a labeled learning scene.
+- Every listed object should be clearly visible in the scene and should be labeled once.
+- Place labels in nearby blank or low-detail areas around the scene, not directly covering important objects.
+- Use thin, clean leader lines to connect each label to the exact object it names.
+- The end point of each leader line must touch or clearly enter the correct object area, not a neighboring object.
+- Before drawing each label, semantically verify the object: the label text, the line endpoint, and the visual object must all match.
+- Leader lines should be subtle, tidy, and easy to follow. Avoid crossing too many lines.
+
+Label content:
+- ${labelContentRule}
+- Use clean rounded white label boxes with soft shadow or light outline.
+- Text must be large, crisp, correctly spelled, and easy for children to read.
+- IPA should be accurate and use slash notation, for example /ˈæpəl/.
+- Do not invent extra labels for objects not in the list.
+- Do not swap labels between visually close objects. If two objects overlap, place the label closer to the correct object and point the line to the center or most recognizable part of that object.
+
+Object matching precision:
+- Cushion means a small soft pillow/throw pillow placed on a sofa, chair, or bed. It is not a blanket.
+- Blanket means a larger soft cloth or throw draped over a sofa, chair, or bed, or folded as a textile. It is not a cushion.
+- Rug means the large textile on the floor under or near furniture. It is not a blanket or cushion.
+- Sofa means the large seating furniture itself, not cushions or blankets on top of it.
+- Table means the furniture surface and legs, not the objects placed on the table.
+- Book means a book/notebook object, not the table underneath it.
+- If the scene contains confusing pairs such as cushion vs blanket, rug vs blanket, shelf vs book, or table vs book, label them farther apart and use shorter, clearer leader lines.
+
+Visual style:
+- Friendly, inviting children's educational illustration.
+- Bright, warm color palette with soft lighting.
+- Realistic enough for children to recognize real-life objects, but still cheerful and classroom-friendly.
+- Keep the main scene natural and coherent, especially matching the theme "${theme}".
+- Make all required objects distinct and recognizable.
+
+Strict rules:
+- No watermark, no logo, no signature.
+- No messy collage, no random text, no spelling mistakes.
+- Do not hide labels inside objects; labels should sit in blank space and connect with a line.
+- Do not let a label line point to the wrong object, even if the wrong object is nearby or visually similar.
+- Do not use a line endpoint that lands in empty space between two objects.
+- Keep the layout clean and suitable for English beginners.`;
     }
 
-    function buildPosterPrompt(theme, itemsStr) {
-        const items = itemsStr.split(',').map(s => s.trim()).filter(Boolean);
+    function buildPrimaryCategoryDescriptor(parentName, theme) {
+        const raw = String(parentName || '').trim();
+        if (!raw) return '日常生活物品';
+
+        const exactMap = {
+            '日常生活与场景类': '日常生活物品',
+            '食物与饮食类': '食物类物品',
+            '自然与动物类': '自然与动物类物品',
+            '家庭与学校类': '家庭与学校类物品',
+            '交通与城市类': '交通与城市类物品',
+            '人体与健康类': '人体与健康类物品'
+        };
+
+        if (exactMap[raw]) return exactMap[raw];
+
+        const cleaned = raw
+            .replace(/与场景类$/, '')
+            .replace(/类$/, '');
+        return `${cleaned}物品`;
+    }
+
+    function buildTitleDecorationRule(parentName, themeCn = '', themeEn = '') {
+        const parent = String(parentName || '').trim();
+        const themeText = `${themeCn} ${themeEn}`.toLowerCase();
+
+        if (/超市|购物|shopping|supermarket|market/.test(themeText)) {
+            return '标题栏背景需要加入与超市购物相关的极简装饰元素，例如柔和的货架轮廓、价格签、小购物车、购物袋、叶片感点缀；保持极简、干净、轻装饰，不要喧宾夺主。';
+        }
+
+        if (/清洁|cleaning|suppl/.test(themeText)) {
+            return '标题栏背景需要加入与清洁用品相关的极简装饰元素，例如轻微水滴、泡泡、柔和波纹、清洁工具剪影；保持清爽、留白充足、装饰很轻。';
+        }
+
+        if (/水果|fruit/.test(themeText)) {
+            return '标题栏背景需要加入与水果相关的极简装饰元素，例如叶片、藤蔓、果实剪影、柔和的自然弧线；保持清新、自然、轻量。';
+        }
+
+        if (/蔬菜|vegetable/.test(themeText)) {
+            return '标题栏背景需要加入与蔬菜相关的极简装饰元素，例如叶片、菜园感线条、蔬菜剪影、柔和自然纹理；保持清新、轻装饰。';
+        }
+
+        if (/文具|stationery|school supplies|school/.test(themeText)) {
+            return '标题栏背景需要加入与文具学习相关的极简装饰元素，例如铅笔、尺子、纸张线条、小星点或学习感图形；保持简洁、整齐、有课堂感。';
+        }
+
+        const parentMap = {
+            '日常生活与场景类': '标题栏背景需要根据日常生活场景加入少量极简装饰元素，例如柔和的物品轮廓、小叶片、轻弧线和生活化图形，保持干净高级。',
+            '食物与饮食类': '标题栏背景需要根据食物与饮食主题加入少量极简装饰元素，例如叶片、果蔬剪影、柔和餐具轮廓和轻弧线，保持清新自然。',
+            '自然与动物类': '标题栏背景需要根据自然与动物主题加入少量极简装饰元素，例如叶片、云朵、草叶、星点或动物剪影，保持自然轻盈。',
+            '家庭与学校类': '标题栏背景需要根据家庭与学校主题加入少量极简装饰元素，例如纸张线条、家具轮廓、学习图形和轻弧线，保持整洁友好。',
+            '交通与城市类': '标题栏背景需要根据交通与城市主题加入少量极简装饰元素，例如道路线条、路牌、建筑轮廓或交通图形，保持有秩序感。',
+            '人体与健康类': '标题栏背景需要根据人体与健康主题加入少量极简装饰元素，例如柔和曲线、小图标、健康用品剪影和清爽点缀，保持干净舒适。'
+        };
+
+        if (parentMap[parent]) return parentMap[parent];
+
+        return '标题栏背景需要根据当前主题加入少量极简装饰元素，保持白底、柔和绿色与浅色系配色，装饰轻量、整洁、不要遮挡标题。';
+    }
+
+    function buildPosterLayoutRule(totalCount, options = {}) {
+        const safeCount = Math.max(1, Number(totalCount) || 0);
+        const includeChinese = options.includeChinese === true;
+        const expectedColumns = 4;
+        const expectedRows = Math.max(1, Math.ceil(safeCount / expectedColumns));
+        const layoutMap = {
+            4: {
+                titleHeightPct: 15.5,
+                gridTopPct: 15.5,
+                gridBottomPct: 99.3,
+                leftPct: 1.5,
+                rightPct: 98.4,
+                note: '适合16张卡片的4×4海报'
+            },
+            3: {
+                titleHeightPct: 17.4,
+                gridTopPct: 17.4,
+                gridBottomPct: 99.9,
+                leftPct: 1.8,
+                rightPct: 99.9,
+                note: '适合12张卡片的4×3海报'
+            }
+        };
+        const layout = layoutMap[expectedRows] || {
+            titleHeightPct: 16,
+            gridTopPct: 16,
+            gridBottomPct: 99,
+            leftPct: 1.6,
+            rightPct: 98.6,
+            note: `适合${expectedColumns}列×${expectedRows}行的固定模板海报`
+        };
+        const formatPct = (value) => `${Number(value).toFixed(1).replace(/\.0$/, '')}%`;
+        const gridWidthPct = layout.rightPct - layout.leftPct;
+        const gridHeightPct = layout.gridBottomPct - layout.gridTopPct;
+        const cardWidthPct = gridWidthPct / expectedColumns;
+        const cardHeightPct = gridHeightPct / expectedRows;
+        const rowRanges = Array.from({ length: expectedRows }, (_, index) => {
+            const start = layout.gridTopPct + index * cardHeightPct;
+            const end = index === expectedRows - 1 ? layout.gridBottomPct : start + cardHeightPct;
+            return `第${index + 1}行 ${formatPct(start)}-${formatPct(end)}`;
+        }).join('；');
+        const colRanges = Array.from({ length: expectedColumns }, (_, index) => {
+            const start = layout.leftPct + index * cardWidthPct;
+            const end = index === expectedColumns - 1 ? layout.rightPct : start + cardWidthPct;
+            return `第${index + 1}列 ${formatPct(start)}-${formatPct(end)}`;
+        }).join('；');
+
+        const titleRule = includeChinese
+            ? `标题栏固定占整张海报高度${formatPct(layout.titleHeightPct)}，中文标题在上、英文标题在下，中英文整体居中`
+            : `标题栏固定占整张海报高度${formatPct(layout.titleHeightPct)}，只显示英文标题，不显示中文标题，英文标题整体居中`;
+        const internalStructureRule = includeChinese
+            ? '所有卡片内部也必须使用统一结构：物品图片区高度一致，中文名称区域高度一致，英文单词区域高度一致，IPA区域高度一致'
+            : '所有卡片内部也必须使用统一结构：物品图片区高度一致，英文单词区域高度一致，IPA区域高度一致';
+        const fitRule = includeChinese
+            ? '如果某个物品图片、中文名称、英文单词或IPA较长，请缩小物品图或字体来适配固定卡片，不允许改变该卡片宽度或高度'
+            : '如果某个物品图片、英文单词或IPA较长，请缩小物品图或字体来适配固定卡片，不允许改变该卡片宽度或高度';
+        const cardContentRule = includeChinese
+            ? '每张卡片都包含：上方写实物品图，物品图片下方显示简体中文名称，再下方英文单词，再下方IPA，信息层级统一'
+            : '每张卡片都包含：上方写实物品图，下方英文单词，再下方IPA，信息层级统一';
+        const spacingRule = includeChinese
+            ? '卡片内部只能用留白分隔物品图、中文名称、英文单词和IPA，不要画横线、分割线、下划线、表格线或练习本横格'
+            : '卡片内部只能用留白分隔物品图、英文单词和IPA，不要画横线、分割线、下划线、表格线或练习本横格';
+        const noLineRule = includeChinese
+            ? '卡片内除了外边框以外不要再添加任何内部线条，不能在物品与中文、中文与英文、英文与IPA之间加线'
+            : '卡片内除了外边框以外不要再添加任何内部线条，不能在物品与单词之间、单词与IPA之间加线';
+
+        return `布局模板约束：
+- 必须使用固定模板海报布局，不要自由发挥，不要打乱卡片位置
+- ${titleRule}
+- 卡片网格固定为${expectedColumns}列 × ${expectedRows}行，${layout.note}
+- 卡片区从画面高度${formatPct(layout.gridTopPct)}处开始，到${formatPct(layout.gridBottomPct)}处结束
+- 卡片网格左边界固定在画面宽度${formatPct(layout.leftPct)}处，右边界固定在${formatPct(layout.rightPct)}处，左右对齐，不要忽宽忽窄
+- 每张卡片外框宽度固定为整张海报宽度的${formatPct(cardWidthPct)}，高度固定为整张海报高度的${formatPct(cardHeightPct)}
+- 每行边界必须严格贴近这些百分比：${rowRanges}
+- 每列边界必须严格贴近这些百分比：${colRanges}
+- 所有卡片必须严格等宽、严格等高、圆角一致，列间距和行间距统一
+- 必须像标准 CSS grid / table grid 一样排版：同一列的卡片左边界和右边界完全对齐，同一行的卡片上边界和下边界完全对齐
+- 每一行高度必须完全一致，每一列宽度必须完全一致，不能出现某一排更高、某一列更宽、某个卡片因图片或文字而变大
+- ${internalStructureRule}
+- ${fitRule}
+- 不要使用瀑布流、拼贴布局、自由卡片布局、不同大小卡片、错位卡片或自适应内容高度
+- 第一排卡片顶部必须与整张卡片网格的起始线严格对齐，不能比后几排更低
+- ${cardContentRule}
+- ${spacingRule}
+- ${noLineRule}
+- 卡片底部文字区域高度也要统一，不能有的高有的低
+- 请优先保证整体版式精准、整齐、对称，再生成细节`;
+    }
+
+    function toTitleCase(value) {
+        return String(value || '')
+            .trim()
+            .split(/\s+/)
+            .filter(Boolean)
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+            .join(' ');
+    }
+
+    function buildPosterPrompt(themeCn, themeEn, itemsStr, parentName = '', options = {}) {
+        const includeChinese = options.includeChinese === true;
+        const items = itemsStr
+            .split(',')
+            .map(s => s.trim())
+            .filter(Boolean)
+            .map(item => toTitleCase(item));
         const count = items.length;
+        const remainder = count % 4;
+        const fillCount = remainder === 0 ? 0 : 4 - remainder;
+        const itemList = items.join(', ');
+        const primaryDescriptor = buildPrimaryCategoryDescriptor(parentName, themeCn);
+        const titleDecorationRule = buildTitleDecorationRule(parentName, themeCn, themeEn);
+        const titleCn = themeCn || themeEn || '';
+        const titleEn = themeEn || '';
+        const titleDisplay = includeChinese
+            ? `${titleCn || titleEn || ''}${titleEn ? ` ${titleEn}` : ''}`.trim()
+            : (titleEn || titleCn || '');
+        const totalCount = count + fillCount;
+        const layoutRule = buildPosterLayoutRule(totalCount, { includeChinese });
+        const titleModeRule = includeChinese
+            ? '标题栏增加中文标题，中文标题在上、英文标题在下，中英双行展示'
+            : '标题栏只显示英文标题，不显示中文标题，不要中英双语换行标题';
+        const cardItemsRule = includeChinese
+            ? `每个卡片包含：
+- 写实风格的物品图片
+- 物品图片下方显示该物品的简体中文名称（加粗或半粗）
+- 中文名称下方显示英文名称（加粗）
+- 英文名称下方显示英式或美式音标（IPA）
+- 请根据英文物品自动翻译成常用、准确、适合儿童学习的简体中文名称，例如 Apple=苹果，Watermelon=西瓜，Cashier=收银员
+- 物品图片、中文名称、英文名称、IPA 之间只用干净留白分层，禁止添加横线、分割线、下划线、表格线、练习本横格
+- 每张卡片只保留浅绿色圆角外边框，卡片内部不要任何线条`
+            : `每个卡片包含：
+- 写实风格的物品图片
+- 英文名称（加粗）
+- 英式或美式音标（IPA）
+- 物品图片、英文名称、IPA 之间只用干净留白分层，禁止添加横线、分割线、下划线、表格线、练习本横格
+- 每张卡片只保留浅绿色圆角外边框，卡片内部不要任何线条`;
+        const fillRule = fillCount > 0
+            ? `\n当前物品共有${count}个，不足4列整齐排版。请你自动补充${fillCount}个与“${titleCn}”强相关、常见、适合儿童学习的同类物品，使总数补足到${totalCount}个；补充项不能重复，不能偏题，必须保持与现有物品同一学习主题。`
+            : '';
 
-        let cols;
-        if (count <= 4) cols = 2;
-        else if (count <= 9) cols = 3;
-        else cols = 4;
-        const rows = Math.ceil(count / cols);
-
-        const cardDesc = items.map(item => {
-            const titleCase = item.charAt(0).toUpperCase() + item.slice(1).toLowerCase();
-            return `a photo of a ${item} labeled "${titleCase}"`;
-        }).join(', ');
-
-        return `Generate a tall vertical image (9:16 aspect ratio, like a phone screen) of a children's English vocabulary poster.
-
-Solid flat light pastel background. Title "${theme}" centered at top.
-
-Below the title: a ${cols}×${rows} grid of exactly ${count} white rounded cards filling the full width. Each card shows a realistic photograph of the item with its English name in Title Case below.
-
-The ${count} cards in order: ${cardDesc}.
-
-Strict: exactly ${count} cards, no duplicates, no extras, no missing, no numbers, no background scene, no decorations, no Chinese. All cards same size, all photos same style, all labels same font.`;
+        return `一张干净的英语学习信息图海报，标题为“${titleDisplay}”(${titleModeRule})，采用整齐的网格布局（4列），每个卡片展示一种${primaryDescriptor},展示物品有:${itemList}${fillRule}
+${cardItemsRule}
+整体风格：
+极简设计，白色背景，柔和的绿色和浅色系配色，
+卡片式UI设计，圆角边框，排版整齐，视觉平衡，
+适合英语初学者学习，类似课堂教学海报
+适合社交媒体传播，高分辨率，4K，信息图风格
+标题栏背景要求：
+${titleDecorationRule}
+${layoutRule}
+图片比列：9:16`;
     }
 
     // --- Image Handling ---
@@ -364,7 +1099,14 @@ Strict: exactly ${count} cards, no duplicates, no extras, no missing, no numbers
             const data = await res.json();
             if (data.success) {
                 updateMainImage(data.url);
-                showToast('上传成功');
+                const meta = data.data || {};
+                if (meta.compressed && meta.original_size && meta.size) {
+                    const fromKb = Math.round(meta.original_size / 1024);
+                    const toKb = Math.round(meta.size / 1024);
+                    showToast(`上传成功，已压缩 ${fromKb}KB → ${toKb}KB`);
+                } else {
+                    showToast('上传成功');
+                }
             } else {
                 showToast(data.message, 'error');
             }
@@ -396,7 +1138,7 @@ Strict: exactly ${count} cards, no duplicates, no extras, no missing, no numbers
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     prompt,
-                    ai_style: currentAiStyle,
+                    ai_style: currentAiStyle === 'scene' ? 'custom' : currentAiStyle,
                     name: document.querySelector('input[name="name"]').value,
                     name_en: document.querySelector('input[name="name_en"]').value,
                     category_id: document.querySelector('select[name="category_id"]').value,
@@ -435,7 +1177,32 @@ Strict: exactly ${count} cards, no duplicates, no extras, no missing, no numbers
     // Here we implement: Click on image -> Add default box at raw position -> user can modify text
 
     function clampPercent(v) {
-        return Math.max(0, Math.min(100, v));
+        const n = Number(v);
+        if (!Number.isFinite(n)) return 0;
+        return Math.max(0, Math.min(100, n));
+    }
+
+    function toFiniteNumber(value, fallback = 0) {
+        const n = Number(value);
+        return Number.isFinite(n) ? n : fallback;
+    }
+
+    function roundRect(rect) {
+        const rawX = toFiniteNumber(rect?.x, 0);
+        const rawY = toFiniteNumber(rect?.y, 0);
+        const x = clampPercent(rawX);
+        const y = clampPercent(rawY);
+        const maxW = Math.max(MIN_HOTSPOT_SIZE, 100 - x);
+        const maxH = Math.max(MIN_HOTSPOT_SIZE, 100 - y);
+        const w = Math.max(MIN_HOTSPOT_SIZE, Math.min(maxW, toFiniteNumber(rect?.w, MIN_HOTSPOT_SIZE)));
+        const h = Math.max(MIN_HOTSPOT_SIZE, Math.min(maxH, toFiniteNumber(rect?.h, MIN_HOTSPOT_SIZE)));
+
+        return {
+            x: Number(x.toFixed(4)),
+            y: Number(y.toFixed(4)),
+            w: Number(w.toFixed(4)),
+            h: Number(h.toFixed(4))
+        };
     }
 
     function getLayerPercentPoint(evt) {
@@ -444,6 +1211,98 @@ Strict: exactly ${count} cards, no duplicates, no extras, no missing, no numbers
         const x = ((evt.clientX - rect.left) / rect.width) * 100;
         const y = ((evt.clientY - rect.top) / rect.height) * 100;
         return { x: clampPercent(x), y: clampPercent(y) };
+    }
+
+    function applyHotspotRect(index, rect) {
+        if (index < 0 || index >= hotspots.length) return;
+        const safeRect = roundRect(rect);
+        hotspots[index].rect = safeRect;
+
+        const el = document.getElementById(`hotspot-box-${index}`);
+        if (el) {
+            el.style.left = `${safeRect.x}%`;
+            el.style.top = `${safeRect.y}%`;
+            el.style.width = `${safeRect.w}%`;
+            el.style.height = `${safeRect.h}%`;
+        }
+    }
+
+    function buildAdjustedHotspotRect(state, currentPoint) {
+        const start = roundRect(state.startRect);
+        const dx = currentPoint.x - state.startPoint.x;
+        const dy = currentPoint.y - state.startPoint.y;
+
+        let x = start.x;
+        let y = start.y;
+        let w = start.w;
+        let h = start.h;
+
+        if (state.mode === 'move') {
+            x = Math.max(0, Math.min(100 - start.w, start.x + dx));
+            y = Math.max(0, Math.min(100 - start.h, start.y + dy));
+            return { x, y, w, h };
+        }
+
+        const handle = state.handle || '';
+        const right = start.x + start.w;
+        const bottom = start.y + start.h;
+
+        if (handle.includes('e')) {
+            w = Math.max(MIN_HOTSPOT_SIZE, Math.min(100 - start.x, start.w + dx));
+        }
+        if (handle.includes('s')) {
+            h = Math.max(MIN_HOTSPOT_SIZE, Math.min(100 - start.y, start.h + dy));
+        }
+        if (handle.includes('w')) {
+            x = Math.max(0, Math.min(right - MIN_HOTSPOT_SIZE, start.x + dx));
+            w = right - x;
+        }
+        if (handle.includes('n')) {
+            y = Math.max(0, Math.min(bottom - MIN_HOTSPOT_SIZE, start.y + dy));
+            h = bottom - y;
+        }
+
+        return { x, y, w, h };
+    }
+
+    function startHotspotAdjust(evt, index, mode, handle = '') {
+        if (drawModeEnabled || evt.button !== 0 || index < 0 || index >= hotspots.length) return;
+        evt.preventDefault();
+        evt.stopPropagation();
+
+        activeHotspotIndex = index;
+        hotspotAdjustState = {
+            index,
+            mode,
+            handle,
+            startPoint: getLayerPercentPoint(evt),
+            startRect: roundRect(hotspots[index].rect),
+            hasMoved: false
+        };
+        renderHotspots();
+        renderHotspotList();
+    }
+
+    function onHotspotAdjustMove(evt) {
+        if (!hotspotAdjustState) return;
+        evt.preventDefault();
+        const currentPoint = getLayerPercentPoint(evt);
+        const nextRect = buildAdjustedHotspotRect(hotspotAdjustState, currentPoint);
+        const moved = Math.abs(currentPoint.x - hotspotAdjustState.startPoint.x) > 0.05
+            || Math.abs(currentPoint.y - hotspotAdjustState.startPoint.y) > 0.05;
+        hotspotAdjustState.hasMoved = hotspotAdjustState.hasMoved || moved;
+        applyHotspotRect(hotspotAdjustState.index, nextRect);
+    }
+
+    function onHotspotAdjustEnd() {
+        if (!hotspotAdjustState) return;
+        const didMove = hotspotAdjustState.hasMoved;
+        hotspotAdjustState = null;
+        renderHotspots();
+        renderHotspotList();
+        if (didMove) {
+            showToast('热点框位置/大小已调整，记得保存全部', 'info');
+        }
     }
 
     function setDrawMode(enabled) {
@@ -534,15 +1393,7 @@ Strict: exactly ${count} cards, no duplicates, no extras, no missing, no numbers
 
         renderHotspots();
         renderHotspotList();
-
-        const newIndex = hotspots.length - 1;
-        setTimeout(() => {
-            const input = document.getElementById(`hotspot-label-${newIndex}`);
-            if (input) {
-                input.focus();
-                input.select();
-            }
-        }, 0);
+        selectHotspot(hotspots.length - 1, true);
 
         showToast('已新增热点，请填写单词/句子', 'success');
     }
@@ -609,6 +1460,7 @@ Strict: exactly ${count} cards, no duplicates, no extras, no missing, no numbers
 
             if (data.success) {
                 // Merge new hotspots
+                const startIndex = hotspots.length;
                 data.words.forEach(w => {
                     const hotspot = {
                         id: Date.now() + Math.random(),
@@ -619,14 +1471,21 @@ Strict: exactly ${count} cards, no duplicates, no extras, no missing, no numbers
                 });
                 renderHotspots();
                 renderHotspotList();
+                const targetIndex = data.words.length > 0 ? startIndex : -1;
                 if (sceneId) {
                     const saved = await saveSceneData({ silent: true, reloadAfterSave: true });
                     if (saved.success) {
+                        if (targetIndex >= 0 && targetIndex < hotspots.length) {
+                            selectHotspot(targetIndex, true);
+                        }
                         showToast(`识别成功，找到 ${data.words.length} 个文本，已自动保存`);
                     } else {
                         showToast(`识别成功，找到 ${data.words.length} 个文本，但自动保存失败`, 'error');
                     }
                 } else {
+                    if (targetIndex >= 0) {
+                        selectHotspot(targetIndex, true);
+                    }
                     showToast(`识别成功，找到 ${data.words.length} 个文本，请点击保存全部`);
                 }
             } else {
@@ -638,25 +1497,157 @@ Strict: exactly ${count} cards, no duplicates, no extras, no missing, no numbers
         }
     }
 
+    function getSelectedCategoryItems() {
+        const select = document.getElementById('categorySelect');
+        const opt = select.options[select.selectedIndex];
+        if (!opt) return [];
+        const itemsStr = opt.getAttribute('data-items') || '';
+        return itemsStr
+            .split(',')
+            .map(item => item.trim())
+            .filter(Boolean);
+    }
+
+    function getNextFocusIndex(preferredLabelsCount = 0) {
+        if (!hotspots.length) return -1;
+        if (preferredLabelsCount > 0 && hotspots.length > preferredLabelsCount) {
+            return preferredLabelsCount;
+        }
+        const blankIndex = hotspots.findIndex(h => !String(h.custom_label || '').trim());
+        return blankIndex >= 0 ? blankIndex : 0;
+    }
+
+    async function autoDetectCards() {
+        const imageUrl = document.getElementById('image_url').value;
+        if (!imageUrl) return showToast('请先上传或生成图片', 'error');
+
+        const categoryItems = getSelectedCategoryItems();
+        const expectedCount = Math.max(categoryItems.length, 1);
+
+        if (hotspots.length > 0) {
+            const shouldReplace = confirm('当前已有标注。是否清空现有标注并按卡片自动识别？');
+            if (!shouldReplace) return;
+        }
+
+        try {
+            const usePosterTemplate = currentAiStyle === 'poster' || currentAiStyle === 'custom';
+            showToast(usePosterTemplate ? '正在按海报模板识别卡片边框...' : '正在识别卡片边框...', 'info');
+            const res = await fetch(`${API_BASE}/scenes/detect-cards`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    imageUrl,
+                    expectedColumns: 4,
+                    expectedCount,
+                    layoutMode: usePosterTemplate ? 'poster_template' : 'projection_only',
+                    layoutAdjustments: usePosterTemplate ? getPosterTemplateAdjustments() : null
+                })
+            });
+            const data = await res.json();
+
+            if (!data.success) {
+                return showToast(data.message || '卡片识别失败', 'error');
+            }
+
+            const cards = (data.data && data.data.cards) || [];
+            if (!cards.length) {
+                return showToast('没有识别到可用卡片，请继续手动框选', 'error');
+            }
+
+            const engineLabel = {
+                'projection-valley': '投影兜底',
+                'poster_template': '模板'
+            }[data.data.engine] || '识别';
+
+            hotspots = cards.map((card, index) => ({
+                id: Date.now() + Math.random() + index,
+                custom_label: categoryItems[index] || '',
+                rect: card.rect
+            }));
+
+            activeHotspotIndex = -1;
+            renderHotspots();
+            renderHotspotList();
+
+            const focusIndex = getNextFocusIndex(categoryItems.length);
+
+            const autoFilledCount = Math.min(categoryItems.length, hotspots.length);
+            const remainingCount = Math.max(0, hotspots.length - autoFilledCount);
+
+            if (sceneId) {
+                const saved = await saveSceneData({ silent: true, reloadAfterSave: true });
+                if (saved.success) {
+                    if (focusIndex >= 0 && focusIndex < hotspots.length) {
+                        selectHotspot(focusIndex, true);
+                    }
+                    showToast(`${engineLabel}识别到 ${hotspots.length} 个卡片，已自动预填 ${autoFilledCount} 个标签并保存${remainingCount > 0 ? `，剩余 ${remainingCount} 个待确认` : ''}`);
+                } else {
+                    showToast(`${engineLabel}识别到 ${hotspots.length} 个卡片，已自动预填 ${autoFilledCount} 个标签，但自动保存失败`, 'error');
+                }
+            } else {
+                if (focusIndex >= 0) {
+                    selectHotspot(focusIndex, true);
+                }
+                showToast(`${engineLabel}识别到 ${hotspots.length} 个卡片，已自动预填 ${autoFilledCount} 个标签${remainingCount > 0 ? `，剩余 ${remainingCount} 个待确认` : ''}，请点击保存全部`);
+            }
+        } catch (e) {
+            console.error('[CardDetect] Error:', e);
+            showToast('卡片识别请求失败: ' + e.message, 'error');
+        }
+    }
+
+    function selectHotspot(index, focusInput = false) {
+        if (index < 0 || index >= hotspots.length) return;
+        activeHotspotIndex = index;
+        renderHotspots();
+        renderHotspotList();
+
+        const item = document.getElementById(`hotspot-item-${index}`);
+        if (item) {
+            item.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+
+        if (focusInput) {
+            setTimeout(() => {
+                const input = document.getElementById(`hotspot-label-${index}`);
+                if (input) {
+                    input.focus();
+                    input.select();
+                }
+            }, 0);
+        }
+    }
+
     function renderHotspots() {
         const layer = document.getElementById('hotspotLayer');
         layer.innerHTML = '';
         if (drawModeEnabled) layer.classList.add('draw-mode');
 
-        hotspots.forEach(h => {
+        hotspots.forEach((h, index) => {
+            h.rect = roundRect(h.rect);
             const div = document.createElement('div');
-            div.className = 'hotspot-box';
+            div.id = `hotspot-box-${index}`;
+            div.className = `hotspot-box${index === activeHotspotIndex ? ' active' : ''}`;
             div.style.left = h.rect.x + '%';
             div.style.top = h.rect.y + '%';
             div.style.width = h.rect.w + '%';
             div.style.height = h.rect.h + '%';
-            div.title = h.custom_label;
+            div.title = h.custom_label || `热点 ${index + 1}`;
+            div.onmousedown = (e) => startHotspotAdjust(e, index, 'move');
             div.onclick = (e) => {
                 e.stopPropagation();
-                // Select Item logic if needed
+                selectHotspot(index, true);
             };
 
-            // Edit interaction could be added here (Interact.js)
+            if (index === activeHotspotIndex && !drawModeEnabled) {
+                ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'].forEach((handle) => {
+                    const handleEl = document.createElement('div');
+                    handleEl.className = `hotspot-resize-handle ${handle}`;
+                    handleEl.title = '拖动调整大小';
+                    handleEl.onmousedown = (e) => startHotspotAdjust(e, index, 'resize', handle);
+                    div.appendChild(handleEl);
+                });
+            }
 
             layer.appendChild(div);
         });
@@ -670,49 +1661,64 @@ Strict: exactly ${count} cards, no duplicates, no extras, no missing, no numbers
             .replace(/"/g, '&quot;')
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;');
+        const jsString = (v) => escapeAttr(JSON.stringify(String(v || '')));
         list.innerHTML = hotspots.map((h, i) => `
-            <div class="bg-gray-50 px-2.5 py-2 rounded-lg border border-gray-200 hover:border-blue-300 transition-colors group">
+            <div id="hotspot-item-${i}" onclick="selectHotspot(${i}, true)"
+                class="bg-gray-50 px-2.5 py-2 rounded-lg border transition-colors group cursor-pointer ${i === activeHotspotIndex ? 'border-blue-400 bg-blue-50/70 shadow-sm' : 'border-gray-200 hover:border-blue-300'}">
                 <div class="flex items-center gap-2">
                     <span class="text-[10px] text-gray-400 w-4 shrink-0">${i + 1}</span>
                     <input id="hotspot-label-${i}" type="text" value="${escapeAttr(h.custom_label)}" onchange="updateLabel(${i}, this.value)"
+                        onclick="event.stopPropagation()"
                         class="bg-transparent border-none outline-none font-medium text-gray-700 flex-1 text-sm min-w-0"
                         placeholder="标签">
                     <div class="flex items-center gap-2.5 shrink-0 ml-1">
                         ${h.translation ? '<i class="fas fa-check-circle text-green-500 text-xs" title="已翻译"></i>' : ''}
                         ${h.audio_url_female ? `
-                            <button onclick="playAudio('${h.audio_url_female}')" class="text-blue-500 hover:text-blue-700 p-0.5" title="播放">
+                            <button type="button" onclick="event.preventDefault();event.stopPropagation();playAudio(${jsString(h.audio_url_female)})" class="text-blue-500 hover:text-blue-700 p-0.5" title="播放英文女声">
                                 <i class="fas fa-volume-up text-xs"></i>
                             </button>
                         ` : ''}
+                        ${h.translation_audio_url ? `
+                            <button type="button" onclick="event.preventDefault();event.stopPropagation();playAudio(${jsString(h.translation_audio_url)})" class="text-emerald-500 hover:text-emerald-700 p-0.5" title="播放中文释义">
+                                <i class="fas fa-volume-down text-xs"></i>
+                            </button>
+                        ` : ''}
                         ${h.id ? `
-                            <button onclick="generateHotspotAudio(${h.id}, ${i})" class="text-purple-500 hover:text-purple-700 p-0.5" title="生成音频">
+                            <button type="button" onclick="event.preventDefault();event.stopPropagation();generateChineseAudio(${h.id}, ${i})" class="text-orange-500 hover:text-orange-700 p-0.5" title="${h.translation_audio_url ? '重新生成中文音频' : '生成中文音频'}">
+                                <i class="fas fa-language text-xs"></i>
+                            </button>
+                        ` : ''}
+                        ${h.id ? `
+                            <button type="button" onclick="event.preventDefault();event.stopPropagation();generateHotspotAudio(${h.id}, ${i})" class="text-purple-500 hover:text-purple-700 p-0.5" title="生成音频">
                                 <i class="fas fa-magic text-xs"></i>
                             </button>
                         ` : ''}
                         ${h.id ? `
-                            <button onclick="openEditFields(${i})" class="text-gray-400 hover:text-blue-600 p-0.5" title="编辑音标/翻译">
+                            <button type="button" onclick="event.preventDefault();event.stopPropagation();openEditFields(${i})" class="text-gray-400 hover:text-blue-600 p-0.5" title="编辑音标/翻译">
                                 <i class="fas fa-pen text-xs"></i>
                             </button>
                         ` : ''}
-                        <button onclick="removeHotspot(${i})" class="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-0.5" title="删除">
+                        <button type="button" onclick="event.preventDefault();event.stopPropagation();removeHotspot(${i})" class="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-0.5" title="删除">
                             <i class="fas fa-times text-xs"></i>
                         </button>
                     </div>
                 </div>
                 <div id="hotspot-display-${i}">
-                    ${h.phonetic ? `<div class="text-[11px] text-gray-400 pl-6 cursor-pointer hover:text-blue-500" onclick="openEditFields(${i})">/${h.phonetic}/</div>` : ''}
-                    ${h.translation ? `<div class="text-[11px] text-gray-500 pl-6 cursor-pointer hover:text-blue-500" onclick="openEditFields(${i})">${h.translation}</div>` : ''}
+                    ${h.phonetic ? `<div class="text-[11px] text-gray-400 pl-6 cursor-pointer hover:text-blue-500" onclick="event.stopPropagation();openEditFields(${i})">/${h.phonetic}/</div>` : ''}
+                    ${h.translation ? `<div class="text-[11px] text-gray-500 pl-6 cursor-pointer hover:text-blue-500" onclick="event.stopPropagation();openEditFields(${i})">${h.translation}</div>` : ''}
                 </div>
                 <div id="hotspot-edit-${i}" class="hidden pl-6 mt-1 space-y-1">
                     <input type="text" value="${(h.phonetic || '').replace(/"/g, '&quot;')}" placeholder="音标"
                         id="edit-phonetic-${i}"
+                        onclick="event.stopPropagation()"
                         class="w-full text-[11px] px-2 py-1 border rounded bg-white focus:ring-1 focus:ring-blue-400 outline-none">
                     <input type="text" value="${(h.translation || '').replace(/"/g, '&quot;')}" placeholder="翻译"
                         id="edit-translation-${i}"
+                        onclick="event.stopPropagation()"
                         class="w-full text-[11px] px-2 py-1 border rounded bg-white focus:ring-1 focus:ring-blue-400 outline-none">
                     <div class="flex gap-1.5 pt-0.5">
-                        <button onclick="saveEditFields(${i})" class="text-[10px] px-2 py-0.5 bg-blue-500 text-white rounded hover:bg-blue-600">保存</button>
-                        <button onclick="cancelEditFields(${i})" class="text-[10px] px-2 py-0.5 bg-gray-200 text-gray-600 rounded hover:bg-gray-300">取消</button>
+                        <button type="button" onclick="event.preventDefault();event.stopPropagation();saveEditFields(${i})" class="text-[10px] px-2 py-0.5 bg-blue-500 text-white rounded hover:bg-blue-600">保存</button>
+                        <button type="button" onclick="event.preventDefault();event.stopPropagation();cancelEditFields(${i})" class="text-[10px] px-2 py-0.5 bg-gray-200 text-gray-600 rounded hover:bg-gray-300">取消</button>
                     </div>
                 </div>
             </div>
@@ -747,6 +1753,8 @@ Strict: exactly ${count} cards, no duplicates, no extras, no missing, no numbers
             if (data.success) {
                 hotspots[index].phonetic = phonetic;
                 hotspots[index].translation = translation;
+                hotspots[index].translation_audio_url = '';
+                hotspots[index].translation_audio_text = '';
                 renderHotspotList();
                 showToast('已保存');
             } else {
@@ -760,11 +1768,52 @@ Strict: exactly ${count} cards, no duplicates, no extras, no missing, no numbers
     // 播放音频预览
     let currentAudio = null;
     function playAudio(url) {
+        if (!url) {
+            showToast('暂无音频', 'error');
+            return;
+        }
         if (currentAudio) {
             currentAudio.pause();
         }
         currentAudio = new Audio(url);
-        currentAudio.play();
+        currentAudio.play().catch((error) => {
+            console.warn('音频播放失败:', error);
+            showToast('音频播放失败，请检查浏览器权限或文件地址', 'error');
+        });
+    }
+
+    async function generateChineseAudio(objId, index) {
+        const h = hotspots[index];
+        if (!h || !h.id) { showToast('请先保存场景', 'error'); return; }
+        if (!String(h.translation || '').trim()) {
+            showToast('请先填写中文翻译', 'error');
+            openEditFields(index);
+            return;
+        }
+
+        try {
+            showToast('正在生成中文发音...', 'info');
+            const res = await fetch(`${API_BASE}/scenes/objects/${objId}/chinese-audio`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ force: true })
+            });
+            const data = await res.json();
+            if (data.success) {
+                hotspots[index].translation_audio_url = data.data.translation_audio_url || '';
+                hotspots[index].translation_audio_text = data.data.translation_audio_text || h.translation;
+                renderHotspotList();
+                showToast('中文发音已生成');
+                if (hotspots[index].translation_audio_url) {
+                    playAudio(hotspots[index].translation_audio_url);
+                }
+            } else {
+                showToast(data.message || '中文发音生成失败', 'error');
+            }
+        } catch (e) {
+            console.error(e);
+            showToast('中文发音生成失败: ' + e.message, 'error');
+        }
     }
 
     // 生成热点音频和翻译
@@ -786,16 +1835,28 @@ Strict: exactly ${count} cards, no duplicates, no extras, no missing, no numbers
     // 生成热点音频和翻译（先保存标签再生成）
     async function generateHotspotAudio(objId, index) {
         try {
-            const currentLabel = hotspots[index].custom_label;
-            showToast('正在保存并生成...', 'info');
+            const labelInput = document.getElementById(`hotspot-label-${index}`);
+            const currentLabel = (labelInput ? labelInput.value : hotspots[index].custom_label || '').trim();
+            if (!currentLabel) {
+                showToast('请先填写单词', 'error');
+                if (labelInput) labelInput.focus();
+                return;
+            }
+            hotspots[index].custom_label = currentLabel;
+            showToast('正在按当前单词重新生成...', 'info');
 
             // 先保存标签变更
-            await saveHotspotLabel(objId, currentLabel);
+            const labelSaved = await saveHotspotLabel(objId, currentLabel);
+            if (!labelSaved) {
+                showToast('保存单词失败，请稍后重试', 'error');
+                return;
+            }
 
-            // 再调用生成API
+            // 单个“生成音频”按钮用于修正 OCR/识别错误，必须按当前单词强制刷新旧音标、翻译和音频。
             const res = await fetch(`${API_BASE}/scenes/objects/${objId}/generate`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ force: true, custom_label: currentLabel })
             });
             const data = await res.json();
 
@@ -805,6 +1866,8 @@ Strict: exactly ${count} cards, no duplicates, no extras, no missing, no numbers
                 hotspots[index].translation = data.data.translation;
                 hotspots[index].audio_url_male = data.data.audio_url_male;
                 hotspots[index].audio_url_female = data.data.audio_url_female;
+                hotspots[index].translation_audio_url = '';
+                hotspots[index].translation_audio_text = '';
                 renderHotspotList();
                 showToast('生成成功！');
             } else {
@@ -852,6 +1915,8 @@ Strict: exactly ${count} cards, no duplicates, no extras, no missing, no numbers
                     hotspots[i].translation = data.data.translation;
                     hotspots[i].audio_url_male = data.data.audio_url_male;
                     hotspots[i].audio_url_female = data.data.audio_url_female;
+                    hotspots[i].translation_audio_url = '';
+                    hotspots[i].translation_audio_text = '';
                     successCount++;
                 } else {
                     failCount++;
@@ -882,6 +1947,9 @@ Strict: exactly ${count} cards, no duplicates, no extras, no missing, no numbers
 
     function removeHotspot(index) {
         hotspots.splice(index, 1);
+        if (activeHotspotIndex >= hotspots.length) {
+            activeHotspotIndex = hotspots.length - 1;
+        }
         renderHotspots();
         renderHotspotList();
     }
@@ -889,6 +1957,7 @@ Strict: exactly ${count} cards, no duplicates, no extras, no missing, no numbers
     function clearAllHotspots() {
         if (confirm('清空所有标注？')) {
             hotspots = [];
+            activeHotspotIndex = -1;
             renderHotspots();
             renderHotspotList();
         }
@@ -902,12 +1971,14 @@ Strict: exactly ${count} cards, no duplicates, no extras, no missing, no numbers
             translation: o.translation || '',
             audio_url_male: o.audio_url_male || '',
             audio_url_female: o.audio_url_female || '',
-            rect: {
+            translation_audio_url: o.translation_audio_url || '',
+            translation_audio_text: o.translation_audio_text || '',
+            rect: roundRect({
                 x: o.position_x,
                 y: o.position_y,
                 w: o.label_width,
                 h: o.label_height
-            }
+            })
         };
     }
 
@@ -917,6 +1988,7 @@ Strict: exactly ${count} cards, no duplicates, no extras, no missing, no numbers
         const objData = await objRes.json();
         if (objData.success) {
             hotspots = objData.data.map(mapObjectRowToHotspot);
+            activeHotspotIndex = hotspots.length ? 0 : -1;
             renderHotspots();
             renderHotspotList();
         }
@@ -926,14 +1998,17 @@ Strict: exactly ${count} cards, no duplicates, no extras, no missing, no numbers
         const form = document.getElementById('sceneForm');
         const formData = new FormData(form);
         const data = Object.fromEntries(formData.entries());
-        data.objects = hotspots.map(h => ({
-            id: Number.isInteger(h.id) && h.id > 0 ? h.id : undefined,
-            custom_label: h.custom_label,
-            position_x: h.rect.x,
-            position_y: h.rect.y,
-            label_width: h.rect.w,
-            label_height: h.rect.h
-        }));
+        data.objects = hotspots.map(h => {
+            const rect = roundRect(h.rect);
+            return {
+                id: Number.isInteger(h.id) && h.id > 0 ? h.id : undefined,
+                custom_label: h.custom_label,
+                position_x: rect.x,
+                position_y: rect.y,
+                label_width: rect.w,
+                label_height: rect.h
+            };
+        });
         return data;
     }
 
@@ -987,23 +2062,27 @@ Strict: exactly ${count} cards, no duplicates, no extras, no missing, no numbers
         if (!opt) return false;
 
         const items = opt.getAttribute('data-items');
-        const nameEn = opt.getAttribute('data-name-en');
-        const nameCn = opt.getAttribute('data-name');
+        const optionNameEn = opt.getAttribute('data-name-en');
+        const optionNameCn = opt.getAttribute('data-name');
+        const parentName = opt.getAttribute('data-parent-name') || '';
         if (!items || !items.trim()) return false;
 
         const nameInput = document.querySelector('input[name="name"]');
         const nameEnInput = document.querySelector('input[name="name_en"]');
-        if (!nameInput.value) nameInput.value = nameCn || '';
-        if (!nameEnInput.value) nameEnInput.value = nameEn || '';
+        if (!nameInput.value) nameInput.value = optionNameCn || '';
+        if (!nameEnInput.value) nameEnInput.value = optionNameEn || '';
+        const nameCn = nameInput.value.trim() || optionNameCn || optionNameEn;
+        const nameEn = nameEnInput.value.trim() || optionNameEn || '';
 
         const promptInput = document.getElementById('aiPrompt');
         if (forcePrompt || !promptInput.value.trim()) {
             if (currentAiStyle === 'poster') {
-                promptInput.value = buildPosterPrompt(nameEn || nameCn, items);
+                promptInput.value = buildPosterPrompt(nameCn || nameEn, nameEn, items, parentName);
             } else if (currentAiStyle === 'scene') {
-                promptInput.value = buildSceneExplorePrompt(nameEn || nameCn, items);
+                promptInput.value = buildSceneExplorePrompt(nameEn || nameCn, items, { includeChinese: shouldSceneShowChineseLabels() });
+            } else if (currentAiStyle === 'custom') {
+                promptInput.value = buildPosterPrompt(nameCn || nameEn, nameEn, items, parentName, { includeChinese: true });
             }
-            // custom 模式不自动填充
         }
         return true;
     }
@@ -1019,28 +2098,31 @@ Strict: exactly ${count} cards, no duplicates, no extras, no missing, no numbers
             select.innerHTML += `<option value="${c.id}" ${c.id == initialCategoryId ? 'selected' : ''}>${c.name}</option>`;
             if (c.children) {
                 c.children.forEach(sub => {
-                    select.innerHTML += `<option value="${sub.id}" ${sub.id == initialCategoryId ? 'selected' : ''} data-items="${(sub.items || '').replace(/"/g, '&quot;')}" data-name="${sub.name}" data-name-en="${sub.name_en || ''}">&nbsp;&nbsp;${sub.name}</option>`;
+                    select.innerHTML += `<option value="${sub.id}" ${sub.id == initialCategoryId ? 'selected' : ''} data-items="${(sub.items || '').replace(/"/g, '&quot;')}" data-name="${sub.name}" data-name-en="${sub.name_en || ''}" data-parent-name="${c.name}" data-parent-name-en="${c.name_en || ''}">&nbsp;&nbsp;${sub.name}</option>`;
                 });
             }
         });
 
         // 监听分类选择变化，自动填充 AI 提示词
         select.addEventListener('change', function() {
-            if (currentAiStyle !== 'custom') {
-                const ok = applyCategoryPromptFromSelection({ forcePrompt: true });
-                if (ok) switchImageTab('ai');
-            }
+            const ok = applyCategoryPromptFromSelection({ forcePrompt: true });
+            if (ok) switchImageTab('ai');
         });
 
-        // Edit 模式：默认 AI tab + 词汇海报风格
+        // Edit 模式：默认 AI tab + 英文海报风格
         if (sceneId) {
             switchImageTab('ai');
             switchAiStyle('poster');
         }
 
+        loadPosterTemplateAdjustments();
+        syncPosterAdjustVisibility();
+        syncSceneLabelOptionsVisibility();
+
         // Load Scene Objects if Edit Mode
         if (sceneId) {
             await reloadHotspotsFromServer();
+            await loadSceneReadingVideoStatus({ silent: true });
         }
 
         // 恢复主图显示
@@ -1052,6 +2134,8 @@ Strict: exactly ${count} cards, no duplicates, no extras, no missing, no numbers
         layer.addEventListener('mousemove', onLayerMouseMove);
         layer.addEventListener('mouseup', onLayerMouseUp);
         layer.addEventListener('mouseleave', onLayerMouseUp);
+        document.addEventListener('mousemove', onHotspotAdjustMove);
+        document.addEventListener('mouseup', onHotspotAdjustEnd);
         setDrawMode(false);
     })();
 

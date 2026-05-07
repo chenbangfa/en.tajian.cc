@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <%- include('partials/head', { metaTitle, metaDescription, metaKeywords, canonicalUrl, metaImage }) %>
+</head>
+<body data-page="home">
+  <div class="site-shell home-shell">
+    <%- include('partials/header', { ctaHref: '#mini-program', ctaLabel: '立即体验' }) %>
+
+    <main>
+      <section class="hero-section">
+        <div class="soft-leaf leaf-left"></div>
+        <div class="soft-leaf leaf-right"></div>
+        <div class="container hero-grid">
+          <div class="hero-copy">
+            <div class="hero-kicker">7天免费试学 / 会员解锁全部内容</div>
+            <h1>让孩子在场景、故事与对话中<span>自然学会英语</span></h1>
+            <p>通过场景单词、绘本故事和实用对话，听得懂、说得出、用得上，让英语学习像母语一样自然。</p>
+            <div class="hero-actions">
+              <a class="primary-btn" href="#mini-program"><span>◆</span> 免费试学</a>
+              <a class="secondary-btn" href="#courses">查看课程</a>
+            </div>
+            <div class="trust-line"><span>✓</span> 7天免费试学 / 会员解锁全部内容</div>
+          </div>
+
+          <div class="product-preview" aria-label="产品功能预览">
+            <div class="preview-sidebar">
+              <div class="avatar-face">👦</div>
+              <strong>Hello, 小明</strong>
+              <span>Lv.4</span>
+              <nav>
+                <a class="active">首页</a>
+                <a>学习计划</a>
+                <a>我的课程</a>
+                <a>学习报告</a>
+                <a>我的收藏</a>
+              </nav>
+            </div>
+            <div class="preview-main">
+              <div class="preview-card scene-demo" id="read-demo">
+                <div class="preview-head"><strong>场景单词</strong><span>更多 ›</span></div>
+                <div class="zoo-board">
+                  <button class="word-bubble lion" data-speak="Lion. The lion is strong." data-label="lion" data-cn="狮子">lion <i>🔊</i></button>
+                  <button class="word-bubble giraffe" data-speak="Giraffe. The giraffe is tall." data-label="giraffe" data-cn="长颈鹿">giraffe <i>🔊</i></button>
+                  <button class="word-bubble elephant" data-speak="Elephant. The elephant is big." data-label="elephant" data-cn="大象">elephant <i>🔊</i></button>
+                  <button class="word-bubble monkey" data-speak="Monkey. The monkey can climb." data-label="monkey" data-cn="猴子">monkey <i>🔊</i></button>
+                  <div class="zoo-animal a1"></div>
+                  <div class="zoo-animal a2"></div>
+                  <div class="zoo-animal a3"></div>
+                </div>
+                <div class="read-status" data-read-status>点击词卡听发音</div>
+              </div>
+            </div>
+            <div class="preview-side">
+              <div class="preview-card mini-books">
+                <div class="preview-head"><strong>故事绘本</strong><span>更多 ›</span></div>
+                <div class="book-row">
+                  <% (featuredBooks || []).slice(0, 3).forEach(book => { %>
+                    <a href="/books/<%= book.id %>">
+                      <% if (book.cover_url) { %><img src="<%= book.cover_url %>" alt="<%= book.title || '绘本' %>"><% } else { %><span><%= (book.title_en || book.title || 'Book').slice(0, 8) %></span><% } %>
+                    </a>
+                  <% }) %>
+                  <% if (!featuredBooks || featuredBooks.length === 0) { %>
+                    <span>The Little Red Hen</span><span>The Lion and the Mouse</span><span>A Big Adventure</span>
+                  <% } %>
+                </div>
+              </div>
+              <div class="preview-card chat-card">
+                <div class="preview-head"><strong>对话场景</strong><span>更多 ›</span></div>
+                <div class="chat-line left">Where are you going? <i>🔊</i></div>
+                <div class="chat-line right">I'm going to the zoo. <i>🔊</i></div>
+                <div class="chat-line left">That sounds fun! <i>🔊</i></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="container quick-cards" id="courses">
+        <a class="quick-card" href="/scenes">
+          <div class="quick-img scene-quick"><span>▶</span></div>
+          <div><h2>场景单词</h2><p>在真实场景中学习单词，点击即听标准发音，加深记忆。</p></div>
+          <strong>›</strong>
+        </a>
+        <a class="quick-card" href="/books">
+          <div class="quick-img book-quick"></div>
+          <div><h2>故事绘本</h2><p>精选绘本故事，边听边读，提升理解力与阅读力。</p></div>
+          <strong>›</strong>
+        </a>
+        <a class="quick-card" href="/parents">
+          <div class="quick-img talk-quick"></div>
+          <div><h2>对话场景</h2><p>日常对话情境练习，角色扮演，开口说英语更自信。</p></div>
+          <strong>›</strong>
+        </a>
+      </section>
+
+      <section class="container growth-band" id="features">
+        <div class="growth-title">
+          <h2>科学路径，高效成长</h2>
+          <p>看得见的进步，家长更放心</p>
+        </div>
+        <div class="growth-features">
+          <div><span>👶</span><strong>适合3-12岁</strong><small>分龄内容，循序渐进</small></div>
+          <div><span>⏱</span><strong>每日15分钟</strong><small>碎片时间，高效学习</small></div>
+          <div><span>AI</span><strong>AI点读</strong><small>纯正发音，智能跟读</small></div>
+          <div><span>🖼</span><strong>场景记忆</strong><small>图像联想，长期记忆</small></div>
+        </div>
+        <div class="progress-card">
+          <span>学习进度</span>
+          <strong>本周学习 5 天</strong>
+          <div class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        </div>
+      </section>
+
+      <section class="container selected-section">
+        <div class="section-title">
+          <span>Live Content</span>
+          <h2>先体验我们真正做出来的内容</h2>
+        </div>
+        <div class="content-grid three">
+          <% (featuredScenes || []).slice(0, 3).forEach(scene => { %>
+            <%- include('partials/scene-card', { scene }) %>
+          <% }) %>
+        </div>
+      </section>
+
+      <section class="container pricing-card" id="pricing">
+        <div class="crown">♕</div>
+        <div class="pricing-copy">
+          <h2>会员方案</h2>
+          <p>解锁全部优质内容，学习更自由</p>
+        </div>
+        <div class="pricing-items">
+          <span>✓ 解锁全部场景词库</span>
+          <span>✓ 全部绘本</span>
+          <span>✓ 全部对话练习</span>
+          <span>✓ 学习报告</span>
+        </div>
+        <a class="gold-btn" href="#mini-program">立即开通</a>
+      </section>
+
+      <section class="container mini-program-section" id="mini-program">
+        <div class="mini-copy">
+          <span>Mini Program</span>
+          <h2>扫码进入小程序，开始第一次免费试学</h2>
+          <p>官网负责让你看清产品，小程序负责让孩子真正点读、听音、跟读和积累。</p>
+        </div>
+        <div class="qr-card final-qr">
+          <img id="site-mini-qr" class="qr-image" alt="看图学英语小程序码" hidden>
+          <div class="qr-pattern" data-qr-pattern></div>
+          <div class="qr-loading" data-qr-loading>正在加载小程序码...</div>
+        </div>
+      </section>
+    </main>
+
+    <%- include('partials/footer', {}) %>
+  </div>
+  <script>window.__SITE_INITIAL__ = <%- JSON.stringify(initialState) %>;</script>
+  <script src="/assets/site.js"></script>
+</body>
+</html>

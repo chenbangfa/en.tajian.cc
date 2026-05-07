@@ -1,0 +1,24 @@
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title><%= metaTitle %></title>
+<meta name="description" content="<%= metaDescription %>">
+<meta name="keywords" content="<%= metaKeywords || '儿童英语启蒙,看图学英语,英语绘本,场景英语,英语小程序' %>">
+<meta property="og:title" content="<%= metaTitle %>">
+<meta property="og:description" content="<%= metaDescription %>">
+<meta property="og:type" content="website">
+<meta property="og:url" content="<%= canonicalUrl %>">
+<meta name="robots" content="<%= typeof metaRobots !== 'undefined' && metaRobots ? metaRobots : 'index,follow' %>">
+<% if (metaImage) { %>
+<meta property="og:image" content="<%= metaImage %>">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="<%= metaImage %>">
+<% } else { %>
+<meta name="twitter:card" content="summary">
+<% } %>
+<meta name="twitter:title" content="<%= metaTitle %>">
+<meta name="twitter:description" content="<%= metaDescription %>">
+<link rel="canonical" href="<%= canonicalUrl %>">
+<% if (typeof structuredData !== 'undefined' && structuredData) { %>
+<script type="application/ld+json"><%- JSON.stringify(structuredData) %></script>
+<% } %>
+<link rel="stylesheet" href="/assets/site.css">

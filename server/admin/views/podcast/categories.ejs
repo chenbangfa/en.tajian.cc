@@ -4,13 +4,32 @@
         <div>
             <h2 class="text-2xl font-bold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent">
                 磨耳朵分类管理</h2>
-            <p class="text-gray-500 mt-1">管理磨耳朵学习的层级结构（支持二级分类）</p>
+            <p class="text-gray-500 mt-1">按学段、学期和课程包整理磨耳朵内容，让它更像可以直接使用的产品结构</p>
         </div>
         <button onclick="openModal()"
             class="flex items-center space-x-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-6 py-3 rounded-xl shadow-lg shadow-blue-200 transition-all duration-300 hover:-translate-y-0.5">
             <i class="fas fa-plus"></i>
             <span>新增分类</span>
         </button>
+    </div>
+
+    <div id="categoryOverview" class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div class="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm">
+            <div class="text-xs tracking-wide text-gray-400 uppercase">总分类数</div>
+            <div id="overview-total-categories" class="mt-2 text-3xl font-bold text-gray-800">-</div>
+        </div>
+        <div class="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm">
+            <div class="text-xs tracking-wide text-gray-400 uppercase">课程包数</div>
+            <div id="overview-course-packs" class="mt-2 text-3xl font-bold text-blue-600">-</div>
+        </div>
+        <div class="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm">
+            <div class="text-xs tracking-wide text-gray-400 uppercase">内容总数</div>
+            <div id="overview-total-contents" class="mt-2 text-3xl font-bold text-emerald-600">-</div>
+        </div>
+        <div class="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm">
+            <div class="text-xs tracking-wide text-gray-400 uppercase">缺音频内容</div>
+            <div id="overview-missing-audio" class="mt-2 text-3xl font-bold text-amber-500">-</div>
+        </div>
     </div>
 
     <!-- Category List -->
@@ -96,7 +115,34 @@
 
 <script>
     let categories = [];
-    let topCategories = [];
+    let flatCategories = [];
+    let categorySummary = null;
+    const toneClasses = [
+        {
+            rootBg: 'from-blue-50 to-indigo-50',
+            rootBorder: 'border-blue-100',
+            badge: 'bg-blue-100 text-blue-700',
+            subTitle: 'text-blue-700'
+        },
+        {
+            rootBg: 'from-emerald-50 to-teal-50',
+            rootBorder: 'border-emerald-100',
+            badge: 'bg-emerald-100 text-emerald-700',
+            subTitle: 'text-emerald-700'
+        },
+        {
+            rootBg: 'from-violet-50 to-fuchsia-50',
+            rootBorder: 'border-violet-100',
+            badge: 'bg-violet-100 text-violet-700',
+            subTitle: 'text-violet-700'
+        },
+        {
+            rootBg: 'from-amber-50 to-orange-50',
+            rootBorder: 'border-amber-100',
+            badge: 'bg-amber-100 text-amber-700',
+            subTitle: 'text-amber-700'
+        }
+    ];
 
     // Load Categories
     async function loadCategories() {
@@ -104,13 +150,98 @@
             const res = await fetch(`${API_BASE}/podcast_categories`);
             const data = await res.json();
             if (data.success) {
-                categories = data.data;
-                topCategories = categories; // Used for dropdown
+                categories = data.data.tree || [];
+                flatCategories = data.data.flat || [];
+                categorySummary = data.data.summary || null;
+                renderOverview();
                 renderCategories();
             }
         } catch (err) {
             showToast('加载失败', 'error');
         }
+    }
+
+    function renderOverview() {
+        if (!categorySummary) return;
+        document.getElementById('overview-total-categories').textContent = categorySummary.total_category_count || 0;
+        document.getElementById('overview-course-packs').textContent = categorySummary.course_pack_count || 0;
+        document.getElementById('overview-total-contents').textContent = categorySummary.total_content_count || 0;
+        document.getElementById('overview-missing-audio').textContent = categorySummary.total_missing_audio_count || 0;
+    }
+
+    function renderNodeMeta(node, tone, extraClass = '') {
+        return `
+            <div class="flex flex-wrap items-center gap-2 text-xs ${extraClass}">
+                <span class="px-2 py-1 rounded-full ${tone.badge}">${node.total_content_count || 0} 篇内容</span>
+                <span class="px-2 py-1 rounded-full bg-white/70 text-gray-600">${node.course_pack_count || 0} 个课包</span>
+                ${node.total_missing_audio_count ? `<span class="px-2 py-1 rounded-full bg-amber-100 text-amber-700">${node.total_missing_audio_count} 条缺音频</span>` : ''}
+            </div>
+        `;
+    }
+
+    function renderActionButtons(node, compact = false) {
+        const baseClass = compact ? 'p-1.5' : 'p-2';
+        return `
+            <div class="flex items-center space-x-1">
+                <button onclick='editCategory(${JSON.stringify(node)})' class="text-blue-500 hover:text-blue-700 ${baseClass} rounded-lg hover:bg-blue-50 transition-colors" title="编辑">
+                    <i class="fas fa-edit"></i>
+                </button>
+                <button onclick="deleteCategory(${node.id})" class="text-red-400 hover:text-red-600 ${baseClass} rounded-lg hover:bg-red-50 transition-colors" title="删除">
+                    <i class="fas fa-trash-alt"></i>
+                </button>
+                <button onclick="openModal(${node.id})" class="ml-1 bg-white border border-gray-200 text-gray-600 hover:text-blue-600 hover:border-blue-200 px-3 py-1.5 rounded-lg text-sm shadow-sm transition-all flex items-center space-x-1">
+                    <i class="fas fa-plus text-xs"></i>
+                    <span>添加下级</span>
+                </button>
+            </div>
+        `;
+    }
+
+    function renderLeafCard(node, tone) {
+        return `
+            <div class="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm hover:shadow-md transition-all">
+                <div class="flex items-start justify-between gap-3">
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xl">${node.icon || '🎧'}</span>
+                            <h4 class="font-semibold text-gray-800">${node.name}</h4>
+                        </div>
+                        ${node.name_en ? `<p class="text-xs text-gray-400 mt-1">${node.name_en}</p>` : ''}
+                    </div>
+                    ${renderActionButtons(node, true)}
+                </div>
+                <div class="mt-4 flex flex-wrap gap-2 text-xs">
+                    <span class="px-2 py-1 rounded-full ${tone.badge}">${node.total_content_count || 0} 篇</span>
+                    <span class="px-2 py-1 rounded-full bg-gray-100 text-gray-600">排序 ${node.sort_order || 0}</span>
+                    ${node.total_analyzed_count ? `<span class="px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">已分析 ${node.total_analyzed_count}</span>` : ''}
+                </div>
+            </div>
+        `;
+    }
+
+    function renderIntermediateNode(node, tone) {
+        if (!node.children || !node.children.length) {
+            return renderLeafCard(node, tone);
+        }
+
+        return `
+            <div class="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+                <div class="flex items-start justify-between gap-4">
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xl">${node.icon || '📂'}</span>
+                            <h4 class="font-semibold text-gray-800">${node.name}</h4>
+                        </div>
+                        ${node.name_en ? `<p class="text-xs text-gray-400 mt-1">${node.name_en}</p>` : ''}
+                    </div>
+                    ${renderActionButtons(node, true)}
+                </div>
+                <div class="mt-3">${renderNodeMeta(node, tone)}</div>
+                <div class="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                    ${node.children.map(child => renderLeafCard(child, tone)).join('')}
+                </div>
+            </div>
+        `;
     }
 
     // Render Categories Tree
@@ -122,65 +253,28 @@
         }
 
         let html = '';
-        categories.forEach(cat => {
-            // Parent Category
+        categories.forEach((cat, index) => {
+            const tone = toneClasses[index % toneClasses.length];
             html += `
-            <div class="border border-gray-200 rounded-xl overflow-hidden mb-4 bg-white shadow-sm hover:shadow-md transition-all">
-                <div class="flex items-center justify-between p-4 bg-gray-50/50">
-                    <div class="flex items-center space-x-3">
-                        <span class="text-2xl">${cat.icon || '📁'}</span>
+                <section class="rounded-3xl border ${tone.rootBorder} bg-gradient-to-br ${tone.rootBg} p-6 shadow-sm">
+                    <div class="flex items-start justify-between gap-6">
                         <div>
-                            <h3 class="font-bold text-gray-800 text-lg">${cat.name}</h3>
-                            <p class="text-xs text-gray-500">${cat.name_en || ''}</p>
-                        </div>
-                    </div>
-                    <div class="flex items-center space-x-2">
-                        <span class="text-xs px-2 py-1 rounded bg-gray-100 text-gray-500">排序: ${cat.sort_order}</span>
-                        <div class="h-4 w-px bg-gray-300 mx-2"></div>
-                        <button onclick='editCategory(${JSON.stringify(cat)})' class="text-blue-500 hover:text-blue-700 p-2 rounded-lg hover:bg-blue-50 transition-colors" title="编辑">
-                            <i class="fas fa-edit"></i>
-                        </button>
-                        <button onclick="deleteCategory(${cat.id})" class="text-red-400 hover:text-red-600 p-2 rounded-lg hover:bg-red-50 transition-colors" title="删除">
-                            <i class="fas fa-trash-alt"></i>
-                        </button>
-                        <button onclick="openModal(${cat.id})" class="ml-2 bg-white border border-gray-200 text-gray-600 hover:text-blue-600 hover:border-blue-200 px-3 py-1.5 rounded-lg text-sm shadow-sm transition-all flex items-center space-x-1">
-                            <i class="fas fa-plus text-xs"></i>
-                            <span>添加子分类</span>
-                        </button>
-                    </div>
-                </div>
-        `;
-
-            // Sub Categories
-            if (cat.children && cat.children.length > 0) {
-                html += `<div class="p-2 bg-white border-t border-gray-100 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">`;
-                cat.children.forEach(sub => {
-                    html += `
-                    <div class="flex items-center justify-between p-3 rounded-lg border border-gray-100 hover:border-blue-100 hover:bg-blue-50/30 transition-all group">
-                        <div class="flex items-center space-x-3">
-                            <span class="text-xl">${sub.icon || '📄'}</span>
-                            <div>
-                                <div class="font-medium text-gray-700">${sub.name}</div>
-                                <div class="text-xs text-gray-400">${sub.name_en || ''}</div>
+                            <div class="flex items-center gap-3">
+                                <span class="text-3xl">${cat.icon || '📚'}</span>
+                                <div>
+                                    <h3 class="text-xl font-bold text-gray-800">${cat.name}</h3>
+                                    ${cat.name_en ? `<p class="text-sm text-gray-500 mt-1">${cat.name_en}</p>` : ''}
+                                </div>
                             </div>
+                            <div class="mt-4">${renderNodeMeta(cat, tone)}</div>
                         </div>
-                        <div class="flex items-center space-x-1 opacity-60 group-hover:opacity-100 transition-opacity">
-                            <button onclick='editCategory(${JSON.stringify(sub)})' class="text-blue-500 hover:text-blue-700 p-1.5 rounded hover:bg-white transition-colors">
-                                <i class="fas fa-edit"></i>
-                            </button>
-                            <button onclick="deleteCategory(${sub.id})" class="text-red-400 hover:text-red-600 p-1.5 rounded hover:bg-white transition-colors">
-                                <i class="fas fa-trash-alt"></i>
-                            </button>
-                        </div>
+                        ${renderActionButtons(cat)}
                     </div>
-                `;
-                });
-                html += `</div>`;
-            } else {
-                html += `<div class="px-4 py-3 text-sm text-gray-400 italic bg-white border-t border-gray-100">暂无子分类</div>`;
-            }
-
-            html += `</div>`;
+                    <div class="mt-5 grid grid-cols-1 xl:grid-cols-2 gap-4">
+                        ${(cat.children || []).map(child => renderIntermediateNode(child, tone)).join('')}
+                    </div>
+                </section>
+            `;
         });
 
         container.innerHTML = html;
@@ -196,9 +290,17 @@
         // Update Parent Select
         const select = document.querySelector('select[name="parent_id"]');
         select.innerHTML = '<option value="0">顶级分类</option>';
-        topCategories.forEach(cat => {
-            select.innerHTML += `<option value="${cat.id}">${cat.name}</option>`;
-        });
+        const appendOptions = (nodes, depth = 0) => {
+            nodes.forEach(node => {
+                const indent = '&nbsp;&nbsp;&nbsp;&nbsp;'.repeat(depth);
+                const prefix = depth > 0 ? '└─ ' : '';
+                select.innerHTML += `<option value="${node.id}">${indent}${prefix}${node.name}</option>`;
+                if (node.children && node.children.length > 0) {
+                    appendOptions(node.children, depth + 1);
+                }
+            });
+        };
+        appendOptions(categories);
 
         select.value = parentId;
     }

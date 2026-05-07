@@ -30,11 +30,21 @@ Page({
 
         // ── 评测历史 ──
         articleAvgScore: 0,   // 0 表示从未评测
-        articleMastery: ''    // 'excellent' | 'good' | 'needs_practice' | ''
+        articleMastery: '',    // 'excellent' | 'good' | 'needs_practice' | ''
+        ieltsModuleId: '',
+        ieltsItemKey: '',
+        ieltsPassScore: 80,
+        ieltsDay: ''
     },
 
     onLoad(options) {
         this._setupAudio();
+        this.setData({
+            ieltsModuleId: options.ielts_module_id || '',
+            ieltsItemKey: options.ielts_item_key || '',
+            ieltsPassScore: Number(options.ielts_pass_score || 80),
+            ieltsDay: options.ielts_day || ''
+        });
         if (options.id) this._loadContent(options.id);
     },
 
@@ -314,8 +324,11 @@ Page({
         if (!content) return;
         // 暂停当前播放
         if (this._audio) { this._audio.pause(); }
+        const ieltsParams = this.data.ieltsModuleId
+            ? `&ielts_module_id=${encodeURIComponent(this.data.ieltsModuleId)}&ielts_item_key=${encodeURIComponent(this.data.ieltsItemKey)}&ielts_pass_score=${encodeURIComponent(this.data.ieltsPassScore)}&ielts_day=${encodeURIComponent(this.data.ieltsDay)}`
+            : '';
         wx.navigateTo({
-            url: `/pages/podcast/assess/assess?id=${content.id}&title=${encodeURIComponent(content.title || '')}`
+            url: `/pages/podcast/assess/assess?id=${content.id}&title=${encodeURIComponent(content.title || '')}${ieltsParams}`
         });
     },
 

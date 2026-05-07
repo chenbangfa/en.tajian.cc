@@ -1,0 +1,93 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/ielts/index/index",
+    "pages/ielts/day/day",
+    "pages/ielts/task/task",
+    "pages/entry/entry",
+    "pages/vocabulary/vocabulary",
+    "pages/vocabulary/detail/detail",
+    "pages/scene/scene",
+    "pages/scene/detail/detail",
+    "pages/camera/camera",
+    "pages/photo-read/index",
+    "pages/photo-read/detail/detail",
+    "pages/photo-read/edit/edit",
+    "pages/picture-books/index",
+    "pages/picture-books/reader/reader",
+    "pages/podcast/podcast",
+    "pages/podcast/player/player",
+    "pages/podcast/assess/assess",
+    "pages/podcast/assess/share/share",
+    "pages/checkin/checkin",
+    "pages/checkin/history/history",
+    "pages/checkin/share/share",
+    "pages/checkin/courses/courses",
+    "pages/checkin/course-detail/course-detail",
+    "pages/profile/profile",
+    "pages/profile/edit/edit",
+    "pages/promoter/dashboard/dashboard",
+    "pages/vip/vip",
+    "pages/profile/assessment/assessment",
+    "pages/profile/assessment/share",
+    "pages/points/points",
+    "pages/dialogue/dialogue",
+    "pages/dialogue/player/player",
+    "pages/reward/garden/garden",
+    "pages/reward/choose/choose",
+    "pages/reward/parent/parent",
+    "pages/reward/shop/shop",
+    "pages/reward/history/history",
+    "pages/reward/flowers/flowers"
+  ],
+  "window": {
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "看图学英语",
+    "navigationBarBackgroundColor": "#ffffff",
+    "backgroundColor": "#F8F9FA"
+  },
+  "tabBar": {
+    "color": "#8B8B8B",
+    "selectedColor": "#4F46E5",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "white",
+    "list": [
+      {
+        "pagePath": "pages/index/index",
+        "iconPath": "images/tabbar/home.png",
+        "selectedIconPath": "images/tabbar/home-active.png",
+        "text": "首页"
+      },
+      {
+        "pagePath": "pages/checkin/courses/courses",
+        "iconPath": "images/tabbar/vocab.png",
+        "selectedIconPath": "images/tabbar/vocab-active.png",
+        "text": "课程"
+      },
+      {
+        "pagePath": "pages/podcast/podcast",
+        "text": "磨耳朵",
+        "iconPath": "images/tabbar/podcast.png",
+        "selectedIconPath": "images/tabbar/podcast-active.png"
+      },
+      {
+        "pagePath": "pages/profile/profile",
+        "text": "我的",
+        "iconPath": "images/tabbar/profile.png",
+        "selectedIconPath": "images/tabbar/profile-active.png"
+      }
+    ]
+  },
+  "style": "v2",
+  "componentFramework": "glass-easel",
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents",
+  "permission": {
+    "scope.record": {
+      "desc": "用于语音评测功能"
+    },
+    "scope.camera": {
+      "desc": "用于拍照学英语功能"
+    }
+  }
+}

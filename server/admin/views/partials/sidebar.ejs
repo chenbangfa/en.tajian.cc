@@ -1,185 +1,226 @@
-<aside class="w-64 bg-gray-900 text-white flex flex-col shadow-xl">
-    <div class="h-16 flex items-center justify-center border-b border-gray-800 bg-gray-950">
-        <span class="text-xl font-bold flex items-center">
-            <span class="text-2xl mr-2">📚</span> 英语学习后台
-        </span>
+<%
+    const currentPage = typeof page !== 'undefined' ? page : '';
+    const menuGroups = [
+        {
+            title: '工作台',
+            tone: 'blue',
+            items: [
+                { href: '/', page: 'dashboard', icon: 'fa-chart-line', label: '数据统计' },
+                { href: '/users', page: 'users', icon: 'fa-users', label: '用户管理' },
+                { href: '/promoters', page: 'promoters', icon: 'fa-handshake-angle', label: '推广管理' },
+                { href: '/categories', page: 'categories', icon: 'fa-folder-tree', label: '分类管理' }
+            ]
+        },
+        {
+            title: '词库与课程',
+            tone: 'cyan',
+            items: [
+                { href: '/words', page: 'words', icon: 'fa-book', label: '单词管理' },
+                { href: '/words/batch-tts', page: 'words-batch-tts', icon: 'fa-volume-up', label: '批量语音' },
+                { href: '/words/batch-enhance', page: 'words-batch-enhance', icon: 'fa-wand-magic-sparkles', label: '批量AI补全' },
+                { href: '/checkin/curriculum', page: 'checkin-curriculum', icon: 'fa-road', label: '打卡课程' },
+                { href: '/ielts', page: 'ielts', icon: 'fa-graduation-cap', label: 'IELTS课程' }
+            ]
+        },
+        {
+            title: '场景学习',
+            tone: 'emerald',
+            items: [
+                { href: '/scenes/categories', page: 'scenes-cat', icon: 'fa-sitemap', label: '场景分类' },
+                { href: '/scenes', page: 'scenes-list', icon: 'fa-image', label: '场景内容' }
+            ]
+        },
+        {
+            title: '绘本故事',
+            tone: 'green',
+            items: [
+                { href: '/picture-books/categories', page: 'pb-cat', icon: 'fa-tags', label: '绘本分类' },
+                { href: '/picture-books', page: 'pb-list', icon: 'fa-book-open', label: '绘本管理' },
+                { href: '/picture-books/batch-images', page: 'pb-batch-images', icon: 'fa-images', label: '批量生图' },
+                { href: '/picture-books/batch-vocab', page: 'pb-batch-vocab', icon: 'fa-spell-check', label: '词汇分析' },
+                { href: '/picturebook-videos', page: 'pb-videos', icon: 'fa-film', label: '绘本视频' }
+            ]
+        },
+        {
+            title: '对话口语',
+            tone: 'purple',
+            items: [
+                { href: '/dialogue/categories', page: 'dialogue-cat', icon: 'fa-layer-group', label: '对话分类' },
+                { href: '/dialogue/scenes', page: 'dialogue-scenes', icon: 'fa-comments', label: '对话内容' },
+                { href: '/dialogue-videos', page: 'dialogue-videos', icon: 'fa-video', label: '对话视频' }
+            ]
+        },
+        {
+            title: '音频内容',
+            tone: 'sky',
+            items: [
+                { href: '/podcast/categories', page: 'podcast-cat', icon: 'fa-headphones', label: '磨耳朵分类' },
+                { href: '/podcast/contents', page: 'podcast-content', icon: 'fa-microphone', label: '磨耳朵内容' }
+            ]
+        },
+        {
+            title: '营销视频',
+            tone: 'orange',
+            items: [
+                { href: '/marketing', page: 'marketing', icon: 'fa-pen-nib', label: '内容工坊' },
+                { href: '/marketing/videos', page: 'marketing-videos', icon: 'fa-video', label: '每日一词视频' },
+                { href: '/marketing/category-videos', page: 'marketing-category-videos', icon: 'fa-layer-group', label: '分类视频' }
+            ]
+        },
+        {
+            title: '工具设置',
+            tone: 'slate',
+            items: [
+                { href: '/prompts', page: 'prompts', icon: 'fa-robot', label: '提示词管理' },
+                { href: '/batch/import', page: 'batch-import', icon: 'fa-file-import', label: '批量导入' },
+                { href: '/batch/generate', page: 'batch-generate', icon: 'fa-palette', label: '批量生成图片' },
+                { href: '/pet-stages', page: 'pet-stages', icon: 'fa-seedling', label: '成长阶段' }
+            ]
+        }
+    ];
+
+    const toneClassMap = {
+        blue: { dot: 'bg-blue-400', active: 'border-blue-400 text-blue-50 bg-blue-500/15' },
+        cyan: { dot: 'bg-cyan-400', active: 'border-cyan-400 text-cyan-50 bg-cyan-500/15' },
+        emerald: { dot: 'bg-emerald-400', active: 'border-emerald-400 text-emerald-50 bg-emerald-500/15' },
+        green: { dot: 'bg-green-400', active: 'border-green-400 text-green-50 bg-green-500/15' },
+        purple: { dot: 'bg-purple-400', active: 'border-purple-400 text-purple-50 bg-purple-500/15' },
+        sky: { dot: 'bg-sky-400', active: 'border-sky-400 text-sky-50 bg-sky-500/15' },
+        orange: { dot: 'bg-orange-400', active: 'border-orange-400 text-orange-50 bg-orange-500/15' },
+        slate: { dot: 'bg-slate-400', active: 'border-slate-400 text-slate-50 bg-slate-500/15' }
+    };
+%>
+
+<style>
+    .admin-sidebar-nav {
+        scrollbar-width: thin;
+        scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
+    }
+    .admin-sidebar-nav::-webkit-scrollbar {
+        width: 6px;
+    }
+    .admin-sidebar-nav::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    .admin-sidebar-nav::-webkit-scrollbar-thumb {
+        background: rgba(148, 163, 184, 0.35);
+        border-radius: 999px;
+    }
+    .admin-sidebar-link {
+        position: relative;
+    }
+    .admin-sidebar-link::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 9px;
+        bottom: 9px;
+        width: 3px;
+        border-radius: 999px;
+        background: transparent;
+    }
+    .admin-sidebar-link.is-active::before {
+        background: currentColor;
+    }
+</style>
+
+<aside class="w-64 bg-slate-950 text-white flex flex-col shadow-2xl border-r border-slate-800">
+    <div class="h-16 flex items-center px-4 border-b border-slate-800 bg-slate-950/95">
+        <div class="w-10 h-10 rounded-2xl bg-gradient-to-br from-emerald-400 to-green-700 flex items-center justify-center shadow-lg shadow-emerald-950/40">
+            <i class="fas fa-book-open text-white"></i>
+        </div>
+        <div class="ml-3 min-w-0">
+            <div class="text-sm font-black tracking-wide truncate">BookMelo Admin</div>
+            <div class="text-[11px] text-slate-400 truncate">English Learning Studio</div>
+        </div>
     </div>
 
-    <nav class="flex-1 overflow-y-auto py-4">
-        <div class="px-4 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">主要功能</div>
-
-        <a href="/"
-            class="flex items-center px-6 py-3 hover:bg-gray-800 transition-colors duration-200 <%= page === 'dashboard' ? 'bg-gray-800 border-r-4 border-blue-500' : '' %>">
-            <i class="fas fa-chart-line w-6"></i>
-            <span>数据统计</span>
-        </a>
-
-        <a href="/users"
-            class="flex items-center px-6 py-3 hover:bg-gray-800 transition-colors duration-200 <%= page === 'users' ? 'bg-gray-800 border-r-4 border-blue-500' : '' %>">
-            <i class="fas fa-users w-6"></i>
-            <span>用户管理</span>
-        </a>
-
-        <a href="/categories"
-            class="flex items-center px-6 py-3 hover:bg-gray-800 transition-colors duration-200 <%= page === 'categories' ? 'bg-gray-800 border-r-4 border-blue-500' : '' %>">
-            <i class="fas fa-folder w-6"></i>
-            <span>分类管理</span>
-        </a>
-
-        <a href="/words"
-            class="flex items-center px-6 py-3 hover:bg-gray-800 transition-colors duration-200 <%= page === 'words' ? 'bg-gray-800 border-r-4 border-blue-500' : '' %>">
-            <i class="fas fa-book w-6"></i>
-            <span>单词管理</span>
-        </a>
-
-        <a href="/words/batch-tts"
-            class="flex items-center px-6 py-3 hover:bg-gray-800 transition-colors duration-200 <%= page === 'words-batch-tts' ? 'bg-gray-800 border-r-4 border-cyan-500' : '' %>">
-            <i class="fas fa-volume-up w-6"></i>
-            <span>批量语音合成</span>
-        </a>
-
-        <div class="px-4 mt-6 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">场景学习 Scene</div>
-
-        <a href="/scenes/categories"
-            class="flex items-center px-6 py-3 hover:bg-gray-800 transition-colors duration-200 <%= page === 'scenes-cat' ? 'bg-gray-800 border-r-4 border-blue-500' : '' %>">
-            <i class="fas fa-sitemap w-6"></i>
-            <span>场景分类</span>
-        </a>
-
-        <a href="/scenes"
-            class="flex items-center px-6 py-3 hover:bg-gray-800 transition-colors duration-200 <%= page === 'scenes-list' ? 'bg-gray-800 border-r-4 border-blue-500' : '' %>">
-            <i class="fas fa-image w-6"></i>
-            <span>场景内容</span>
-        </a>
-
-        <div class="px-4 mt-6 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">对话场景 Dialogue</div>
-
-        <a href="/dialogue/categories"
-            class="flex items-center px-6 py-3 hover:bg-gray-800 transition-colors duration-200 <%= page === 'dialogue-cat' ? 'bg-gray-800 border-r-4 border-purple-500' : '' %>">
-            <i class="fas fa-sitemap w-6"></i>
-            <span>分类管理</span>
-        </a>
-
-        <a href="/dialogue/scenes"
-            class="flex items-center px-6 py-3 hover:bg-gray-800 transition-colors duration-200 <%= page === 'dialogue-scenes' ? 'bg-gray-800 border-r-4 border-purple-500' : '' %>">
-            <i class="fas fa-comments w-6"></i>
-            <span>场景内容</span>
-        </a>
-
-        <a href="/dialogue-videos"
-            class="flex items-center px-6 py-3 hover:bg-gray-800 transition-colors duration-200 <%= page === 'dialogue-videos' ? 'bg-gray-800 border-r-4 border-purple-500' : '' %>">
-            <i class="fas fa-film w-6"></i>
-            <span>对话视频</span>
-        </a>
-
-        <div class="px-4 mt-6 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">绘本故事 Picture Books</div>
-
-        <a href="/picture-books/categories"
-            class="flex items-center px-6 py-3 hover:bg-gray-800 transition-colors duration-200 <%= page === 'pb-cat' ? 'bg-gray-800 border-r-4 border-green-500' : '' %>">
-            <i class="fas fa-tags w-6"></i>
-            <span>分类管理</span>
-        </a>
-
-        <a href="/picture-books"
-            class="flex items-center px-6 py-3 hover:bg-gray-800 transition-colors duration-200 <%= page === 'pb-list' ? 'bg-gray-800 border-r-4 border-green-500' : '' %>">
-            <i class="fas fa-book-open w-6"></i>
-            <span>绘本管理</span>
-        </a>
-
-        <a href="/picture-books/batch-images"
-            class="flex items-center px-6 py-3 hover:bg-gray-800 transition-colors duration-200 <%= page === 'pb-batch-images' ? 'bg-gray-800 border-r-4 border-green-500' : '' %>">
-            <i class="fas fa-images w-6"></i>
-            <span>绘本批量生图</span>
-        </a>
-
-        <a href="/picture-books/batch-vocab"
-            class="flex items-center px-6 py-3 hover:bg-gray-800 transition-colors duration-200 <%= page === 'pb-batch-vocab' ? 'bg-gray-800 border-r-4 border-indigo-500' : '' %>">
-            <i class="fas fa-spell-check w-6"></i>
-            <span>绘本词汇分析</span>
-        </a>
-
-        <a href="/picturebook-videos"
-            class="flex items-center px-6 py-3 hover:bg-gray-800 transition-colors duration-200 <%= page === 'pb-videos' ? 'bg-gray-800 border-r-4 border-pink-500' : '' %>">
-            <i class="fas fa-film w-6"></i>
-            <span>绘本视频</span>
-        </a>
-
-        <div class="px-4 mt-6 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">磨耳朵 Podcast</div>
-
-        <a href="/podcast/categories"
-            class="flex items-center px-6 py-3 hover:bg-gray-800 transition-colors duration-200 <%= page === 'podcast-cat' ? 'bg-gray-800 border-r-4 border-blue-500' : '' %>">
-            <i class="fas fa-headphones w-6"></i>
-            <span>分类管理</span>
-        </a>
-
-        <a href="/podcast/contents"
-            class="flex items-center px-6 py-3 hover:bg-gray-800 transition-colors duration-200 <%= page === 'podcast-content' ? 'bg-gray-800 border-r-4 border-blue-500' : '' %>">
-            <i class="fas fa-microphone w-6"></i>
-            <span>内容管理</span>
-        </a>
-
-        <div class="px-4 mt-6 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">内容营销</div>
-
-        <a href="/marketing"
-            class="flex items-center px-6 py-3 hover:bg-gray-800 transition-colors duration-200 <%= page === 'marketing' ? 'bg-gray-800 border-r-4 border-orange-500' : '' %>">
-            <i class="fas fa-pen-nib w-6"></i>
-            <span>内容工坊</span>
-        </a>
-
-        <a href="/marketing/videos"
-            class="flex items-center px-6 py-3 hover:bg-gray-800 transition-colors duration-200 <%= page === 'marketing-videos' ? 'bg-gray-800 border-r-4 border-orange-500' : '' %>">
-            <i class="fas fa-video w-6"></i>
-            <span>视频工坊</span>
-        </a>
-
-        <div class="px-4 mt-6 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">工具 / 设置</div>
-
-        <a href="/prompts"
-            class="flex items-center px-6 py-3 hover:bg-gray-800 transition-colors duration-200 <%= page === 'prompts' ? 'bg-gray-800 border-r-4 border-blue-500' : '' %>">
-            <i class="fas fa-robot w-6"></i>
-            <span>提示词管理</span>
-        </a>
-
-        <a href="/batch/import"
-            class="flex items-center px-6 py-3 hover:bg-gray-800 transition-colors duration-200 <%= page === 'batch-import' ? 'bg-gray-800 border-r-4 border-blue-500' : '' %>">
-            <i class="fas fa-file-import w-6"></i>
-            <span>批量导入</span>
-        </a>
-
-        <a href="/batch/generate"
-            class="flex items-center px-6 py-3 hover:bg-gray-800 transition-colors duration-200 <%= page === 'batch-generate' ? 'bg-gray-800 border-r-4 border-blue-500' : '' %>">
-            <i class="fas fa-palette w-6"></i>
-            <span>批量生成图片</span>
-        </a>
-
-        <a href="/checkin/curriculum"
-            class="flex items-center px-6 py-3 hover:bg-gray-800 transition-colors duration-200 <%= page === 'checkin-curriculum' ? 'bg-gray-800 border-r-4 border-blue-500' : '' %>">
-            <i class="fas fa-road w-6"></i>
-            <span>打卡课程</span>
-        </a>
-
-        <a href="/pet-stages"
-            class="flex items-center px-6 py-3 hover:bg-gray-800 transition-colors duration-200 <%= page === 'pet-stages' ? 'bg-gray-800 border-r-4 border-green-500' : '' %>">
-            <i class="fas fa-seedling w-6"></i>
-            <span>成长阶段</span>
-        </a>
+    <nav id="adminSidebarNav" class="admin-sidebar-nav flex-1 overflow-y-auto px-3 py-4 space-y-4">
+        <% menuGroups.forEach((group) => {
+            const tone = toneClassMap[group.tone] || toneClassMap.slate;
+            const groupActive = group.items.some(item => item.page === currentPage);
+        %>
+            <section class="rounded-2xl <%= groupActive ? 'bg-white/[0.045] ring-1 ring-white/10' : '' %>">
+                <div class="px-3 pt-3 pb-2 flex items-center justify-between">
+                    <div class="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">
+                        <span class="w-1.5 h-1.5 rounded-full <%= tone.dot %>"></span>
+                        <span><%= group.title %></span>
+                    </div>
+                </div>
+                <div class="px-1 pb-2 space-y-1">
+                    <% group.items.forEach((item) => {
+                        const isActive = item.page === currentPage;
+                        const baseClass = 'admin-sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 border border-transparent';
+                        const stateClass = isActive
+                            ? `is-active ${tone.active} shadow-lg shadow-black/10`
+                            : 'text-slate-300 hover:text-white hover:bg-white/[0.065]';
+                    %>
+                        <a href="<%= item.href %>"
+                           data-sidebar-link
+                           data-active="<%= isActive ? 'true' : 'false' %>"
+                           class="<%= baseClass %> <%= stateClass %>">
+                            <i class="fas <%= item.icon %> w-5 text-center text-[13px] opacity-90"></i>
+                            <span class="truncate"><%= item.label %></span>
+                        </a>
+                    <% }) %>
+                </div>
+            </section>
+        <% }) %>
     </nav>
 
-    <div class="p-4 border-t border-gray-800">
-        <button class="flex items-center text-gray-400 hover:text-white transition-colors duration-200 w-full">
-            <i class="fas fa-sign-out-alt w-6"></i>
-            <span onclick="logout()">退出登录</span>
+    <div class="p-3 border-t border-slate-800 bg-slate-950">
+        <button onclick="logout()" class="flex items-center justify-center gap-2 text-slate-400 hover:text-white hover:bg-white/[0.065] transition-colors duration-200 w-full px-3 py-2.5 rounded-xl text-sm font-semibold">
+            <i class="fas fa-sign-out-alt"></i>
+            <span>退出登录</span>
         </button>
     </div>
 </aside>
 
 <script>
-    // 侧边栏通用的登出逻辑，虽然 header 上也有
+    (function setupSidebarState() {
+        const nav = document.getElementById('adminSidebarNav');
+        if (!nav) return;
+
+        const storageKey = 'bookmelo-admin-sidebar-scroll-top';
+        const activeLink = nav.querySelector('[data-active="true"]');
+        const savedTop = Number(sessionStorage.getItem(storageKey) || 0);
+        if (Number.isFinite(savedTop) && savedTop > 0) {
+            nav.scrollTop = savedTop;
+        }
+
+        requestAnimationFrame(() => {
+            if (!activeLink) return;
+            const top = activeLink.offsetTop;
+            const bottom = top + activeLink.offsetHeight;
+            const visibleTop = nav.scrollTop + 12;
+            const visibleBottom = nav.scrollTop + nav.clientHeight - 24;
+            if (top < visibleTop || bottom > visibleBottom) {
+                activeLink.scrollIntoView({ block: 'center' });
+            }
+        });
+
+        let scrollTimer = null;
+        nav.addEventListener('scroll', () => {
+            clearTimeout(scrollTimer);
+            scrollTimer = setTimeout(() => {
+                sessionStorage.setItem(storageKey, String(nav.scrollTop));
+            }, 80);
+        }, { passive: true });
+
+        nav.querySelectorAll('[data-sidebar-link]').forEach((link) => {
+            link.addEventListener('click', () => {
+                sessionStorage.setItem(storageKey, String(nav.scrollTop));
+            });
+        });
+    })();
+
     async function logout() {
         if (!confirm('确定要退出登录吗？')) return;
         try {
-            const res = await fetch('/api/admin/auth/logout', { method: 'POST' });
+            await fetch('/api/admin/auth/logout', { method: 'POST' });
             window.location.href = '/login';
-        } catch (e) { window.location.href = '/login'; }
+        } catch (e) {
+            window.location.href = '/login';
+        }
     }
 </script>

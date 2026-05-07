@@ -1,26 +1,93 @@
+<div id="podcast-list-summary" class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+    <div class="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm">
+        <div class="text-xs tracking-wide text-gray-400 uppercase">当前结果</div>
+        <div id="podcast-summary-total" class="mt-2 text-3xl font-bold text-gray-800">-</div>
+        <div id="podcast-summary-path" class="mt-2 text-sm text-gray-500">全部课程包</div>
+    </div>
+    <div class="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm">
+        <div class="text-xs tracking-wide text-gray-400 uppercase">涉及课程包</div>
+        <div id="podcast-summary-packs" class="mt-2 text-3xl font-bold text-blue-600">-</div>
+        <div class="mt-2 text-sm text-gray-500">按当前筛选统计</div>
+    </div>
+    <div class="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm">
+        <div class="text-xs tracking-wide text-gray-400 uppercase">已分析内容</div>
+        <div id="podcast-summary-analyzed" class="mt-2 text-3xl font-bold text-emerald-600">-</div>
+        <div class="mt-2 text-sm text-gray-500">可直接查看句子拆分</div>
+    </div>
+    <div class="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm">
+        <div class="text-xs tracking-wide text-gray-400 uppercase">缺音频内容</div>
+        <div id="podcast-summary-missing-audio" class="mt-2 text-3xl font-bold text-amber-500">-</div>
+        <div class="mt-2 text-sm text-gray-500">优先补齐可听资源</div>
+    </div>
+</div>
+
 <div class="bg-white rounded-xl shadow-sm border border-gray-100">
     <div class="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50 rounded-t-xl">
         <div class="flex items-center space-x-4">
-            <h2 class="text-lg font-bold text-gray-800">内容列表</h2>
-            <select id="podcast-filter-cat" onchange="loadPodcastContents()"
+            <div>
+                <h2 class="text-lg font-bold text-gray-800">内容列表</h2>
+                <p class="text-xs text-gray-400 mt-1">按课程包筛选、补分析和音频，让磨耳朵内容更像可以直接学习的产品</p>
+            </div>
+            <select id="podcast-filter-cat" onchange="loadPodcastContents(1)"
                 class="px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
                 <option value="">全部分类</option>
             </select>
+            <label class="inline-flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-600 cursor-pointer">
+                <input id="podcast-filter-unanalyzed" type="checkbox" onchange="loadPodcastContents(1)"
+                    class="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                <span>只看未分析</span>
+            </label>
+            <label class="inline-flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-600 cursor-pointer">
+                <input id="podcast-filter-missing-audio" type="checkbox" onchange="loadPodcastContents(1)"
+                    class="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                <span>只看缺音频</span>
+            </label>
         </div>
-        <button onclick="openPodcastContentModal()"
-            class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm flex items-center">
-            <i class="fas fa-plus mr-2"></i> 新增内容
-        </button>
+        <div class="flex items-center gap-3">
+            <div class="flex items-center gap-2">
+                <span class="text-sm text-gray-500">每页</span>
+                <select id="podcast-page-size" onchange="changePodcastPageSize(this.value)"
+                    class="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white">
+                    <option value="20" selected>20</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                </select>
+            </div>
+            <div class="flex items-center gap-2">
+                <span class="text-sm text-gray-500">AI模型</span>
+                <select id="podcast-analyze-engine"
+                    class="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white">
+                    <option value="deepseek" selected>DeepSeek</option>
+                    <option value="gemini">Gemini</option>
+                </select>
+            </div>
+            <button onclick="batchAnalyzeSelected()"
+                class="px-3 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-sm flex items-center text-sm">
+                <i class="fas fa-layer-group mr-2"></i> 批量AI分析
+            </button>
+            <button onclick="batchAnalyzeCurrentFilter()"
+                class="px-3 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors shadow-sm flex items-center text-sm">
+                <i class="fas fa-filter mr-2"></i> 当前筛选批量AI分析
+            </button>
+            <button onclick="openPodcastContentModal()"
+                class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm flex items-center">
+                <i class="fas fa-plus mr-2"></i> 新增内容
+            </button>
+        </div>
     </div>
 
     <div class="overflow-x-auto">
         <table class="w-full text-left" id="podcast-contents-table">
             <thead>
                 <tr class="bg-gray-50 text-gray-600 text-sm uppercase tracking-wider">
+                    <th class="px-4 py-4 font-semibold w-14 text-center">
+                        <input id="podcast-select-all" type="checkbox" onchange="toggleSelectAllPodcast(this.checked)"
+                            class="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                    </th>
                     <th class="px-6 py-4 font-semibold w-20">ID</th>
-                    <th class="px-6 py-4 font-semibold w-48">标题</th>
-                    <th class="px-6 py-4 font-semibold w-44">分类</th>
-                    <th class="px-6 py-4 font-semibold w-20">难度</th>
+                    <th class="px-6 py-4 font-semibold w-56">标题</th>
+                    <th class="px-6 py-4 font-semibold w-64">课程包</th>
+                    <th class="px-6 py-4 font-semibold w-28">定位</th>
                     <th class="px-6 py-4 font-semibold w-48">音频状态</th>
                     <th class="px-6 py-4 font-semibold text-right">操作</th>
                 </tr>
@@ -29,6 +96,12 @@
                 <!-- Data loaded via JS -->
             </tbody>
         </table>
+    </div>
+
+    <div id="podcast-pagination"
+        class="px-6 py-4 border-t border-gray-100 bg-gray-50 rounded-b-xl flex items-center justify-between gap-4 flex-wrap">
+        <div class="text-sm text-gray-500" id="podcast-pagination-summary">共 0 条</div>
+        <div class="flex items-center gap-2 flex-wrap" id="podcast-pagination-controls"></div>
     </div>
 </div>
 
@@ -67,8 +140,8 @@
 
             <div class="grid grid-cols-3 gap-4 items-end">
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">难度等级 (1-5)</label>
-                    <input type="number" id="pcontent-difficulty" min="1" max="5" value="1"
+                    <label class="block text-sm font-medium text-gray-700 mb-1">难度等级 (1-20)</label>
+                    <input type="number" id="pcontent-difficulty" min="1" max="20" value="1"
                         class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
                 </div>
                 <div>
@@ -112,27 +185,72 @@
 <script>
     let podcastContents = [];
     let podcastCategories = [];
+    let selectedPodcastIds = new Set();
+    let podcastBatchRunning = false;
+    let podcastCategoryPayload = null;
+    let podcastListMeta = null;
+    let podcastPagination = {
+        page: 1,
+        limit: 20,
+        total: 0
+    };
 
     async function loadPodcastCategories() {
         try {
             const res = await fetch(`${API_BASE}/podcast_categories`);
             const data = await res.json();
             if (data.success) {
-                podcastCategories = data.data;
+                podcastCategoryPayload = data.data || {};
+                podcastCategories = podcastCategoryPayload.tree || [];
                 populateSelects();
             }
         } catch (e) { console.error('加载分类失败:', e); }
     }
 
-    async function loadPodcastContents() {
+    function getPodcastCategoryFilter() {
+        return document.getElementById('podcast-filter-cat').value || '';
+    }
+
+    function isPodcastUnanalyzedFilterEnabled() {
+        return !!document.getElementById('podcast-filter-unanalyzed')?.checked;
+    }
+
+    function isPodcastMissingAudioFilterEnabled() {
+        return !!document.getElementById('podcast-filter-missing-audio')?.checked;
+    }
+
+    function buildPodcastListUrl(page = podcastPagination.page, limit = podcastPagination.limit) {
+        const params = new URLSearchParams();
+        params.set('page', String(page));
+        params.set('limit', String(limit));
+        const categoryId = getPodcastCategoryFilter();
+        if (categoryId) params.set('category_id', categoryId);
+        if (isPodcastUnanalyzedFilterEnabled()) params.set('filter_unanalyzed', '1');
+        if (isPodcastMissingAudioFilterEnabled()) params.set('filter_missing_audio', '1');
+        return `${API_BASE}/podcast?${params.toString()}`;
+    }
+
+    async function loadPodcastContents(page = 1) {
         try {
-            const categoryId = document.getElementById('podcast-filter-cat').value;
-            const url = categoryId ? `${API_BASE}/podcast?category_id=${categoryId}` : `${API_BASE}/podcast`;
+            const url = buildPodcastListUrl(page);
             const res = await fetch(url);
             const data = await res.json();
             if (data.success) {
+                podcastListMeta = data.data;
+                const total = Number(data.data.total || 0);
+                const limit = Number(data.data.limit || podcastPagination.limit || 20);
+                const totalPages = Math.max(1, Math.ceil(total / limit));
+                if (total > 0 && page > totalPages) {
+                    return loadPodcastContents(totalPages);
+                }
                 podcastContents = data.data.list;
+                podcastPagination.page = Number(data.data.page || page || 1);
+                podcastPagination.limit = limit;
+                podcastPagination.total = total;
+                selectedPodcastIds = new Set();
+                renderPodcastSummary();
                 renderPodcastContents();
+                renderPodcastPagination();
             }
         } catch (e) {
             console.error('加载内容失败:', e);
@@ -147,7 +265,8 @@
                 const indent = '&nbsp;&nbsp;&nbsp;&nbsp;'.repeat(level);
                 const icon = c.icon || '';
                 const prefix = level > 0 ? '└─ ' : '';
-                options += `<option value="${c.id}">${indent}${prefix}${icon} ${c.name}</option>`;
+                const suffix = c.total_content_count ? ` (${c.total_content_count})` : '';
+                options += `<option value="${c.id}">${indent}${prefix}${icon} ${c.name}${suffix}</option>`;
                 if (c.children && c.children.length > 0) {
                     options += buildOptions(c.children, level + 1);
                 }
@@ -160,26 +279,63 @@
         document.getElementById('pcontent-category').innerHTML = '<option value="">选择分类</option>' + options;
     }
 
+    function renderPodcastSummary() {
+        const stats = podcastListMeta?.stats || {};
+        const selected = podcastListMeta?.selected_category || null;
+        document.getElementById('podcast-summary-total').textContent = stats.total || 0;
+        document.getElementById('podcast-summary-packs').textContent = stats.course_pack_count || 0;
+        document.getElementById('podcast-summary-analyzed').textContent = stats.analyzed_count || 0;
+        document.getElementById('podcast-summary-missing-audio').textContent = stats.missing_audio_count || 0;
+        document.getElementById('podcast-summary-path').textContent = selected?.path_names?.join(' / ') || '全部课程包';
+    }
+
+    function buildCategoryBreadcrumb(c) {
+        return [c.grand_category_name, c.parent_category_name, c.category_name].filter(Boolean);
+    }
+
+    function renderDifficultyBadge(level) {
+        const value = Number(level || 1);
+        return `<span class="inline-flex items-center px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 text-xs font-semibold">Lv.${value}</span>`;
+    }
+
     function renderPodcastContents() {
         const tbody = document.querySelector('#podcast-contents-table tbody');
+        const selectAll = document.getElementById('podcast-select-all');
         if (podcastContents.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-8 text-center text-gray-500">暂无内容数据</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" class="px-6 py-8 text-center text-gray-500">暂无内容数据</td></tr>';
+            if (selectAll) selectAll.checked = false;
+            renderPodcastPagination();
             return;
         }
 
         tbody.innerHTML = podcastContents.map(c => {
             const hasF = c.female_audio_url ? '<span class="text-pink-500" title="女声">♀</span>' : '<span class="text-gray-300">♀</span>';
             const hasC = c.chinese_audio_url ? '<span class="text-red-500" title="中文">中</span>' : '<span class="text-gray-300">中</span>';
+            const isChecked = selectedPodcastIds.has(String(c.id));
+            const breadcrumb = buildCategoryBreadcrumb(c);
 
             return `
             <tr class="hover:bg-gray-50 transition-colors group">
-                <td class="px-6 py-4 text-gray-500">#${c.id}</td>
-                <td class="px-6 py-4 font-medium text-gray-900 max-w-[12rem]"><span class="block truncate" title="${c.title}">${c.title}</span></td>
-                <td class="px-6 py-4">
-                    ${c.parent_category_name ? `<span class="text-gray-400 text-xs">${c.parent_category_name} / </span>` : ''}
-                    <span class="px-2 py-1 bg-blue-50 text-blue-600 rounded text-xs">${c.category_name || '-'}</span>
+                <td class="px-4 py-4 text-center">
+                    <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="togglePodcastSelection(${c.id}, this.checked)"
+                        class="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
                 </td>
-                <td class="px-6 py-4 text-yellow-400 text-sm">${'⭐'.repeat(c.difficulty_level || 1)}</td>
+                <td class="px-6 py-4 text-gray-500">#${c.id}</td>
+                <td class="px-6 py-4">
+                    <div class="font-medium text-gray-900 max-w-[16rem]"><span class="block truncate" title="${c.title}">${c.title}</span></div>
+                    ${c.title_en ? `<div class="text-xs text-gray-400 mt-1 max-w-[16rem] truncate" title="${c.title_en}">${c.title_en}</div>` : ''}
+                </td>
+                <td class="px-6 py-4">
+                    <div class="text-xs text-gray-400">${breadcrumb.join(' / ') || '未分类'}</div>
+                    <div class="mt-2 flex flex-wrap items-center gap-2">
+                        <span class="px-2 py-1 bg-blue-50 text-blue-600 rounded text-xs font-medium">${c.category_name || '-'}</span>
+                        <span class="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs">课包共 ${c.pack_item_count || 0} 篇</span>
+                    </div>
+                </td>
+                <td class="px-6 py-4">
+                    ${renderDifficultyBadge(c.difficulty_level)}
+                    <div class="mt-2 text-xs text-gray-400">${c.is_free ? '免费内容' : '付费内容'}</div>
+                </td>
                 <td class="px-6 py-4 text-lg space-x-1">
                     ${hasF} ${hasC}
                     ${c.has_sentences === 1 ? '<span class="ml-1 px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-xs font-medium">✦ 已分析</span>'
@@ -195,6 +351,227 @@
                 </td>
             </tr>
         `}).join('');
+        syncPodcastSelectAllState();
+    }
+
+    function getPodcastTotalPages() {
+        return Math.max(1, Math.ceil((podcastPagination.total || 0) / (podcastPagination.limit || 20)));
+    }
+
+    function buildPodcastPageNumbers(current, total) {
+        if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+
+        const pages = new Set([1, total, current]);
+        if (current - 1 > 1) pages.add(current - 1);
+        if (current + 1 < total) pages.add(current + 1);
+        if (current - 2 > 1) pages.add(current - 2);
+        if (current + 2 < total) pages.add(current + 2);
+
+        const sorted = Array.from(pages).sort((a, b) => a - b);
+        const result = [];
+        for (let i = 0; i < sorted.length; i++) {
+            result.push(sorted[i]);
+            if (sorted[i + 1] && sorted[i + 1] - sorted[i] > 1) result.push('...');
+        }
+        return result;
+    }
+
+    function renderPodcastPagination() {
+        const summaryEl = document.getElementById('podcast-pagination-summary');
+        const controlsEl = document.getElementById('podcast-pagination-controls');
+        if (!summaryEl || !controlsEl) return;
+
+        const total = podcastPagination.total || 0;
+        const current = podcastPagination.page || 1;
+        const totalPages = getPodcastTotalPages();
+        const start = total === 0 ? 0 : (current - 1) * podcastPagination.limit + 1;
+        const end = total === 0 ? 0 : Math.min(current * podcastPagination.limit, total);
+
+        summaryEl.textContent = `共 ${total} 条，当前第 ${current} / ${totalPages} 页，显示 ${start}-${end} 条`;
+
+        if (totalPages <= 1) {
+            controlsEl.innerHTML = '';
+            return;
+        }
+
+        const pages = buildPodcastPageNumbers(current, totalPages);
+        controlsEl.innerHTML = `
+            <button onclick="changePodcastPage(${current - 1})" ${current <= 1 ? 'disabled' : ''}
+                class="px-3 py-1.5 rounded-lg text-sm border ${current <= 1 ? 'border-gray-200 text-gray-300 bg-white cursor-not-allowed' : 'border-gray-300 text-gray-600 bg-white hover:bg-gray-100'}">
+                上一页
+            </button>
+            ${pages.map(page => {
+                if (page === '...') {
+                    return '<span class="px-2 text-gray-400 text-sm">...</span>';
+                }
+                const active = page === current;
+                return `<button onclick="changePodcastPage(${page})"
+                    class="min-w-[2.4rem] px-3 py-1.5 rounded-lg text-sm border ${active ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-100'}">
+                    ${page}
+                </button>`;
+            }).join('')}
+            <button onclick="changePodcastPage(${current + 1})" ${current >= totalPages ? 'disabled' : ''}
+                class="px-3 py-1.5 rounded-lg text-sm border ${current >= totalPages ? 'border-gray-200 text-gray-300 bg-white cursor-not-allowed' : 'border-gray-300 text-gray-600 bg-white hover:bg-gray-100'}">
+                下一页
+            </button>
+        `;
+    }
+
+    function changePodcastPage(page) {
+        const totalPages = getPodcastTotalPages();
+        if (page < 1 || page > totalPages || page === podcastPagination.page) return;
+        loadPodcastContents(page);
+    }
+
+    function changePodcastPageSize(size) {
+        const parsed = parseInt(size, 10) || 20;
+        podcastPagination.limit = parsed;
+        loadPodcastContents(1);
+    }
+
+    async function collectPodcastIdsForCurrentFilter({ onlyPending = false } = {}) {
+        const limit = 200;
+        const firstUrl = buildPodcastListUrl(1, limit);
+        const firstRes = await fetch(firstUrl);
+        const firstData = await firstRes.json();
+        if (!firstData.success) throw new Error(firstData.message || '加载筛选内容失败');
+
+        let allItems = Array.isArray(firstData.data.list) ? [...firstData.data.list] : [];
+        const total = Number(firstData.data.total || allItems.length || 0);
+        const totalPages = Math.max(1, Math.ceil(total / limit));
+
+        for (let page = 2; page <= totalPages; page++) {
+            const res = await fetch(buildPodcastListUrl(page, limit));
+            const data = await res.json();
+            if (!data.success) throw new Error(data.message || `加载第 ${page} 页失败`);
+            allItems = allItems.concat(Array.isArray(data.data.list) ? data.data.list : []);
+        }
+
+        if (onlyPending) {
+            allItems = allItems.filter(item => item.has_sentences === 0);
+        }
+        return allItems.map(item => item.id);
+    }
+
+    function getSelectedPodcastEngine() {
+        return document.getElementById('podcast-analyze-engine')?.value || 'deepseek';
+    }
+
+    function togglePodcastSelection(id, checked) {
+        const key = String(id);
+        if (checked) selectedPodcastIds.add(key);
+        else selectedPodcastIds.delete(key);
+        syncPodcastSelectAllState();
+    }
+
+    function toggleSelectAllPodcast(checked) {
+        const ids = podcastContents.map(item => String(item.id));
+        if (checked) ids.forEach(id => selectedPodcastIds.add(id));
+        else ids.forEach(id => selectedPodcastIds.delete(id));
+        renderPodcastContents();
+    }
+
+    function syncPodcastSelectAllState() {
+        const selectAll = document.getElementById('podcast-select-all');
+        if (!selectAll) return;
+        if (!podcastContents.length) {
+            selectAll.checked = false;
+            selectAll.indeterminate = false;
+            return;
+        }
+        const ids = podcastContents.map(item => String(item.id));
+        const selectedCount = ids.filter(id => selectedPodcastIds.has(id)).length;
+        selectAll.checked = selectedCount > 0 && selectedCount === ids.length;
+        selectAll.indeterminate = selectedCount > 0 && selectedCount < ids.length;
+    }
+
+    async function batchAnalyzeSelected() {
+        if (podcastBatchRunning) return;
+        const ids = Array.from(selectedPodcastIds).map(id => parseInt(id, 10)).filter(Boolean);
+        if (!ids.length) {
+            showToast('请先勾选要分析的内容', 'error');
+            return;
+        }
+        const engine = getSelectedPodcastEngine();
+        if (!confirm(`将使用 ${engine === 'deepseek' ? 'DeepSeek' : 'Gemini'} 批量分析选中的 ${ids.length} 条内容。已存在分析内容也会重新分析，是否继续？`)) return;
+        await runPodcastBatchAnalyze(ids, { skipExisting: false });
+    }
+
+    async function batchAnalyzeCurrentFilter() {
+        if (podcastBatchRunning) return;
+        const engine = getSelectedPodcastEngine();
+        try {
+            const pending = await collectPodcastIdsForCurrentFilter({ onlyPending: true });
+            if (!pending.length) {
+                showToast('当前筛选下没有待分析内容', 'error');
+                return;
+            }
+            if (!confirm(`将使用 ${engine === 'deepseek' ? 'DeepSeek' : 'Gemini'} 批量分析当前筛选下待分析的 ${pending.length} 条内容，是否继续？`)) return;
+            await runPodcastBatchAnalyze(pending, { skipExisting: true });
+        } catch (e) {
+            console.error('批量加载筛选内容失败:', e);
+            showToast('加载当前筛选内容失败: ' + e.message, 'error');
+        }
+    }
+
+    async function runPodcastBatchAnalyze(ids, options = {}) {
+        const engine = getSelectedPodcastEngine();
+        const selectedBtn = document.querySelector('button[onclick="batchAnalyzeSelected()"]');
+        const filterBtn = document.querySelector('button[onclick="batchAnalyzeCurrentFilter()"]');
+        const previousSelected = selectedBtn ? selectedBtn.innerHTML : '';
+        const previousFilter = filterBtn ? filterBtn.innerHTML : '';
+        podcastBatchRunning = true;
+        if (selectedBtn) selectedBtn.disabled = true;
+        if (filterBtn) filterBtn.disabled = true;
+
+        let successCount = 0;
+        let failureCount = 0;
+        const failedIds = [];
+
+        try {
+            for (let i = 0; i < ids.length; i++) {
+                const id = ids[i];
+                const content = podcastContents.find(item => item.id === id);
+                const name = content?.title || `#${id}`;
+                if (selectedBtn) selectedBtn.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i>分析中 ${i + 1}/${ids.length}`;
+                if (filterBtn) filterBtn.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i>分析中 ${i + 1}/${ids.length}`;
+
+                if (options.skipExisting && content && content.has_sentences !== 0) {
+                    continue;
+                }
+
+                try {
+                    const result = await analyzePodcastSentences(id, null, { engine, silent: true });
+                    if (result && result.success) {
+                        successCount++;
+                    } else {
+                        failureCount++;
+                        failedIds.push(name);
+                    }
+                } catch (e) {
+                    failureCount++;
+                    failedIds.push(name);
+                }
+            }
+        } finally {
+            podcastBatchRunning = false;
+            if (selectedBtn) {
+                selectedBtn.disabled = false;
+                selectedBtn.innerHTML = previousSelected;
+            }
+            if (filterBtn) {
+                filterBtn.disabled = false;
+                filterBtn.innerHTML = previousFilter;
+            }
+        }
+
+        await loadPodcastContents(podcastPagination.page);
+        if (failureCount > 0) {
+            showToast(`批量分析完成：成功 ${successCount} 条，失败 ${failureCount} 条`, 'error');
+            console.warn('[Podcast Batch Analyze] failed:', failedIds);
+            return;
+        }
+        showToast(`批量分析完成：成功 ${successCount} 条`);
     }
 
     function openPodcastContentModal() {
@@ -256,7 +633,7 @@
             const res = await fetch(`${API_BASE}/podcast/${id}`, { method: 'DELETE' });
             if (res.ok) {
                 showToast('删除成功');
-                loadPodcastContents();
+                loadPodcastContents(podcastPagination.page);
             } else {
                 showToast('删除失败', 'error');
             }
@@ -284,7 +661,7 @@
             if (res.ok) {
                 showToast('保存成功');
                 closePodcastContentModal();
-                loadPodcastContents();
+                loadPodcastContents(podcastPagination.page);
             } else {
                 showToast('保存失败', 'error');
             }
@@ -308,7 +685,7 @@
 
             if (data.success) {
                 showToast('音频生成完成！');
-                loadPodcastContents();
+                loadPodcastContents(podcastPagination.page);
             } else {
                 showToast('生成失败: ' + (data.message || '未知错误'), 'error');
             }
@@ -320,26 +697,48 @@
         }
     }
 
-    async function analyzePodcastSentences(id, btn) {
-        if (!confirm('将用 AI 分析句子、翻译和关键词，并为每句生成音频，可能需要几十秒，是否继续？')) return;
-        const originalHtml = btn.innerHTML;
-        btn.disabled = true;
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 分析中...';
+    async function analyzePodcastSentences(id, btn, options = {}) {
+        const engine = options.engine || getSelectedPodcastEngine();
+        if (!options.silent && !confirm(`将使用 ${engine === 'deepseek' ? 'DeepSeek' : 'Gemini'} 分析句子、翻译和关键词，并为每句生成音频，可能需要几十秒，是否继续？`)) return null;
+        const originalHtml = btn ? btn.innerHTML : '';
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 分析中...';
+        }
         try {
-            const res = await fetch(`${API_BASE}/podcast/analyze-sentences/${id}`, { method: 'POST' });
+            const res = await fetch(`${API_BASE}/podcast/analyze-sentences/${id}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ engine })
+            });
             const data = await res.json();
             if (data.success) {
-                showToast(data.message || 'AI分析完成！');
-                loadPodcastContents();
+                if (!options.silent) {
+                    const engineLabel = (data.data?.engine || engine) === 'deepseek' ? 'DeepSeek' : 'Gemini';
+                    showToast(`${data.message || 'AI分析完成！'}（${engineLabel}）`);
+                }
+                if (!options.silent) await loadPodcastContents(podcastPagination.page);
+                return data;
             } else {
-                showToast('分析失败: ' + (data.message || '未知错误'), 'error');
+                if (!options.silent) showToast('分析失败: ' + (data.message || '未知错误'), 'error');
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = originalHtml;
+                }
+                return data;
+            }
+        } catch (e) {
+            if (!options.silent) showToast('分析失败: ' + e.message, 'error');
+            if (btn) {
                 btn.disabled = false;
                 btn.innerHTML = originalHtml;
             }
-        } catch (e) {
-            showToast('分析失败: ' + e.message, 'error');
-            btn.disabled = false;
-            btn.innerHTML = originalHtml;
+            throw e;
+        } finally {
+            if (btn && options.silent) {
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+            }
         }
     }
 
@@ -420,6 +819,6 @@
 
     document.addEventListener('DOMContentLoaded', () => {
         loadPodcastCategories();
-        loadPodcastContents();
+        loadPodcastContents(1);
     });
 </script>

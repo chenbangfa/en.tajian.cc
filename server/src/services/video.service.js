@@ -50,15 +50,20 @@ class VideoService {
             const [word] = await query('SELECT * FROM words WHERE id = ?', [wordId]);
             if (!word) throw new Error(`单词 ID ${wordId} 不存在`);
 
+            // 先补齐中文词义/中文例句以及缺失的英文发音，后续分类视频可直接复用
+            const hydratedWord = await this._ensureWordLessonAudio(word);
+
             // 1. 解析素材
-            const a = await this._resolveWordAssets(word, tempDir);
+            const a = await this._resolveWordAssets(hydratedWord, tempDir);
             await this._updateJob(jobId, { progress: 10 });
 
             // 2. 获取开场语音 + 各音频时长
             const introAudio = await this._getIntroAudio();
             const durIntro = introAudio ? await this._getAudioDuration(introAudio) : 0;
+            const durTranslation = a.translationAudio ? await this._getAudioDuration(a.translationAudio) : 0;
             const durFemale = a.audioFemale ? await this._getAudioDuration(a.audioFemale) : 0;
             const durMale = a.audioMale ? await this._getAudioDuration(a.audioMale) : 0;
+            const durExTranslation = a.exampleTranslationAudio ? await this._getAudioDuration(a.exampleTranslationAudio) : 0;
             const durExFemale = a.exampleAudioFemale ? await this._getAudioDuration(a.exampleAudioFemale) : 0;
             const durExMale = a.exampleAudioMale ? await this._getAudioDuration(a.exampleAudioMale) : 0;
             await this._updateJob(jobId, { progress: 15 });
@@ -68,32 +73,20 @@ class VideoService {
 
             // 开场帧：物体图片 + 提问 + 中文翻译（清晰展示，让用户看清楚）
             frames.intro = path.join(tempDir, 'f_intro.png');
-            await this._renderIntroFrame(frames.intro, a.image, word);
+            await this._renderIntroFrame(frames.intro, a.image, hydratedWord);
 
             // 单词帧：物体图片 + 单词 + 音标
             frames.word = path.join(tempDir, 'f_word.png');
-            await this._renderWordFrame(frames.word, a.image, word);
+            await this._renderWordFrame(frames.word, a.image, hydratedWord);
 
             // 单词+翻译帧：物体图片 + 单词 + 音标 + 中文
             frames.wordTrans = path.join(tempDir, 'f_word_trans.png');
-            await this._renderWordFrame(frames.wordTrans, a.image, word, true);
+            await this._renderWordFrame(frames.wordTrans, a.image, hydratedWord, true);
 
             // 例句帧：例句图片(或物体图片) + 例句
             frames.example = path.join(tempDir, 'f_example.png');
             const exImage = a.exampleImage || a.image;
-            await this._renderExampleFrame(frames.example, exImage, word);
-
-            // 倒计时帧：3 / 2 / 1
-            frames.cd3 = path.join(tempDir, 'f_cd3.png');
-            frames.cd2 = path.join(tempDir, 'f_cd2.png');
-            frames.cd1 = path.join(tempDir, 'f_cd1.png');
-            await this._renderCountdownFrame(frames.cd3, a.image, 3);
-            await this._renderCountdownFrame(frames.cd2, a.image, 2);
-            await this._renderCountdownFrame(frames.cd1, a.image, 1);
-
-            // 结尾品牌卡
-            frames.brand = path.join(tempDir, 'f_brand.png');
-            await this._renderBrandFrame(frames.brand);
+            await this._renderExampleFrame(frames.example, exImage, hydratedWord);
 
             await this._updateJob(jobId, { progress: 30 });
 
@@ -114,39 +107,32 @@ class VideoService {
 
             // Seg: 开场 — 清晰图片 + 提问语音（让用户看清楚，思考答案）
             const introDur = introAudio ? durIntro + GAP : 2.5;
-            await addSeg(frames.intro, introAudio, introDur, 35);
+            await addSeg(frames.intro, introAudio, introDur, 32, { noFadeIn: true, noFadeOut: true });
 
-            // Seg: 单词+翻译 + 女声发音 + 叮咚揭晓音效
-            if (a.audioFemale) {
-                await addSeg(frames.wordTrans, a.audioFemale, durFemale + GAP, 45, { sfx: dingSfx });
-            }
-
-            // Seg: 单词+翻译 + 男声发音
-            if (a.audioMale) {
-                await addSeg(frames.wordTrans, a.audioMale, durMale + GAP, 55);
-            }
-
-            // Seg: 例句 + 女声
-            if (word.example_sentence && a.exampleAudioFemale) {
-                await addSeg(frames.example, a.exampleAudioFemale, durExFemale + GAP, 65);
-            }
-
-            // Seg: 例句 + 男声
-            if (word.example_sentence && a.exampleAudioMale) {
-                await addSeg(frames.example, a.exampleAudioMale, durExMale + GAP, 75);
-            } else if (word.example_sentence && !a.exampleAudioFemale && !a.exampleAudioMale) {
-                // 没有例句音频，静音展示 3 秒
-                await addSeg(frames.example, null, 3, 75);
-            }
-
-            // Seg: Your turn 倒计时 3-2-1（单段 3s，图片不动，只数字变）
-            const cdOut = path.join(segDir, `s${segIdx++}.mp4`);
-            await this._countdownVideo(frames.cd3, frames.cd2, frames.cd1, cdOut);
-            segments.push(cdOut);
-            await this._updateJob(jobId, { progress: 86 });
-
-            // Seg: 结尾品牌卡 (2s)
-            await addSeg(frames.brand, null, 2, 90);
+            await this._appendWordLessonSegments({
+                word: hydratedWord,
+                assets: {
+                    ...a,
+                    durTranslation,
+                    durFemale,
+                    durMale,
+                    durExTranslation,
+                    durExFemale,
+                    durExMale
+                },
+                frames,
+                addSeg,
+                dingSfx,
+                progressSteps: {
+                    translation: 40,
+                    female: 48,
+                    male: 56,
+                    exampleTranslation: 64,
+                    exampleFemale: 72,
+                    exampleMale: 88,
+                    exampleFallback: 88
+                }
+            });
 
             // 5. 生成封面图（先生成，再作为视频首帧插入）
             const baseName = `daily_word_${word.word.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}`;
@@ -154,11 +140,11 @@ class VideoService {
             const coverName = `${baseName}.jpg`;
             const outputPath = path.join(OUTPUT_DIR, outputName);
             const coverPath = path.join(OUTPUT_DIR, coverName);
-            await this._renderCoverImage(coverPath, a.image, word);
+            await this._renderCoverImage(coverPath, a.image, hydratedWord);
 
             // Seg 0: 封面首帧（0.8s，无缩放、无淡入，分享缩略图即是封面）
             const coverSeg = path.join(segDir, 's00_cover.mp4');
-            await this._imgToVideo(coverPath, null, 0.8, coverSeg, { noZoom: true, noFadeIn: true });
+            await this._imgToVideo(coverPath, null, 0.8, coverSeg, { noZoom: true, noFadeIn: true, noFadeOut: true });
             segments.unshift(coverSeg);
 
             // 6. Concat
@@ -203,6 +189,11 @@ class VideoService {
         <rect width="${W}" height="${H}" fill="url(#bg)"/>`;
     }
 
+    /** 左上角水印 SVG 片段（"BookMelo"，白字+半透明黑描边） */
+    _watermarkSvgFragment() {
+        return `<text x="48" y="96" font-size="44" fill="white" fill-opacity="0.78" font-weight="700" font-family="sans-serif" paint-order="stroke" stroke="#000" stroke-opacity="0.5" stroke-width="3" stroke-linejoin="round">BookMelo</text>`;
+    }
+
     /** 把图片合成到背景上（居中偏上） */
     async _composeBgWithImage(imagePath, maxSize = 700, topOffset = -200) {
         const bgSvg = `<svg width="${W}" height="${H}">${this._bgSvg()}</svg>`;
@@ -226,7 +217,7 @@ class VideoService {
 
     /** 生成带文字层的帧 */
     async _composeTextOnBase(base, textSvgContent) {
-        const textSvg = `<svg width="${W}" height="${H}">${textSvgContent}</svg>`;
+        const textSvg = `<svg width="${W}" height="${H}">${this._watermarkSvgFragment()}${textSvgContent}</svg>`;
         const textLayer = await sharp(Buffer.from(textSvg)).png().toBuffer();
         return sharp(base).composite([{ input: textLayer, left: 0, top: 0 }]).png().toBuffer();
     }
@@ -286,29 +277,7 @@ class VideoService {
         await sharp(result).toFile(outputPath);
     }
 
-    /** 倒计时帧：Your turn! + 大数字 + 圆形进度 */
-    async _renderCountdownFrame(outputPath, imagePath, number) {
-        const base = await this._composeBgWithImage(imagePath);
-        // 圆形进度：3→完整圆，2→2/3，1→1/3
-        const cx = W / 2, cy = 1620, r = 110;
-        const circumference = 2 * Math.PI * r;
-        const progress = number / 3;
-        const dashArray = `${circumference * progress} ${circumference}`;
-
-        const text = `
-            <text x="${W / 2}" y="1220" text-anchor="middle" font-size="90" font-weight="bold" fill="#FFD700" font-family="sans-serif">Your turn!</text>
-            <text x="${W / 2}" y="1300" text-anchor="middle" font-size="38" fill="#BBBBBB" font-family="sans-serif">Try to say it yourself</text>
-            <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#333" stroke-width="10"/>
-            <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#FFD700" stroke-width="10"
-                stroke-dasharray="${dashArray}" stroke-linecap="round"
-                transform="rotate(-90 ${cx} ${cy})"/>
-            <text x="${cx}" y="${cy + 48}" text-anchor="middle" font-size="140" font-weight="bold" fill="#FFD700" font-family="sans-serif">${number}</text>
-        `;
-        const result = await this._composeTextOnBase(base, text);
-        await sharp(result).toFile(outputPath);
-    }
-
-    /** 封面图：吸引点击，单词 + 图片 + 品牌 */
+    /** 封面图：封面图片 + 单词主信息 */
     async _renderCoverImage(outputPath, imagePath, word) {
         const e = this._svgEsc;
 
@@ -328,17 +297,6 @@ class VideoService {
             <rect width="${W}" height="${H}" fill="url(#spot)"/>
         </svg>`;
         let base = await sharp(Buffer.from(bgSvg)).png().toBuffer();
-
-        // 顶部品牌条 + logo
-        if (fs.existsSync(LOGO_PATH)) {
-            const logoSize = 100;
-            const logo = await sharp(LOGO_PATH)
-                .resize(logoSize, logoSize, { fit: 'inside' })
-                .png().toBuffer();
-            base = await sharp(base).composite([{
-                input: logo, left: 60, top: 60
-            }]).png().toBuffer();
-        }
 
         // 主图片：圆形裁剪 + 圆形高光背景（图圆一致）
         if (imagePath && fs.existsSync(imagePath)) {
@@ -366,15 +324,6 @@ class VideoService {
             ]).png().toBuffer();
         }
 
-        // 顶部品牌文字（logo 右边，与 logo 垂直居中对齐）
-        // logo: top=60, size=100, 中心 y=110
-        // 两行文字：line1 baseline=112（字号40，top≈72），line2 baseline=152（字号28，bottom≈158）
-        // 文字块中心 ≈ 115，与 logo 中心对齐
-        const brandText = `
-            <text x="180" y="112" font-size="40" font-weight="bold" fill="white" font-family="sans-serif">她简看图学英语</text>
-            <text x="180" y="152" font-size="26" fill="white" opacity="0.85" font-family="sans-serif">每日一词 · Daily Word</text>
-        `;
-
         // 底部文字：大单词 + 翻译 + 音标
         let bottomParts = '';
         bottomParts += `<text x="${W / 2}" y="1380" text-anchor="middle" font-size="180" font-weight="bold" fill="white" stroke="#764BA2" stroke-width="6" font-family="sans-serif">${e(word.word)}</text>`;
@@ -384,11 +333,8 @@ class VideoService {
         if (word.translation) {
             bottomParts += `<text x="${W / 2}" y="1540" text-anchor="middle" font-size="68" fill="#FFD700" font-weight="bold" font-family="sans-serif">${e(word.translation)}</text>`;
         }
-        // 底部点击提示
-        bottomParts += `<rect x="340" y="1640" width="400" height="90" rx="45" fill="#FFD700"/>`;
-        bottomParts += `<text x="${W / 2}" y="1702" text-anchor="middle" font-size="40" fill="#764BA2" font-weight="bold" font-family="sans-serif">▶ 点击学发音</text>`;
 
-        const result = await this._composeTextOnBase(base, brandText + bottomParts);
+        const result = await this._composeTextOnBase(base, bottomParts);
         await sharp(result).jpeg({ quality: 88 }).toFile(outputPath);
     }
 
@@ -437,7 +383,7 @@ class VideoService {
     }
 
     /** 静态图片 + 可选音频 → mp4，Ken Burns 缩放 + 淡入淡出，统一 44100Hz stereo */
-    async _imgToVideo(imagePath, audioPath, duration, outputPath, { sfx = null, noZoom = false, noFadeIn = false } = {}) {
+    async _imgToVideo(imagePath, audioPath, duration, outputPath, { sfx = null, noZoom = false, noFadeIn = false, noFadeOut = false, audioVolume = 1.0 } = {}) {
         const hasAudio = audioPath && fs.existsSync(audioPath);
         const hasSfx = sfx && fs.existsSync(sfx);
         const fadeOut = Math.max(0, duration - FADE);
@@ -445,20 +391,26 @@ class VideoService {
         const baseFilter = noZoom
             ? `scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30`
             : this._buildZoompan(duration);
-        const fadeIn = noFadeIn ? '' : `fade=t=in:st=0:d=${FADE},`;
-        const vf = `${baseFilter},${fadeIn}fade=t=out:st=${fadeOut}:d=${FADE}`;
+        const videoFadeFilters = [];
+        if (!noFadeIn) videoFadeFilters.push(`fade=t=in:st=0:d=${FADE}`);
+        if (!noFadeOut) videoFadeFilters.push(`fade=t=out:st=${fadeOut}:d=${FADE}`);
+        const vf = `${baseFilter}${videoFadeFilters.length ? ',' + videoFadeFilters.join(',') : ''}`;
+        const audioFadeFilters = [];
+        if (!noFadeIn) audioFadeFilters.push(`afade=t=in:st=0:d=${FADE}`);
+        if (!noFadeOut) audioFadeFilters.push(`afade=t=out:st=${fadeOut}:d=${FADE}`);
+        const audioFadeChain = audioFadeFilters.length ? `,${audioFadeFilters.join(',')}` : '';
 
         if (hasAudio) {
             let audioFilter;
-            const inputs = ['-i', imagePath, '-i', audioPath];
+            const inputs = ['-loop', '1', '-i', imagePath, '-i', audioPath];
             if (hasSfx) {
                 inputs.push('-i', sfx);
-                audioFilter = `[1:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo,apad=whole_dur=${duration}[main];` +
+                audioFilter = `[1:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo,volume=${audioVolume},apad=whole_dur=${duration}[main];` +
                     `[2:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo,volume=0.7[ding];` +
-                    `[main][ding]amix=inputs=2:duration=first,afade=t=in:st=0:d=${FADE},afade=t=out:st=${fadeOut}:d=${FADE}[a]`;
+                    `[main][ding]amix=inputs=2:duration=first${audioFadeChain}[a]`;
             } else {
-                audioFilter = `[1:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo,apad=whole_dur=${duration},` +
-                    `afade=t=in:st=0:d=${FADE},afade=t=out:st=${fadeOut}:d=${FADE}[a]`;
+                const fadeSuffix = audioFadeFilters.length ? `,${audioFadeFilters.join(',')}` : '';
+                audioFilter = `[1:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo,volume=${audioVolume},apad=whole_dur=${duration}${fadeSuffix}[a]`;
             }
             await this._runFFmpeg([
                 ...inputs,
@@ -471,12 +423,12 @@ class VideoService {
             ]);
         } else if (hasSfx) {
             await this._runFFmpeg([
-                '-i', imagePath,
+                '-loop', '1', '-i', imagePath,
                 '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo',
                 '-i', sfx,
                 '-filter_complex',
                 `[2:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo,volume=0.7[ding];` +
-                `[1:a][ding]amix=inputs=2:duration=first,afade=t=in:st=0:d=${FADE},afade=t=out:st=${fadeOut}:d=${FADE}[a];` +
+                `[1:a][ding]amix=inputs=2:duration=first${audioFadeChain}[a];` +
                 `[0:v]${vf}[v]`,
                 '-map', '[v]', '-map', '[a]',
                 '-c:v', H264_ENCODER, '-pix_fmt', 'yuv420p',
@@ -485,11 +437,14 @@ class VideoService {
                 '-y', outputPath
             ]);
         } else {
+            const silentAudioFilter = audioFadeFilters.length
+                ? `[1:a]${audioFadeFilters.join(',')}[a]`
+                : `[1:a]anull[a]`;
             await this._runFFmpeg([
-                '-i', imagePath,
+                '-loop', '1', '-i', imagePath,
                 '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo',
                 '-filter_complex',
-                `[1:a]afade=t=in:st=0:d=${FADE},afade=t=out:st=${fadeOut}:d=${FADE}[a];[0:v]${vf}[v]`,
+                `${silentAudioFilter};[0:v]${vf}[v]`,
                 '-map', '[v]', '-map', '[a]',
                 '-c:v', H264_ENCODER, '-pix_fmt', 'yuv420p',
                 '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2',
@@ -561,6 +516,80 @@ class VideoService {
         }
     }
 
+    /**
+     * 追加单词学习核心段落。
+     * 这层是后续“分类单词视频”最值得复用的模块：
+     * 中文词义 -> 英文单词女/男 -> 中文例句 -> 英文例句女/男
+     */
+    async _appendWordLessonSegments({ word, assets, frames, addSeg, dingSfx, progressSteps = {} }) {
+        if (assets.translationAudio) {
+            await addSeg(
+                frames.wordTrans,
+                assets.translationAudio,
+                assets.durTranslation + GAP,
+                progressSteps.translation || 40,
+                { noFadeIn: true, noFadeOut: true }
+            );
+        }
+
+        if (assets.audioFemale) {
+            await addSeg(
+                frames.wordTrans,
+                assets.audioFemale,
+                assets.durFemale + GAP,
+                progressSteps.female || 48,
+                { sfx: dingSfx, noFadeIn: true, noFadeOut: true }
+            );
+        }
+
+        if (assets.audioMale) {
+            await addSeg(
+                frames.wordTrans,
+                assets.audioMale,
+                assets.durMale + GAP,
+                progressSteps.male || 56,
+                { noFadeIn: true, noFadeOut: true }
+            );
+        }
+
+        if (word.example_translation && assets.exampleTranslationAudio) {
+            await addSeg(
+                frames.example,
+                assets.exampleTranslationAudio,
+                assets.durExTranslation + GAP,
+                progressSteps.exampleTranslation || 64,
+                { noFadeIn: true, noFadeOut: true }
+            );
+        }
+
+        if (word.example_sentence && assets.exampleAudioFemale) {
+            await addSeg(
+                frames.example,
+                assets.exampleAudioFemale,
+                assets.durExFemale + GAP,
+                progressSteps.exampleFemale || 72,
+                { noFadeIn: true, noFadeOut: true }
+            );
+        }
+
+        if (word.example_sentence && assets.exampleAudioMale) {
+            await addSeg(
+                frames.example,
+                assets.exampleAudioMale,
+                assets.durExMale + GAP,
+                progressSteps.exampleMale || 80,
+                { noFadeIn: true, noFadeOut: true }
+            );
+        } else if (
+            (word.example_sentence || word.example_translation) &&
+            !assets.exampleTranslationAudio &&
+            !assets.exampleAudioFemale &&
+            !assets.exampleAudioMale
+        ) {
+            await addSeg(frames.example, null, 3, progressSteps.exampleFallback || 80, { noFadeIn: true, noFadeOut: true });
+        }
+    }
+
     /** 执行 FFmpeg */
     _runFFmpeg(args) {
         return new Promise((resolve, reject) => {
@@ -577,6 +606,97 @@ class VideoService {
 
     // ==================== 素材解析 ====================
 
+    async _ensureWordLessonAudio(word) {
+        const nextWord = { ...word };
+        const defaultSpeed = voiceService.getGoogleTtsSpeed('default');
+        const tasks = [];
+
+        if (nextWord.translation && !nextWord.translation_audio_url) {
+            tasks.push({
+                field: 'translation_audio_url',
+                text: nextWord.translation,
+                voice: 'female',
+                speed: defaultSpeed,
+                isChinese: true
+            });
+        }
+
+        if (!nextWord.audio_url_female && nextWord.word) {
+            tasks.push({
+                field: 'audio_url_female',
+                text: nextWord.word,
+                voice: 'female',
+                speed: defaultSpeed
+            });
+        }
+
+        if (!nextWord.audio_url_male && nextWord.word) {
+            tasks.push({
+                field: 'audio_url_male',
+                text: nextWord.word,
+                voice: 'male',
+                speed: defaultSpeed
+            });
+        }
+
+        if (nextWord.example_translation && !nextWord.example_translation_audio_url) {
+            tasks.push({
+                field: 'example_translation_audio_url',
+                text: nextWord.example_translation,
+                voice: 'female',
+                speed: defaultSpeed,
+                isChinese: true
+            });
+        }
+
+        if (nextWord.example_sentence && !nextWord.example_audio_female) {
+            tasks.push({
+                field: 'example_audio_female',
+                text: nextWord.example_sentence,
+                voice: 'female',
+                speed: defaultSpeed
+            });
+        }
+
+        if (nextWord.example_sentence && !nextWord.example_audio_male) {
+            tasks.push({
+                field: 'example_audio_male',
+                text: nextWord.example_sentence,
+                voice: 'male',
+                speed: defaultSpeed
+            });
+        }
+
+        for (const task of tasks) {
+            try {
+                const audioUrl = await this._generateAndPersistWordAudio(nextWord.id, task);
+                if (audioUrl) {
+                    nextWord[task.field] = audioUrl;
+                }
+            } catch (error) {
+                console.warn(`[Video] 生成 ${task.field} 失败: ${error.message}`);
+            }
+        }
+
+        return nextWord;
+    }
+
+    async _generateAndPersistWordAudio(wordId, { field, text, voice = 'female', speed = 1.0, isChinese = false, engine = '' }) {
+        if (!text || !field) return null;
+
+        const result = isChinese
+            ? await voiceService.textToSpeechChinese(text, voice, speed)
+            : (engine
+                ? await voiceService.textToSpeechByEngine(text, engine, voice, speed)
+                : await voiceService.textToSpeech(text, voice, speed));
+        if (!result.success || !result.audioUrl) {
+            throw new Error(result.error || `字段 ${field} 未返回音频`);
+        }
+
+        await query(`UPDATE words SET ${field} = ?, updated_at = NOW() WHERE id = ?`, [result.audioUrl, wordId]);
+        return result.audioUrl;
+    }
+
     async _resolveWordAssets(word, tempDir) {
         const r = async (url, name) => {
             if (!url) return null;
@@ -586,8 +706,10 @@ class VideoService {
         return {
             image: await r(word.image_url, 'image'),
             exampleImage: await r(word.example_image_url, 'example_image'),
+            translationAudio: await r(word.translation_audio_url, 'translation_audio'),
             audioFemale: await r(word.audio_url_female || word.audio_url, 'audio_female'),
             audioMale: await r(word.audio_url_male, 'audio_male'),
+            exampleTranslationAudio: await r(word.example_translation_audio_url, 'ex_translation_audio'),
             exampleAudioFemale: await r(word.example_audio_female, 'ex_audio_f'),
             exampleAudioMale: await r(word.example_audio_male, 'ex_audio_m'),
         };

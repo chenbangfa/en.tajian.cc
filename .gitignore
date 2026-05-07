@@ -29,3 +29,9 @@ logs/
 
 # Claude Code 本地配置
 .claude/
+
+# 本地归档与清理备份（不进入仓库）
+.local-archive/
+
+# Codex/agent 本地任务记录（已在本机使用，不进入仓库）
+tasks/

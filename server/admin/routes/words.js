@@ -7,6 +7,15 @@ const aiService = require('../../src/services/ai.service');
 
 const router = express.Router();
 
+(async () => {
+    try {
+        await query(`ALTER TABLE words ADD COLUMN translation_audio_url VARCHAR(500) DEFAULT NULL COMMENT '中文词义发音URL' AFTER translation`).catch(() => {});
+        await query(`ALTER TABLE words ADD COLUMN example_translation_audio_url VARCHAR(500) DEFAULT NULL COMMENT '中文例句发音URL' AFTER example_translation`).catch(() => {});
+    } catch (error) {
+        console.error('[Admin Words] 初始化中文音频字段失败:', error.message);
+    }
+})();
+
 /**
  * 删除本地文件（如果是本地路径）
  * 只删除以 /uploads/ 开头的本地文件，忽略外部URL和空值
@@ -19,6 +28,30 @@ function deleteLocalFile(filePath) {
             console.error(`[删除文件失败] ${fullPath}:`, err.message);
         }
     });
+}
+
+function hasValue(value) {
+    return value !== null && value !== undefined && String(value).trim() !== '';
+}
+
+async function generateChineseAudioAndSave(wordId, text, field) {
+    const speed = voiceService.getGoogleTtsSpeed('default');
+    const result = await voiceService.textToSpeechChinese(text, 'female', speed);
+    if (!result.success || !result.audioUrl) {
+        return {
+            success: false,
+            statusCode: result.statusCode || 500,
+            message: result.error || '中文音频生成失败',
+            retryAfterMs: result.retryAfterMs
+        };
+    }
+
+    const [oldRow] = await query(`SELECT ${field} AS old_audio_url FROM words WHERE id = ?`, [wordId]);
+    await query(`UPDATE words SET ${field} = ?, updated_at = NOW() WHERE id = ?`, [result.audioUrl, wordId]);
+    if (oldRow?.old_audio_url && oldRow.old_audio_url !== result.audioUrl) {
+        deleteLocalFile(oldRow.old_audio_url);
+    }
+    return { success: true, audioUrl: result.audioUrl };
 }
 
 // 获取单词列表（分页）
@@ -152,6 +185,7 @@ router.put('/:id', async (req, res) => {
             word: 'word',
             phonetic: 'phonetic',
             translation: 'translation',
+            translation_audio_url: 'translation_audio_url',
             category_id: 'category_id',
             difficulty_level: 'difficulty_level',
             word_type: 'word_type',
@@ -162,6 +196,7 @@ router.put('/:id', async (req, res) => {
             audio_url_male: 'audio_url_male',
             example_sentence: 'example_sentence',
             example_translation: 'example_translation',
+            example_translation_audio_url: 'example_translation_audio_url',
             example_audio_female: 'example_audio_female',
             example_audio_male: 'example_audio_male',
             example_image_url: 'example_image_url',
@@ -206,13 +241,15 @@ router.delete('/:id', async (req, res) => {
         const { id } = req.params;
 
         // 先查询文件路径
-        const words = await query('SELECT image_url, example_image_url, audio_url_female, audio_url_male, example_audio_female, example_audio_male FROM words WHERE id = ?', [id]);
+        const words = await query('SELECT image_url, example_image_url, audio_url_female, audio_url_male, translation_audio_url, example_translation_audio_url, example_audio_female, example_audio_male FROM words WHERE id = ?', [id]);
         if (words.length > 0) {
             const w = words[0];
             deleteLocalFile(w.image_url);
             deleteLocalFile(w.example_image_url);
+            deleteLocalFile(w.translation_audio_url);
             deleteLocalFile(w.audio_url_female);
             deleteLocalFile(w.audio_url_male);
+            deleteLocalFile(w.example_translation_audio_url);
             deleteLocalFile(w.example_audio_female);
             deleteLocalFile(w.example_audio_male);
         }
@@ -238,14 +275,14 @@ router.post('/batch-delete', async (req, res) => {
 
         // 查询所有要删除的单词的文件路径
         const words = await query(
-            `SELECT id, image_url, example_image_url, audio_url_female, audio_url_male, example_audio_female, example_audio_male FROM words WHERE id IN (${placeholders})`,
+            `SELECT id, image_url, example_image_url, translation_audio_url, audio_url_female, audio_url_male, example_translation_audio_url, example_audio_female, example_audio_male FROM words WHERE id IN (${placeholders})`,
             ids
         );
 
         // 删除关联的本地文件
         let filesDeleted = 0;
         for (const w of words) {
-            const files = [w.image_url, w.example_image_url, w.audio_url_female, w.audio_url_male, w.example_audio_female, w.example_audio_male];
+            const files = [w.image_url, w.example_image_url, w.translation_audio_url, w.audio_url_female, w.audio_url_male, w.example_translation_audio_url, w.example_audio_female, w.example_audio_male];
             files.forEach(f => {
                 if (f && f.startsWith('/uploads/')) {
                     deleteLocalFile(f);
@@ -317,6 +354,89 @@ router.get('/batch-tts/candidates', async (req, res) => {
     }
 });
 
+// 获取需要批量 AI 补全的候选单词
+router.get('/batch-enhance/candidates', async (req, res) => {
+    try {
+        const {
+            category_id,
+            difficulty,
+            word_type,
+            search = '',
+            limit = 1000
+        } = req.query;
+
+        const safeLimit = Math.min(2000, Math.max(50, parseInt(limit, 10) || 1000));
+        let sql = `
+            SELECT w.id, w.word, w.translation, w.phonetic, w.content_type, w.word_type,
+                   w.example_sentence, w.example_translation, w.grammar_explanation,
+                   w.image_url, w.updated_at, c.name AS category_name
+              FROM words w
+              LEFT JOIN word_categories c ON w.category_id = c.id
+             WHERE 1=1
+        `;
+        const params = [];
+
+        if (category_id) {
+            sql += ' AND w.category_id = ?';
+            params.push(parseInt(category_id, 10));
+        }
+
+        if (difficulty) {
+            sql += ' AND w.difficulty_level = ?';
+            params.push(parseInt(difficulty, 10));
+        }
+
+        if (word_type) {
+            sql += ' AND w.word_type = ?';
+            params.push(word_type);
+        }
+
+        if (search && String(search).trim()) {
+            sql += ' AND (w.word LIKE ? OR w.translation LIKE ? OR w.example_sentence LIKE ?)';
+            const q = `%${String(search).trim()}%`;
+            params.push(q, q, q);
+        }
+
+        sql += ' ORDER BY w.id DESC LIMIT ?';
+        params.push(safeLimit);
+
+        const rows = await query(sql, params);
+        const candidates = rows
+            .map((w) => {
+                const ct = w.content_type || 'word';
+                const needPhonetic = !hasValue(w.phonetic) && ct === 'word';
+                const hasExample = hasValue(w.example_sentence);
+                const needExample = ct !== 'sentence' && !hasExample;
+                const needExampleTranslation = !hasValue(w.example_translation);
+                const needGrammar = !hasValue(w.grammar_explanation);
+                const missingCount = [needPhonetic, needExample, needExampleTranslation, needGrammar].filter(Boolean).length;
+
+                return {
+                    ...w,
+                    missing: {
+                        phonetic: needPhonetic,
+                        example_sentence: needExample,
+                        example_translation: needExampleTranslation,
+                        grammar_explanation: needGrammar
+                    },
+                    missing_count: missingCount,
+                    needs_enhance: missingCount > 0
+                };
+            })
+            .filter((w) => w.needs_enhance);
+
+        res.json({
+            success: true,
+            data: candidates,
+            total: candidates.length,
+            limit: safeLimit
+        });
+    } catch (error) {
+        console.error('获取批量 AI 补全候选错误:', error);
+        res.status(500).json({ success: false, message: error.message || '获取候选项失败' });
+    }
+});
+
 // 为单个词生成 TTS
 router.post('/batch-tts/generate', async (req, res) => {
     try {
@@ -350,6 +470,54 @@ router.post('/batch-tts/generate', async (req, res) => {
         res.json({ success: true, audio_url: result.audioUrl });
     } catch (e) {
         res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+router.post('/:id/generate-translation-audio', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [word] = await query('SELECT id, translation FROM words WHERE id = ?', [id]);
+        if (!word) return res.status(404).json({ success: false, message: '单词不存在' });
+        const text = String(req.body?.text || word.translation || '').trim();
+        if (!text) return res.status(400).json({ success: false, message: '该单词没有中文词义' });
+
+        const result = await generateChineseAudioAndSave(id, text, 'translation_audio_url');
+        if (!result.success) {
+            return res.status(result.statusCode || 500).json({
+                success: false,
+                message: result.message,
+                retryAfterMs: result.retryAfterMs
+            });
+        }
+
+        res.json({ success: true, data: { audio_url: result.audioUrl } });
+    } catch (error) {
+        console.error('生成中文词义发音错误:', error);
+        res.status(500).json({ success: false, message: error.message || '生成失败' });
+    }
+});
+
+router.post('/:id/generate-example-translation-audio', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [word] = await query('SELECT id, example_translation FROM words WHERE id = ?', [id]);
+        if (!word) return res.status(404).json({ success: false, message: '单词不存在' });
+        const text = String(req.body?.text || word.example_translation || '').trim();
+        if (!text) return res.status(400).json({ success: false, message: '该单词没有中文例句' });
+
+        const result = await generateChineseAudioAndSave(id, text, 'example_translation_audio_url');
+        if (!result.success) {
+            return res.status(result.statusCode || 500).json({
+                success: false,
+                message: result.message,
+                retryAfterMs: result.retryAfterMs
+            });
+        }
+
+        res.json({ success: true, data: { audio_url: result.audioUrl } });
+    } catch (error) {
+        console.error('生成中文例句发音错误:', error);
+        res.status(500).json({ success: false, message: error.message || '生成失败' });
     }
 });
 

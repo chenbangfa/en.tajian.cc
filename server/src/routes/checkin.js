@@ -226,6 +226,11 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
 
+function cleanupUploadedFile(filePath) {
+    if (!filePath) return;
+    fs.unlink(filePath, () => {});
+}
+
 // 用包裹函数处理 multer 错误，确保返回 JSON 而非默认错误页
 const handleCheckinUpload = (req, res, next) => {
     upload.single('audio')(req, res, (err) => {
@@ -598,7 +603,7 @@ router.post('/curriculum', authMiddleware, async (req, res) => {
 /**
  * POST /checkin/complete-task - 完成单个任务（上传录音 + 评测）
  */
-router.post('/complete-task', authMiddleware, requirePoints(1), handleCheckinUpload, async (req, res) => {
+router.post('/complete-task', authMiddleware, handleCheckinUpload, requirePoints(1), async (req, res) => {
     try {
         const userId = req.user.id;
         const { task_id } = req.body;
@@ -608,24 +613,29 @@ router.post('/complete-task', authMiddleware, requirePoints(1), handleCheckinUpl
             return res.status(400).json({ success: false, message: '请上传录音' });
         }
         if (!task_id) {
+            cleanupUploadedFile(req.file.path);
             return res.status(400).json({ success: false, message: '缺少任务ID' });
         }
         if (!Number.isInteger(taskId) || taskId <= 0) {
+            cleanupUploadedFile(req.file.path);
             return res.status(400).json({ success: false, message: '无效任务ID' });
         }
 
         // 获取任务
         const [task] = await query('SELECT * FROM daily_task_items WHERE id = ? AND user_id = ?', [taskId, userId]);
         if (!task) {
+            cleanupUploadedFile(req.file.path);
             return res.status(404).json({ success: false, message: '任务不存在' });
         }
         if (task.status === 'completed') {
+            cleanupUploadedFile(req.file.path);
             return res.status(400).json({ success: false, message: '任务已完成' });
         }
 
         // 获取计划
         const [plan] = await query('SELECT * FROM daily_task_plans WHERE id = ?', [task.plan_id]);
         if (!plan) {
+            cleanupUploadedFile(req.file.path);
             return res.status(404).json({ success: false, message: '计划不存在' });
         }
 
@@ -785,6 +795,7 @@ router.post('/complete-task', authMiddleware, requirePoints(1), handleCheckinUpl
         });
     } catch (error) {
         console.error('完成任务错误:', error);
+        cleanupUploadedFile(req.file && req.file.path);
         res.status(500).json({ success: false, message: '提交失败' });
     }
 });

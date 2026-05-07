@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><%- include('partials/head', { metaTitle, metaDescription, metaKeywords, canonicalUrl, metaImage }) %></head>
+<body data-page="books">
+  <div class="site-shell">
+    <%- include('partials/header', { ctaHref: '#mini-program', ctaLabel: '立即体验' }) %>
+    <main>
+      <section class="sub-hero">
+        <div class="container sub-hero-inner">
+          <span>Picture Books</span>
+          <h1>故事绘本，让孩子因为想知道后续而继续读。</h1>
+          <p>用图像、故事和点读发音，把英语阅读变成可持续的亲子体验。</p>
+        </div>
+      </section>
+      <section class="container library-layout">
+        <aside class="filter-panel">
+          <h2>绘本分类</h2>
+          <div id="book-categories" class="filter-list">
+            <button class="filter-chip active" data-book-category="">全部绘本</button>
+            <% categories.forEach(item => { %><button class="filter-chip" data-book-category="<%= item.id %>"><%= item.name || item.name_en %></button><% }) %>
+          </div>
+          <div class="tip-box">建议路径：先看图，再听英文，最后跟读一句最喜欢的话。</div>
+        </aside>
+        <div class="library-main">
+          <div class="library-head"><div><span>Live Content</span><h2>持续扩充中的绘本馆</h2></div><a href="#mini-program" class="secondary-btn small">扫码阅读</a></div>
+          <div id="book-grid" class="content-grid"><% books.forEach(book => { %><%- include('partials/book-card', { book }) %><% }) %></div>
+          <div class="load-more-wrap"><button id="books-load-more" class="secondary-btn" type="button" <%= hasMore ? '' : 'style="display:none;"' %>>加载更多绘本</button></div>
+        </div>
+      </section>
+      <%- include('partials/footer-cta', { title: '真正的阅读体验，在小程序里继续。', text: '扫码进入绘本页，继续翻页、点读、听音频和跟读。' }) %>
+    </main>
+    <%- include('partials/footer', {}) %>
+  </div>
+  <script>window.__SITE_INITIAL__ = <%- JSON.stringify(initialState) %>;</script>
+  <script src="/assets/site.js"></script>
+</body>
+</html>

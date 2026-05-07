@@ -1,0 +1,429 @@
+<div x-data="pbVideoApp()" x-init="init()" class="space-y-6">
+
+    <!-- 顶部 -->
+    <div class="flex items-center justify-between">
+        <div>
+            <h2 class="text-2xl font-bold text-gray-800">绘本视频</h2>
+            <p class="text-sm text-gray-500 mt-1">选择绘本，一键生成竖屏短视频（适合 视频号 / 抖音 / 小红书 / TikTok / YouTube Shorts）</p>
+        </div>
+        <a href="/picture-books" class="text-sm text-green-600 hover:underline"><i class="fas fa-book-open mr-1"></i>返回绘本管理</a>
+    </div>
+
+    <!-- 生成面板 -->
+    <div class="bg-white rounded-lg shadow p-6 space-y-4">
+        <div class="font-semibold text-gray-700 flex items-center gap-2">
+            <i class="fas fa-film text-pink-500"></i> 生成绘本视频
+        </div>
+
+        <!-- 搜索绘本 -->
+        <div class="flex gap-3 items-end">
+            <div class="flex-1">
+                <label class="block text-sm text-gray-600 mb-1">搜索绘本</label>
+                <input type="text" x-model="keyword" @keyup.enter="searchBooks()"
+                    placeholder="输入绘本中英文标题..."
+                    class="border rounded-lg px-3 py-2 text-sm w-full">
+            </div>
+            <button @click="searchBooks()" class="bg-gray-100 px-4 py-2 rounded-lg text-sm hover:bg-gray-200">
+                <i class="fas fa-search"></i> 搜索
+            </button>
+        </div>
+
+        <!-- 绘本列表（可选） -->
+        <div x-show="candidates.length > 0" class="border rounded-lg max-h-80 overflow-y-auto divide-y">
+            <template x-for="b in candidates" :key="b.id">
+                <div @click="selectBook(b)" class="px-4 py-3 hover:bg-pink-50 cursor-pointer flex items-center gap-4 transition"
+                    :class="selectedBook && selectedBook.id === b.id ? 'bg-pink-50 border-l-4 border-pink-500' : ''">
+                    <img x-show="b.cover_url" :src="b.cover_url" class="w-12 h-16 rounded object-cover flex-shrink-0 border border-gray-200">
+                    <div class="flex-1 min-w-0">
+                        <div class="font-medium text-gray-800" x-text="b.title_en || b.title"></div>
+                        <div class="text-xs text-gray-400" x-text="b.title"></div>
+                        <div class="text-xs text-gray-400 mt-0.5">
+                            <span x-text="b.page_count + ' 页'"></span>
+                            <span class="mx-1">·</span>
+                            <span x-show="b.pages_ready">素材齐全</span>
+                            <span x-show="!b.pages_ready" class="text-orange-500">素材未齐</span>
+                        </div>
+                    </div>
+                    <div class="text-right flex-shrink-0">
+                        <template x-if="b.latest_job">
+                            <span x-show="b.latest_job.status === 'done'" class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">已生成</span>
+                        </template>
+                    </div>
+                </div>
+            </template>
+        </div>
+        <div x-show="searchDone && candidates.length === 0" class="text-center py-8 text-gray-400 text-sm">
+            没有找到符合条件的绘本
+        </div>
+
+        <!-- 分页 -->
+        <div x-show="candidateTotal > candidatePageSize" class="flex items-center justify-between text-sm text-gray-500">
+            <span>共 <span x-text="candidateTotal"></span> 本</span>
+            <div class="flex gap-1">
+                <button @click="candidatePage > 1 && (candidatePage--, searchBooks())" :disabled="candidatePage <= 1"
+                    class="px-3 py-1 border rounded disabled:opacity-40">&lt;</button>
+                <span class="px-3 py-1" x-text="candidatePage + '/' + Math.ceil(candidateTotal / candidatePageSize)"></span>
+                <button @click="candidatePage < Math.ceil(candidateTotal / candidatePageSize) && (candidatePage++, searchBooks())"
+                    :disabled="candidatePage >= Math.ceil(candidateTotal / candidatePageSize)"
+                    class="px-3 py-1 border rounded disabled:opacity-40">&gt;</button>
+            </div>
+        </div>
+
+        <!-- 已选 + 生成配置 -->
+        <div x-show="selectedBook" class="border-t pt-4 space-y-4">
+            <div class="flex items-center gap-4">
+                <img :src="selectedBook?.cover_url" class="w-16 h-24 rounded object-cover border">
+                <div class="flex-1">
+                    <div class="font-semibold text-gray-800" x-text="selectedBook?.title_en || selectedBook?.title"></div>
+                    <div class="text-xs text-gray-500" x-text="selectedBook?.title"></div>
+                    <div class="text-xs text-gray-400 mt-0.5">共 <span x-text="selectedBook?.page_count"></span> 页</div>
+                </div>
+                <button @click="selectedBook = null" class="text-gray-400 hover:text-gray-600 text-sm">
+                    <i class="fas fa-times"></i> 取消
+                </button>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-sm text-gray-600 mb-1">字幕模式</label>
+                    <select x-model="config.subtitle_mode" class="border rounded-lg px-3 py-2 text-sm w-full">
+                        <option value="bilingual">双语（英文 + 中文）</option>
+                        <option value="english_only">仅英文</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-600 mb-1">时长模式</label>
+                    <select x-model="config.duration_mode" class="border rounded-lg px-3 py-2 text-sm w-full">
+                        <option value="shorts_60">短视频版 ≤60s（适合全平台）</option>
+                        <option value="full_75">完整版 ≤75s（除 YouTube Shorts 外）</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-600 mb-1">配音</label>
+                    <select x-model="config.voice" class="border rounded-lg px-3 py-2 text-sm w-full" disabled>
+                        <option value="female">女声（使用绘本已有音频）</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="flex gap-3 pt-2">
+                <button @click="generate()" :disabled="generating"
+                    class="bg-gradient-to-r from-pink-600 to-purple-600 text-white px-6 py-2.5 rounded-lg hover:opacity-90 transition disabled:opacity-40 flex items-center gap-2">
+                    <i class="fas fa-film" :class="generating ? 'animate-pulse' : ''"></i>
+                    <span x-text="generating ? '创建任务中...' : '生成视频'"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 任务列表 -->
+    <div class="bg-white rounded-lg shadow overflow-hidden">
+        <div class="px-6 py-4 border-b flex items-center justify-between">
+            <div class="font-semibold text-gray-700 flex items-center gap-2">
+                <i class="fas fa-tasks text-blue-500"></i> 生成任务
+                <span x-show="processingCount > 0" class="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full animate-pulse">
+                    <span x-text="processingCount"></span> 个进行中
+                </span>
+            </div>
+            <div class="flex gap-2">
+                <select x-model="jobFilter" @change="loadJobs()" class="border rounded-lg px-3 py-1.5 text-sm">
+                    <option value="">全部状态</option>
+                    <option value="pending">等待中</option>
+                    <option value="processing">生成中</option>
+                    <option value="done">已完成</option>
+                    <option value="failed">失败</option>
+                </select>
+                <button @click="loadJobs()" class="text-gray-400 hover:text-gray-600 px-2"><i class="fas fa-refresh"></i></button>
+            </div>
+        </div>
+
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-4 py-3 text-left font-medium text-gray-500 w-20">封面</th>
+                    <th class="px-4 py-3 text-left font-medium text-gray-500">绘本</th>
+                    <th class="px-4 py-3 text-left font-medium text-gray-500 w-44">配置</th>
+                    <th class="px-4 py-3 text-left font-medium text-gray-500 w-40">状态</th>
+                    <th class="px-4 py-3 text-left font-medium text-gray-500 w-20">时长</th>
+                    <th class="px-4 py-3 text-left font-medium text-gray-500 w-36">创建时间</th>
+                    <th class="px-4 py-3 text-center font-medium text-gray-500 w-52">操作</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y">
+                <template x-for="job in jobs" :key="job.id">
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-4 py-3">
+                            <template x-if="job.cover_url || job.book_cover">
+                                <img :src="job.cover_url || job.book_cover" class="w-12 h-20 object-cover rounded border border-gray-200" />
+                            </template>
+                            <template x-if="!job.cover_url && !job.book_cover">
+                                <div class="w-12 h-20 bg-gray-100 rounded flex items-center justify-center text-gray-300">
+                                    <i class="fas fa-image"></i>
+                                </div>
+                            </template>
+                        </td>
+                        <td class="px-4 py-3">
+                            <div class="font-medium text-gray-800" x-text="job.book_title_en || job.book_title_full || job.book_title"></div>
+                            <div class="text-xs text-gray-400" x-text="job.book_title_full || job.book_title"></div>
+                        </td>
+                        <td class="px-4 py-3 text-xs space-y-1">
+                            <div x-show="parseConfig(job).subtitle_mode === 'bilingual'">
+                                <span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded">双语字幕</span>
+                            </div>
+                            <div x-show="parseConfig(job).subtitle_mode === 'english_only'">
+                                <span class="bg-gray-100 text-gray-700 px-2 py-0.5 rounded">仅英文</span>
+                            </div>
+                            <div x-show="parseConfig(job).duration_mode === 'shorts_60'">
+                                <span class="bg-pink-100 text-pink-700 px-2 py-0.5 rounded">≤60s</span>
+                            </div>
+                            <div x-show="parseConfig(job).duration_mode === 'full_75'">
+                                <span class="bg-purple-100 text-purple-700 px-2 py-0.5 rounded">≤75s</span>
+                            </div>
+                        </td>
+                        <td class="px-4 py-3">
+                            <div x-show="job.status === 'pending'" class="flex items-center gap-2 text-gray-400">
+                                <i class="fas fa-clock"></i> 等待中
+                            </div>
+                            <div x-show="job.status === 'processing'" class="space-y-1">
+                                <div class="flex items-center gap-2 text-yellow-600">
+                                    <i class="fas fa-spinner animate-spin"></i> 生成中
+                                </div>
+                                <div class="w-full bg-gray-200 rounded-full h-2">
+                                    <div class="bg-yellow-500 h-2 rounded-full transition-all duration-500" :style="`width: ${job.progress}%`"></div>
+                                </div>
+                                <div class="text-xs text-gray-400" x-text="job.progress + '%'"></div>
+                            </div>
+                            <div x-show="job.status === 'done'" class="flex items-center gap-2 text-green-600">
+                                <i class="fas fa-check-circle"></i> 已完成
+                            </div>
+                            <div x-show="job.status === 'failed'" class="space-y-1">
+                                <div class="flex items-center gap-2 text-red-500">
+                                    <i class="fas fa-times-circle"></i> 失败
+                                </div>
+                                <div x-show="job.error_message" class="text-xs text-red-400 truncate max-w-[200px]" :title="job.error_message" x-text="job.error_message"></div>
+                            </div>
+                        </td>
+                        <td class="px-4 py-3 text-gray-500 text-xs">
+                            <span x-show="job.duration_seconds" x-text="job.duration_seconds + 's'"></span>
+                        </td>
+                        <td class="px-4 py-3 text-gray-500 text-xs" x-text="formatTime(job.created_at)"></td>
+                        <td class="px-4 py-3 text-center space-x-2">
+                            <button x-show="job.status === 'done'" @click="previewVideo(job)" class="text-blue-600 hover:underline text-xs">
+                                <i class="fas fa-play"></i> 预览
+                            </button>
+                            <a x-show="job.status === 'done'" :href="job.video_url" download class="text-green-600 hover:underline text-xs">
+                                <i class="fas fa-download"></i> 视频
+                            </a>
+                            <a x-show="job.status === 'done' && job.cover_url" :href="job.cover_url" download class="text-purple-600 hover:underline text-xs">
+                                <i class="fas fa-image"></i> 封面
+                            </a>
+                            <button @click="deleteJob(job.id)" class="text-red-500 hover:underline text-xs">
+                                <i class="fas fa-trash"></i> 删除
+                            </button>
+                        </td>
+                    </tr>
+                </template>
+                <tr x-show="jobs.length === 0">
+                    <td colspan="7" class="text-center py-12 text-gray-400">暂无任务，选择绘本后点击"生成视频"开始</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div x-show="jobTotal > jobPageSize" class="flex items-center justify-between px-4 py-3 bg-gray-50 border-t">
+            <div class="text-sm text-gray-500">共 <span x-text="jobTotal"></span> 条</div>
+            <div class="flex gap-1">
+                <button @click="jobPage > 1 && (jobPage--, loadJobs())" :disabled="jobPage <= 1" class="px-3 py-1 border rounded text-sm disabled:opacity-40">&lt;</button>
+                <span class="px-3 py-1 text-sm" x-text="jobPage + '/' + Math.ceil(jobTotal / jobPageSize)"></span>
+                <button @click="jobPage < Math.ceil(jobTotal / jobPageSize) && (jobPage++, loadJobs())"
+                    :disabled="jobPage >= Math.ceil(jobTotal / jobPageSize)" class="px-3 py-1 border rounded text-sm disabled:opacity-40">&gt;</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 视频预览弹窗 -->
+    <div x-show="showPreview" x-transition class="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" @click.self="closePreview()" style="display:none">
+        <div class="rounded-xl overflow-hidden" style="max-height: 80vh; aspect-ratio: 9/16;" @click.stop>
+            <video x-ref="previewPlayer" :src="previewUrl" controls class="w-full h-full rounded-xl"></video>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+<script>
+function pbVideoApp() {
+    return {
+        // 搜索
+        keyword: '',
+        candidates: [],
+        candidateTotal: 0,
+        candidatePage: 1,
+        candidatePageSize: 20,
+        searchDone: false,
+        selectedBook: null,
+
+        // 生成配置
+        config: {
+            subtitle_mode: 'bilingual',
+            duration_mode: 'shorts_60',
+            voice: 'female'
+        },
+        generating: false,
+
+        // 任务
+        jobs: [],
+        jobTotal: 0,
+        jobPage: 1,
+        jobPageSize: 20,
+        jobFilter: '',
+        pollTimer: null,
+
+        // 预览
+        showPreview: false,
+        previewUrl: '',
+
+        get processingCount() {
+            return this.jobs.filter(j => j.status === 'processing' || j.status === 'pending').length;
+        },
+
+        async init() {
+            await this.searchBooks();
+            await this.loadJobs();
+            this.startPolling();
+        },
+
+        // ===== 搜索绘本（后端 /picture-books/api/list 无分页，在前端分页） =====
+        _allBooks: [],
+        async searchBooks() {
+            const p = new URLSearchParams();
+            if (this.keyword) p.set('keyword', this.keyword);
+            try {
+                const res = await fetch('/picture-books/api/list?' + p).then(r => r.json());
+                if (res.success) {
+                    const all = (Array.isArray(res.data) ? res.data : (res.data.list || []));
+                    this._allBooks = all;
+                    this.candidateTotal = all.length;
+                    const start = (this.candidatePage - 1) * this.candidatePageSize;
+                    this.candidates = all.slice(start, start + this.candidatePageSize).map(b => ({ ...b, pages_ready: true }));
+                    // 批量查询每本书的最新视频任务
+                    const ids = this.candidates.map(b => b.id);
+                    if (ids.length) {
+                        const st = await fetch('/picturebook-videos/api/books/status-batch', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ book_ids: ids })
+                        }).then(r => r.json());
+                        if (st.success) {
+                            for (const b of this.candidates) {
+                                b.latest_job = st.data[b.id] || null;
+                            }
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error('搜索失败:', e);
+            }
+            this.searchDone = true;
+        },
+
+        selectBook(b) {
+            this.selectedBook = b;
+        },
+
+        // ===== 生成 =====
+        async generate() {
+            if (!this.selectedBook) return;
+            this.generating = true;
+            try {
+                const res = await fetch('/picturebook-videos/api/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        book_id: this.selectedBook.id,
+                        ...this.config
+                    })
+                }).then(r => r.json());
+
+                if (res.success) {
+                    this.selectedBook = null;
+                    await this.loadJobs();
+                    if (typeof showToast === 'function') showToast(res.message || '任务已创建');
+                } else {
+                    alert(res.message || '创建失败');
+                }
+            } catch (e) {
+                alert('请求失败: ' + e.message);
+            }
+            this.generating = false;
+        },
+
+        // ===== 任务列表 =====
+        async loadJobs() {
+            const p = new URLSearchParams({
+                page: this.jobPage,
+                page_size: this.jobPageSize
+            });
+            if (this.jobFilter) p.set('status', this.jobFilter);
+            try {
+                const res = await fetch('/picturebook-videos/api/list?' + p).then(r => r.json());
+                if (res.success) {
+                    this.jobs = res.data.list;
+                    this.jobTotal = res.data.total;
+                }
+            } catch (e) {
+                console.error('加载任务失败:', e);
+            }
+        },
+
+        async deleteJob(id) {
+            if (!confirm('确定删除此任务和视频文件？')) return;
+            try {
+                const res = await fetch('/picturebook-videos/api/job/' + id, { method: 'DELETE' }).then(r => r.json());
+                if (res.success) {
+                    await this.loadJobs();
+                    if (typeof showToast === 'function') showToast('已删除');
+                }
+            } catch (e) {
+                alert('删除失败: ' + e.message);
+            }
+        },
+
+        // ===== 轮询 =====
+        startPolling() {
+            this.pollTimer = setInterval(() => {
+                if (this.processingCount > 0) {
+                    this.loadJobs();
+                }
+            }, 3000);
+        },
+
+        // ===== 预览 =====
+        previewVideo(job) {
+            this.previewUrl = job.video_url;
+            this.showPreview = true;
+            this.$nextTick(() => {
+                if (this.$refs.previewPlayer) this.$refs.previewPlayer.play();
+            });
+        },
+
+        closePreview() {
+            this.showPreview = false;
+            if (this.$refs.previewPlayer) this.$refs.previewPlayer.pause();
+            this.previewUrl = '';
+        },
+
+        // ===== 工具 =====
+        parseConfig(job) {
+            try {
+                return typeof job.config_json === 'string' ? JSON.parse(job.config_json) : (job.config_json || {});
+            } catch (e) {
+                return {};
+            }
+        },
+
+        formatTime(t) {
+            if (!t) return '';
+            return new Date(t).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+        }
+    };
+}
+</script>

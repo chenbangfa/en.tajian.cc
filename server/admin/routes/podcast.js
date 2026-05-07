@@ -7,6 +7,7 @@ const axios = require('axios');
 const { query } = require('../../src/config/database');
 const voiceService = require('../../src/services/voice.service');
 const config = require('../../src/config');
+const { getPodcastCategorySnapshot, collectDescendantIds } = require('../utils/podcast-category-tree');
 
 // ==================== 分类管理 ====================
 
@@ -82,8 +83,22 @@ router.delete('/categories/:id', async (req, res) => {
 // 获取内容列表
 router.get('/', async (req, res) => {
     try {
-        const { category_id, page = 1, limit = 20 } = req.query;
+        const {
+            category_id,
+            page = 1,
+            limit = 20,
+            filter_unanalyzed,
+            filter_missing_audio
+        } = req.query;
         const offset = (page - 1) * limit;
+        let effectiveCategoryIds = [];
+        let selectedCategory = null;
+
+        if (category_id) {
+            const snapshot = await getPodcastCategorySnapshot(query);
+            selectedCategory = snapshot.flat.find((item) => Number(item.id) === Number(category_id)) || null;
+            effectiveCategoryIds = collectDescendantIds(snapshot.flat, category_id);
+        }
 
         let sql = `SELECT c.id, c.title, c.title_en, c.category_id, c.difficulty_level,
                           c.is_free, c.sort_order, c.male_audio_url, c.female_audio_url, c.chinese_audio_url,
@@ -91,16 +106,37 @@ router.get('/', async (req, res) => {
                                WHEN c.sentences_data IS NOT NULL THEN 1
                                ELSE 0 END as has_sentences,
                           cat.name as category_name,
+                          cat.name_en as category_name_en,
                           cat.parent_id as category_parent_id,
-                          pcat.name as parent_category_name
+                          pcat.name as parent_category_name,
+                          pcat.name_en as parent_category_name_en,
+                          gcat.name as grand_category_name,
+                          gcat.name_en as grand_category_name_en,
+                          (
+                              SELECT COUNT(*)
+                              FROM podcast_contents pack
+                              WHERE pack.category_id = c.category_id
+                          ) as pack_item_count
                    FROM podcast_contents c
                    LEFT JOIN podcast_categories cat ON c.category_id = cat.id
-                   LEFT JOIN podcast_categories pcat ON cat.parent_id = pcat.id`;
+                   LEFT JOIN podcast_categories pcat ON cat.parent_id = pcat.id
+                   LEFT JOIN podcast_categories gcat ON pcat.parent_id = gcat.id`;
         const params = [];
+        const whereClauses = [];
 
-        if (category_id) {
-            sql += ' WHERE c.category_id = ?';
-            params.push(category_id);
+        if (effectiveCategoryIds.length) {
+            whereClauses.push(`c.category_id IN (${effectiveCategoryIds.map(() => '?').join(',')})`);
+            params.push(...effectiveCategoryIds);
+        }
+        if (String(filter_unanalyzed || '') === '1') {
+            whereClauses.push('c.sentences_data IS NULL');
+        }
+        if (String(filter_missing_audio || '') === '1') {
+            whereClauses.push('(c.female_audio_url IS NULL OR c.female_audio_url = "" OR c.chinese_audio_url IS NULL OR c.chinese_audio_url = "")');
+        }
+
+        if (whereClauses.length) {
+            sql += ` WHERE ${whereClauses.join(' AND ')}`;
         }
 
         sql += ' ORDER BY c.sort_order, c.id DESC LIMIT ? OFFSET ?';
@@ -109,19 +145,48 @@ router.get('/', async (req, res) => {
         const contents = await query(sql, params);
 
         // 获取总数
-        let countSql = 'SELECT COUNT(*) as total FROM podcast_contents';
-        if (category_id) {
-            countSql += ' WHERE category_id = ?';
+        let countSql = `SELECT COUNT(*) as total,
+                               SUM(CASE WHEN sentences_data IS NOT NULL AND sentences_data <> 'processing' THEN 1 ELSE 0 END) AS analyzed_count,
+                               SUM(CASE WHEN female_audio_url IS NULL OR female_audio_url = '' OR chinese_audio_url IS NULL OR chinese_audio_url = '' THEN 1 ELSE 0 END) AS missing_audio_count,
+                               COUNT(DISTINCT category_id) AS course_pack_count
+                        FROM podcast_contents`;
+        const countParams = [];
+        const countWhereClauses = [];
+        if (effectiveCategoryIds.length) {
+            countWhereClauses.push(`category_id IN (${effectiveCategoryIds.map(() => '?').join(',')})`);
+            countParams.push(...effectiveCategoryIds);
         }
-        const [{ total }] = await query(countSql, category_id ? [category_id] : []);
+        if (String(filter_unanalyzed || '') === '1') {
+            countWhereClauses.push('sentences_data IS NULL');
+        }
+        if (String(filter_missing_audio || '') === '1') {
+            countWhereClauses.push('(female_audio_url IS NULL OR female_audio_url = "" OR chinese_audio_url IS NULL OR chinese_audio_url = "")');
+        }
+        if (countWhereClauses.length) {
+            countSql += ` WHERE ${countWhereClauses.join(' AND ')}`;
+        }
+        const [statsRow] = await query(countSql, countParams);
 
         res.json({
             success: true,
             data: {
                 list: contents,
-                total,
+                total: Number(statsRow.total || 0),
                 page: parseInt(page),
-                limit: parseInt(limit)
+                limit: parseInt(limit),
+                stats: {
+                    total: Number(statsRow.total || 0),
+                    analyzed_count: Number(statsRow.analyzed_count || 0),
+                    missing_audio_count: Number(statsRow.missing_audio_count || 0),
+                    course_pack_count: Number(statsRow.course_pack_count || 0)
+                },
+                selected_category: selectedCategory ? {
+                    id: selectedCategory.id,
+                    name: selectedCategory.name,
+                    path_names: selectedCategory.path_names,
+                    total_content_count: selectedCategory.total_content_count,
+                    course_pack_count: selectedCategory.course_pack_count
+                } : null
             }
         });
     } catch (error) {
@@ -344,6 +409,8 @@ router.post('/generate-all-audio', async (req, res) => {
 router.post('/analyze-sentences/:id', async (req, res) => {
     const { id } = req.params;
     try {
+        const requestedEngine = String(req.body?.engine || req.query?.engine || 'deepseek').trim().toLowerCase();
+        const engine = requestedEngine === 'gemini' ? 'gemini' : 'deepseek';
         const [content] = await query('SELECT * FROM podcast_contents WHERE id = ?', [id]);
         if (!content) return res.status(404).json({ success: false, message: '内容不存在' });
         if (!content.content_text) return res.status(400).json({ success: false, message: '内容文本为空' });
@@ -352,7 +419,7 @@ router.post('/analyze-sentences/:id', async (req, res) => {
         await query("UPDATE podcast_contents SET sentences_data = 'processing' WHERE id = ?", [id]);
 
         // 1. Gemini 分析
-        const aiResult = await _geminiAnalyze(content.content_text);
+        const aiResult = await _analyzePodcast(content.content_text, engine);
         if (!aiResult.success) {
             await query('UPDATE podcast_contents SET sentences_data = NULL WHERE id = ?', [id]);
             return res.status(500).json({ success: false, message: 'AI分析失败: ' + aiResult.error });
@@ -393,7 +460,14 @@ router.post('/analyze-sentences/:id', async (req, res) => {
             [JSON.stringify({ sentences }), id]
         );
 
-        res.json({ success: true, data: { sentences_count: sentences.length }, message: `分析完成，共 ${sentences.length} 句` });
+        res.json({
+            success: true,
+            data: {
+                sentences_count: sentences.length,
+                engine: aiResult.engine || engine
+            },
+            message: `分析完成，共 ${sentences.length} 句`
+        });
     } catch (e) {
         console.error('[Podcast] analyze-sentences error:', e);
         await query('UPDATE podcast_contents SET sentences_data = NULL WHERE id = ?', [id]).catch(() => {});
@@ -401,15 +475,31 @@ router.post('/analyze-sentences/:id', async (req, res) => {
     }
 });
 
-async function _geminiAnalyze(text) {
+async function _analyzePodcast(text, engine = 'deepseek') {
     try {
+        if (engine === 'deepseek' && process.env.DEEPSEEK_API_KEY) {
+            const sentenceList = text.match(/[^.!?]+[.!?]+[\s]*/g) || [text];
+            const chunks = [];
+            for (let i = 0; i < sentenceList.length; i += PODCAST_CHUNK_SIZE) {
+                chunks.push(sentenceList.slice(i, i + PODCAST_CHUNK_SIZE).join('').trim());
+            }
+
+            const allSentences = [];
+            for (const chunk of chunks) {
+                const sentences = await analyzeChunkWithDeepSeekLocal(chunk);
+                allSentences.push(...sentences);
+            }
+
+            return { success: true, sentences: allSentences, engine: 'deepseek' };
+        }
+
         const proxyUrl = process.env.PROXY_BASE_URL;
         const proxyKey = process.env.PROXY_API_KEY;
         if (!proxyUrl) return { success: false, error: '未配置 PROXY_BASE_URL（美国代理服务器地址）' };
 
         const resp = await axios.post(
             `${proxyUrl}/proxy/analyze-podcast`,
-            { text },
+            { text, engine },
             {
                 headers: {
                     'Content-Type': 'application/json',
@@ -420,12 +510,73 @@ async function _geminiAnalyze(text) {
         );
 
         if (resp.data.success && Array.isArray(resp.data.sentences)) {
-            return { success: true, sentences: resp.data.sentences };
+            return {
+                success: true,
+                sentences: resp.data.sentences,
+                engine: resp.data.engine || engine
+            };
         }
         return { success: false, error: resp.data.error || '代理返回失败' };
     } catch (e) {
         return { success: false, error: `代理服务不可用: ${e.message}` };
     }
+}
+
+const PODCAST_CHUNK_SIZE = 6;
+
+function buildAnalyzePrompt(chunkText) {
+    return `You are an English language learning assistant for Chinese children beginners.
+Analyze the following English text. Split into individual sentences.
+For each sentence provide:
+1. Exact sentence text (copied verbatim from the original, including any spelling mistakes — do NOT correct typos)
+2. Natural Chinese translation
+3. Brief grammar analysis in Chinese (e.g. "主语+谓语+宾语，一般现在时")
+4. Word/phrase list following these rules strictly:
+   STEP 1 — Find all common multi-word phrases first (phrasal verbs like "get up/wake up/go to bed", collocations like "every day/get home/o'clock", etc.)
+   STEP 2 — Find remaining individual content words (nouns, verbs, adjectives, adverbs, numbers, pronouns) that are NOT already covered by a phrase from Step 1.
+   STEP 3 — Combine Step 1 + Step 2 as the final word list. A word already inside a phrase must NOT appear again as a separate entry.
+   Example: "I get up at seven o'clock every day." → phrases: ["get up","o'clock","every day"] + words: ["seven"] (not "get","up","day" separately)
+   IMPORTANT: the "word" field must use the EXACT spelling as it appears in the sentence (do not fix typos).
+   For each entry: IPA phonetic (for phrases use the full phrase pronunciation), abbreviated pos (n./v./adj./adv./num./pron./phr.v./phr.), Chinese translation.
+
+Return ONLY valid JSON (no markdown, no explanation):
+{"sentences":[{"text":"...","translation":"...","grammar":"...","words":[{"word":"...","phonetic":"...","pos":"...","translation":"..."}]}]}
+
+Text:
+${chunkText}`;
+}
+
+function extractJsonObjectText(rawText = '') {
+    const cleaned = String(rawText || '').replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim();
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    return match ? match[0] : cleaned;
+}
+
+async function analyzeChunkWithDeepSeekLocal(chunkText) {
+    const response = await axios.post(
+        'https://api.deepseek.com/chat/completions',
+        {
+            model: 'deepseek-chat',
+            messages: [
+                { role: 'system', content: 'You are a JSON-only assistant. Return ONLY valid JSON, no markdown, no explanation.' },
+                { role: 'user', content: buildAnalyzePrompt(chunkText) }
+            ],
+            temperature: 0,
+            max_tokens: 8192,
+            response_format: { type: 'json_object' }
+        },
+        {
+            headers: {
+                'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+                'Content-Type': 'application/json'
+            },
+            timeout: 90000
+        }
+    );
+
+    const parsed = JSON.parse(extractJsonObjectText(response.data?.choices?.[0]?.message?.content || ''));
+    if (!Array.isArray(parsed.sentences)) throw new Error('AI返回格式错误');
+    return parsed.sentences;
 }
 
 module.exports = router;

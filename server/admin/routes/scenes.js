@@ -3,9 +3,13 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const axios = require('axios');
+const sharp = require('sharp');
 const { query } = require('../../src/config/database');
 const aiService = require('../../src/services/ai.service');
 const config = require('../../src/config');
+const { detectSceneCards, buildPosterTemplateCards } = require('../utils/scene-card-detector');
+const { createSceneH5Token } = require('../utils/h5-scene-token');
+const sceneReadingVideoService = require('../../src/services/scene-reading-video.service');
 
 const router = express.Router();
 
@@ -28,20 +32,142 @@ const router = express.Router();
     }
 })();
 
-// Multer Config
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        const uploadDir = path.join(__dirname, '../../uploads/scenes');
-        if (!fs.existsSync(uploadDir)) {
-            fs.mkdirSync(uploadDir, { recursive: true });
+// 确保场景点读视频任务表存在
+(async function ensureSceneReadingVideoJobsTable() {
+    try {
+        await query(`CREATE TABLE IF NOT EXISTS scene_reading_video_jobs (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            scene_id INT NOT NULL,
+            scene_title VARCHAR(255) DEFAULT '' COMMENT '冗余场景名',
+            status ENUM('pending','processing','done','failed') DEFAULT 'pending',
+            progress INT DEFAULT 0 COMMENT '0-100',
+            config_json TEXT COMMENT '生成配置 {voice}',
+            video_url VARCHAR(500) DEFAULT '',
+            cover_url VARCHAR(500) DEFAULT '',
+            duration_seconds INT DEFAULT 0 COMMENT '最终时长',
+            error_message VARCHAR(1000) DEFAULT '',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_scene (scene_id),
+            INDEX idx_status (status)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='场景点读视频生成任务'`);
+        await query(`UPDATE scene_reading_video_jobs SET status='pending' WHERE status='processing'`);
+        setImmediate(() => sceneReadingVideoService.processNextJob());
+    } catch (e) {
+        console.error('[SceneReadingVideo] 任务表初始化失败:', e.message);
+    }
+})();
+
+const SCENE_UPLOAD_DIR = path.join(__dirname, '../../uploads/scenes');
+const SCENE_UPLOAD_TARGET_BYTES = 300 * 1024;
+const SCENE_UPLOAD_KEEP_BYTES = 330 * 1024;
+
+// 场景对象允许覆盖全局词库释义；中文 TTS 也要按场景语义独立缓存，避免 wave=海浪 污染 words.wave=挥手。
+const sceneObjectSemanticColumnsReady = (async function ensureSceneObjectSemanticAudioColumns() {
+    try {
+        const columns = [
+            { name: 'translation_audio_url', ddl: 'VARCHAR(500) DEFAULT NULL COMMENT "场景释义中文发音URL"' },
+            { name: 'translation_audio_text', ddl: 'VARCHAR(255) DEFAULT NULL COMMENT "生成场景中文发音时使用的文本"' }
+        ];
+        for (const col of columns) {
+            const rows = await query('SHOW COLUMNS FROM scene_objects LIKE ?', [col.name]);
+            if (!rows || rows.length === 0) {
+                await query(`ALTER TABLE scene_objects ADD COLUMN ${col.name} ${col.ddl}`);
+            }
         }
-        cb(null, uploadDir);
-    },
-    filename: (req, file, cb) => {
-        cb(null, `scene_${Date.now()}${path.extname(file.originalname)}`);
+    } catch (e) {
+        console.error('[Scenes] 补齐场景对象中文音频字段失败:', e.message);
+    }
+})();
+
+function ensureSceneUploadDir() {
+    if (!fs.existsSync(SCENE_UPLOAD_DIR)) {
+        fs.mkdirSync(SCENE_UPLOAD_DIR, { recursive: true });
+    }
+}
+
+// Multer Config: use memory storage so we can compress before writing to disk.
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 15 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        if (!/^image\//i.test(file.mimetype || '')) {
+            return cb(new Error('只支持上传图片文件'));
+        }
+        cb(null, true);
     }
 });
-const upload = multer({ storage });
+
+async function compressSceneUpload(file) {
+    ensureSceneUploadDir();
+
+    const originalBuffer = file.buffer;
+    const originalExt = path.extname(file.originalname || '').toLowerCase() || '.jpg';
+    const safeOriginalExt = ['.jpg', '.jpeg', '.png', '.webp'].includes(originalExt) ? originalExt : '.jpg';
+
+    if (originalBuffer.length <= SCENE_UPLOAD_KEEP_BYTES) {
+        const filename = `scene_${Date.now()}_original${safeOriginalExt}`;
+        const fullPath = path.join(SCENE_UPLOAD_DIR, filename);
+        await fs.promises.writeFile(fullPath, originalBuffer);
+        return {
+            filename,
+            size: originalBuffer.length,
+            originalSize: originalBuffer.length,
+            compressed: false
+        };
+    }
+
+    const metadata = await sharp(originalBuffer).rotate().metadata();
+    const longEdge = Math.max(metadata.width || 0, metadata.height || 0);
+    const attempts = [
+        { max: 1800, quality: 86 },
+        { max: 1800, quality: 82 },
+        { max: 1800, quality: 78 },
+        { max: 1800, quality: 74 },
+        { max: 1600, quality: 80 },
+        { max: 1600, quality: 76 },
+        { max: 1500, quality: 76 },
+        { max: 1400, quality: 74 }
+    ];
+
+    let bestBuffer = null;
+    let bestAttempt = null;
+    for (const attempt of attempts) {
+        const resizeOptions = longEdge > attempt.max
+            ? { width: attempt.max, height: attempt.max, fit: 'inside', withoutEnlargement: true }
+            : null;
+
+        let pipeline = sharp(originalBuffer)
+            .rotate()
+            .flatten({ background: '#ffffff' });
+        if (resizeOptions) pipeline = pipeline.resize(resizeOptions);
+
+        const out = await pipeline
+            .jpeg({
+                quality: attempt.quality,
+                progressive: true,
+                mozjpeg: true,
+                chromaSubsampling: '4:4:4'
+            })
+            .toBuffer();
+
+        bestBuffer = out;
+        bestAttempt = attempt;
+        if (out.length <= SCENE_UPLOAD_TARGET_BYTES) break;
+    }
+
+    const filename = `scene_${Date.now()}.jpg`;
+    const fullPath = path.join(SCENE_UPLOAD_DIR, filename);
+    await fs.promises.writeFile(fullPath, bestBuffer);
+    return {
+        filename,
+        size: bestBuffer.length,
+        originalSize: originalBuffer.length,
+        compressed: true,
+        quality: bestAttempt?.quality,
+        maxEdge: bestAttempt?.max
+    };
+}
 
 // --- API Endpoints ---
 
@@ -55,7 +181,26 @@ router.get('/', async (req, res) => {
 
         let sql = `
             SELECT s.*, c.name as category_name,
-            (SELECT COUNT(*) FROM scene_objects WHERE scene_id = s.id) as object_count
+            (SELECT COUNT(*) FROM scene_objects WHERE scene_id = s.id) as object_count,
+            EXISTS(
+                SELECT 1
+                FROM scene_reading_video_jobs rv
+                WHERE rv.scene_id = s.id
+                  AND rv.status = 'done'
+                  AND rv.video_url IS NOT NULL
+                  AND TRIM(rv.video_url) <> ''
+                LIMIT 1
+            ) as has_reading_video,
+            (
+                SELECT rv.video_url
+                FROM scene_reading_video_jobs rv
+                WHERE rv.scene_id = s.id
+                  AND rv.status = 'done'
+                  AND rv.video_url IS NOT NULL
+                  AND TRIM(rv.video_url) <> ''
+                ORDER BY rv.updated_at DESC, rv.id DESC
+                LIMIT 1
+            ) as reading_video_url
             FROM scenes s
             LEFT JOIN scene_categories c ON s.category_id = c.id
             WHERE 1=1
@@ -115,6 +260,88 @@ router.get('/', async (req, res) => {
     } catch (error) {
         console.error('获取场景列表错误:', error);
         res.status(500).json({ success: false, message: '获取场景列表失败' });
+    }
+});
+
+// 1.05 生成加密 H5 点读链接
+router.get('/:id/h5-link', async (req, res) => {
+    try {
+        const sceneId = parseInt(req.params.id, 10);
+        if (!Number.isFinite(sceneId) || sceneId <= 0) {
+            return res.status(400).json({ success: false, message: '场景ID无效' });
+        }
+
+        const [scene] = await query('SELECT id FROM scenes WHERE id = ? LIMIT 1', [sceneId]);
+        if (!scene) {
+            return res.status(404).json({ success: false, message: '场景不存在' });
+        }
+
+        const token = createSceneH5Token(sceneId);
+        res.json({
+            success: true,
+            data: {
+                token,
+                path: `/h5/scenes/${token}`
+            }
+        });
+    } catch (error) {
+        console.error('生成H5点读链接失败:', error);
+        res.status(500).json({ success: false, message: '生成H5点读链接失败' });
+    }
+});
+
+// 1.06 创建场景点读视频任务
+router.post('/:id/reading-video/generate', async (req, res) => {
+    try {
+        const sceneId = parseInt(req.params.id, 10);
+        const includeChinese = req.body?.includeChinese !== false;
+        if (!Number.isFinite(sceneId) || sceneId <= 0) {
+            return res.status(400).json({ success: false, message: '场景ID无效' });
+        }
+
+        const [scene] = await query('SELECT id, name, name_en, image_url FROM scenes WHERE id = ? LIMIT 1', [sceneId]);
+        if (!scene) return res.status(404).json({ success: false, message: '场景不存在' });
+        if (!scene.image_url) return res.status(400).json({ success: false, message: '场景缺少图片，无法生成视频' });
+
+        const [{ total, withPosition }] = await query(
+            `SELECT COUNT(*) AS total,
+                    SUM(CASE WHEN position_x IS NOT NULL AND position_y IS NOT NULL AND label_width IS NOT NULL AND label_height IS NOT NULL THEN 1 ELSE 0 END) AS withPosition
+             FROM scene_objects WHERE scene_id = ?`,
+            [sceneId]
+        );
+        if (!total) return res.status(400).json({ success: false, message: '场景还没有热点，请先标注物体' });
+        if (Number(withPosition || 0) < Number(total || 0)) {
+            return res.status(400).json({ success: false, message: '部分热点缺少坐标，请先保存/修正热点' });
+        }
+
+        const result = await query(
+            `INSERT INTO scene_reading_video_jobs (scene_id, scene_title, config_json, status)
+             VALUES (?, ?, ?, 'pending')`,
+            [sceneId, scene.name || scene.name_en || '', JSON.stringify({ includeChinese })]
+        );
+
+        res.json({ success: true, data: { job_id: result.insertId }, message: '点读视频任务已创建' });
+        setImmediate(() => sceneReadingVideoService.processNextJob());
+    } catch (error) {
+        console.error('创建场景点读视频任务失败:', error);
+        res.status(500).json({ success: false, message: error.message || '创建视频任务失败' });
+    }
+});
+
+// 1.07 查询某个场景最新点读视频任务
+router.get('/:id/reading-video/status', async (req, res) => {
+    try {
+        const [job] = await query(
+            `SELECT id, scene_id, status, progress, video_url, cover_url, duration_seconds, error_message, created_at, updated_at
+             FROM scene_reading_video_jobs
+             WHERE scene_id = ?
+             ORDER BY created_at DESC, id DESC
+             LIMIT 1`,
+            [req.params.id]
+        );
+        res.json({ success: true, data: job || null });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message || '查询视频任务失败' });
     }
 });
 
@@ -191,6 +418,7 @@ router.get('/:id', async (req, res) => {
 // 2.1 获取场景标注物体
 router.get('/:id/objects', async (req, res) => {
     try {
+        await sceneObjectSemanticColumnsReady;
         const objects = await query(`
             SELECT * FROM scene_objects WHERE scene_id = ? ORDER BY sort_order ASC
         `, [req.params.id]);
@@ -283,9 +511,25 @@ router.put('/:id', async (req, res) => {
 
 
 // 4. 图片上传
-router.post('/upload', upload.single('image'), (req, res) => {
-    if (!req.file) return res.status(400).json({ success: false, message: '无文件' });
-    res.json({ success: true, url: `/uploads/scenes/${req.file.filename}` });
+router.post('/upload', upload.single('image'), async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ success: false, message: '无文件' });
+        const result = await compressSceneUpload(req.file);
+        res.json({
+            success: true,
+            url: `/uploads/scenes/${result.filename}`,
+            data: {
+                original_size: result.originalSize,
+                size: result.size,
+                compressed: result.compressed,
+                quality: result.quality || null,
+                max_edge: result.maxEdge || null
+            }
+        });
+    } catch (error) {
+        console.error('[Scenes] 图片上传压缩失败:', error);
+        res.status(500).json({ success: false, message: error.message || '图片上传失败' });
+    }
 });
 
 // 5. AI 生成图片 (带 prompt 增强)
@@ -353,6 +597,69 @@ router.post('/ocr', async (req, res) => {
     } catch (error) {
         console.error('OCR Error:', error);
         res.status(500).json({ success: false, message: '识别服务错误' });
+    }
+});
+
+// 6.1 自动识别海报卡片
+router.post('/detect-cards', async (req, res) => {
+    try {
+        const {
+            imageUrl,
+            expectedColumns = 4,
+            expectedCount = 0,
+            expectedRows,
+            layoutMode = 'auto',
+            layoutAdjustments = null
+        } = req.body || {};
+
+        if (!imageUrl) {
+            return res.status(400).json({ success: false, message: '无图片地址' });
+        }
+
+        let result;
+        const fallbackNotes = [];
+
+        // 1. 海报模板模式（带微调面板时优先走模板）
+        if (layoutMode === 'poster_template') {
+            try {
+                result = await buildPosterTemplateCards(imageUrl, {
+                    expectedColumns,
+                    expectedCount,
+                    expectedRows,
+                    layoutAdjustments,
+                    debug: true
+                });
+            } catch (templateError) {
+                fallbackNotes.push(`poster_template 失败: ${templateError.message}`);
+                console.warn('海报模板定位失败，回退到投影识别:', templateError.message);
+            }
+        }
+
+        // 2. 投影谷值兜底。Gemini 视觉识别不稳定且易 429，默认不再调用。
+        if (!result) {
+            result = await detectSceneCards(imageUrl, {
+                expectedColumns,
+                expectedCount,
+                expectedRows,
+                debug: true
+            });
+            result.engine = result.engine || 'projection-valley';
+        }
+
+        if (fallbackNotes.length) {
+            result.fallbackNotes = fallbackNotes;
+        }
+
+        res.json({
+            success: true,
+            data: result
+        });
+    } catch (error) {
+        console.error('识别卡片边框失败:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || '识别失败'
+        });
     }
 });
 
@@ -468,12 +775,18 @@ router.post('/objects/:objId/update-label', async (req, res) => {
 // 8.1 更新热点音标/翻译
 router.post('/objects/:objId/update-fields', async (req, res) => {
     try {
+        await sceneObjectSemanticColumnsReady;
         const { objId } = req.params;
         const { phonetic, translation } = req.body;
         const sets = [];
         const params = [];
         if (phonetic !== undefined) { sets.push('phonetic = ?'); params.push(phonetic); }
-        if (translation !== undefined) { sets.push('translation = ?'); params.push(translation); }
+        if (translation !== undefined) {
+            sets.push('translation = ?');
+            params.push(translation);
+            sets.push('translation_audio_url = NULL');
+            sets.push('translation_audio_text = NULL');
+        }
         if (sets.length === 0) return res.json({ success: false, message: '无更新字段' });
         params.push(objId);
         await query(`UPDATE scene_objects SET ${sets.join(', ')} WHERE id = ?`, params);
@@ -481,6 +794,75 @@ router.post('/objects/:objId/update-fields', async (req, res) => {
     } catch (e) {
         console.error('更新热点字段失败:', e);
         res.status(500).json({ success: false, message: '更新失败' });
+    }
+});
+
+// 8.2 生成/重生成热点中文释义音频（按场景翻译，不复用全局 words.translation）
+router.post('/objects/:objId/chinese-audio', async (req, res) => {
+    try {
+        await sceneObjectSemanticColumnsReady;
+        const { objId } = req.params;
+        const force = req.body?.force !== false;
+        const [obj] = await query(
+            `SELECT id, custom_label, translation, translation_audio_url, translation_audio_text
+             FROM scene_objects WHERE id = ?`,
+            [objId]
+        );
+        if (!obj) {
+            return res.status(404).json({ success: false, message: '热点不存在' });
+        }
+
+        const text = String(obj.translation || '').trim();
+        if (!text) {
+            return res.status(400).json({ success: false, message: '请先填写中文翻译' });
+        }
+
+        const oldText = String(obj.translation_audio_text || '').trim();
+        if (!force && obj.translation_audio_url && oldText === text) {
+            return res.json({
+                success: true,
+                data: {
+                    id: obj.id,
+                    translation: text,
+                    translation_audio_url: obj.translation_audio_url,
+                    translation_audio_text: oldText,
+                    reused: true
+                }
+            });
+        }
+
+        const result = await voiceService.textToSpeechChinese(
+            text,
+            'female',
+            voiceService.getGoogleTtsSpeed('default')
+        );
+        if (!result.success || !result.audioUrl) {
+            return res.status(500).json({
+                success: false,
+                message: result.error || '中文音频生成失败'
+            });
+        }
+
+        await query(
+            `UPDATE scene_objects
+             SET translation_audio_url = ?, translation_audio_text = ?
+             WHERE id = ?`,
+            [result.audioUrl, text, obj.id]
+        );
+
+        res.json({
+            success: true,
+            data: {
+                id: obj.id,
+                translation: text,
+                translation_audio_url: result.audioUrl,
+                translation_audio_text: text,
+                engine: result.engine || ''
+            }
+        });
+    } catch (e) {
+        console.error('生成热点中文音频失败:', e);
+        res.status(500).json({ success: false, message: e.message || '中文音频生成失败' });
     }
 });
 
@@ -506,7 +888,9 @@ function inferWordContentType(text = '') {
 
 router.post('/objects/:objId/generate', async (req, res) => {
     try {
+        await sceneObjectSemanticColumnsReady;
         const { objId } = req.params;
+        const forceRefresh = req.body?.force === true || req.body?.refresh === true;
 
         // 获取热点对象
         const [obj] = await query('SELECT * FROM scene_objects WHERE id = ?', [objId]);
@@ -514,9 +898,14 @@ router.post('/objects/:objId/generate', async (req, res) => {
             return res.status(404).json({ success: false, message: '热点不存在' });
         }
 
-        const text = normalizeHotspotText(obj.custom_label);
+        const requestedLabel = normalizeHotspotText(req.body?.custom_label || '');
+        const text = normalizeHotspotText(requestedLabel || obj.custom_label);
         if (!text) {
             return res.status(400).json({ success: false, message: '热点无文本' });
+        }
+        if (requestedLabel && requestedLabel !== normalizeHotspotText(obj.custom_label)) {
+            await query('UPDATE scene_objects SET custom_label = ? WHERE id = ?', [requestedLabel, objId]);
+            obj.custom_label = requestedLabel;
         }
 
         // 1) 优先按标准化文本查 words 表（复用）
@@ -533,11 +922,13 @@ router.post('/objects/:objId/generate', async (req, res) => {
 
         if (existingWord) {
             linkedWordId = existingWord.id;
-            // 场景已有数据优先，其次复用 words 数据
-            phonetic = normalizePhonetic(obj.phonetic || existingWord.phonetic || '');
-            translation = obj.translation || existingWord.translation || '';
-            audioMale = obj.audio_url_male || existingWord.audio_url_male || '';
-            audioFemale = obj.audio_url_female || existingWord.audio_url_female || '';
+            // 场景已有数据优先，其次复用 words 数据；场景翻译只写 scene_objects，不反写污染 words.translation。
+            const canReuseSceneFields = !forceRefresh && (!obj.word_id || Number(obj.word_id) === Number(existingWord.id));
+            // 单个生成按钮传 force=true 时，通常是在修正 OCR/识别错误；此时 words 表也可能已被旧错词污染，必须重新获取。
+            phonetic = normalizePhonetic(forceRefresh ? '' : ((canReuseSceneFields ? obj.phonetic : '') || existingWord.phonetic || ''));
+            translation = forceRefresh ? '' : ((canReuseSceneFields ? obj.translation : '') || existingWord.translation || '');
+            audioMale = forceRefresh ? '' : ((canReuseSceneFields ? obj.audio_url_male : '') || existingWord.audio_url_male || '');
+            audioFemale = forceRefresh ? '' : ((canReuseSceneFields ? obj.audio_url_female : '') || existingWord.audio_url_female || '');
 
             if (!phonetic) {
                 const phoneticResult = await aiService.getPhonetic(text);
@@ -575,12 +966,11 @@ router.post('/objects/:objId/generate', async (req, res) => {
             await query(
                 `UPDATE words
                  SET phonetic = COALESCE(NULLIF(?, ''), phonetic),
-                     translation = COALESCE(NULLIF(?, ''), translation),
                      audio_url_male = COALESCE(NULLIF(?, ''), audio_url_male),
                      audio_url_female = COALESCE(NULLIF(?, ''), audio_url_female),
                      updated_at = NOW()
                  WHERE id = ?`,
-                [phonetic, translation, audioMale, audioFemale, linkedWordId]
+                [phonetic, audioMale, audioFemale, linkedWordId]
             );
 
             // 更新word_id关联
@@ -590,10 +980,10 @@ router.post('/objects/:objId/generate', async (req, res) => {
             // 2) words 无匹配时：生成并入 words 基础表
             console.log(`[Generate] words无匹配，生成并入库: ${text}`);
 
-            phonetic = normalizePhonetic(obj.phonetic || '');
-            translation = obj.translation || '';
-            audioMale = obj.audio_url_male || '';
-            audioFemale = obj.audio_url_female || '';
+            phonetic = normalizePhonetic(forceRefresh ? '' : (obj.phonetic || ''));
+            translation = forceRefresh ? '' : (obj.translation || '');
+            audioMale = forceRefresh ? '' : (obj.audio_url_male || '');
+            audioFemale = forceRefresh ? '' : (obj.audio_url_female || '');
 
             // 获取音标
             if (!phonetic) {
@@ -652,7 +1042,13 @@ router.post('/objects/:objId/generate', async (req, res) => {
         // 3) 回写 scene_objects（与 words 保持同步）
         await query(`
             UPDATE scene_objects 
-            SET word_id = ?, phonetic = ?, translation = ?, audio_url_male = ?, audio_url_female = ?
+            SET word_id = ?,
+                phonetic = ?,
+                translation = ?,
+                audio_url_male = ?,
+                audio_url_female = ?,
+                translation_audio_url = NULL,
+                translation_audio_text = NULL
             WHERE id = ?
         `, [linkedWordId || null, phonetic, translation, audioMale, audioFemale, objId]);
 

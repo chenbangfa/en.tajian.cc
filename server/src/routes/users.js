@@ -1,21 +1,42 @@
 const express = require('express');
 const { query } = require('../config/database');
 const { authMiddleware } = require('../middlewares/auth');
+const promotion = require('../services/promotion.service');
 
 const router = express.Router();
+
+async function getUserProfile(userId) {
+    await promotion.ensureReady();
+    const users = await query(`
+      SELECT u.id, u.openid, u.nickname, u.avatar_url, u.phone, u.vip_level, u.vip_expire_date,
+             u.points, u.total_study_minutes, u.created_at,
+             p.promoter_code, p.status AS promoter_status, p.commission_rate_bps,
+             p.receiver_status, p.parent_promoter_user_id
+      FROM users u
+      LEFT JOIN promoters p ON p.user_id = u.id
+      WHERE u.id = ?
+      LIMIT 1
+    `, [userId]);
+
+    const user = users[0];
+    if (!user) return null;
+    const rate = Number(user.commission_rate_bps || 0) / 100;
+    return {
+        ...user,
+        is_promoter: user.promoter_status === 'active',
+        promoter_level: user.parent_promoter_user_id ? 'child' : (user.promoter_status ? 'root' : ''),
+        commission_rate_percent: Number.isInteger(rate) ? String(rate) : rate.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')
+    };
+}
 
 // 获取当前用户信息
 router.get('/me', authMiddleware, async (req, res) => {
     try {
-        const users = await query(`
-      SELECT id, openid, nickname, avatar_url, phone, vip_level, vip_expire_date, 
-             points, total_study_minutes, created_at
-      FROM users WHERE id = ?
-    `, [req.user.id]);
+        const user = await getUserProfile(req.user.id);
 
         res.json({
             success: true,
-            data: users[0]
+            data: user
         });
     } catch (error) {
         console.error('获取用户信息错误:', error);
@@ -282,18 +303,39 @@ router.put('/me', authMiddleware, async (req, res) => {
         const params = [];
 
         if (nickname !== undefined) {
+            const cleanNickname = String(nickname).trim();
+            if (!cleanNickname) {
+                return res.status(400).json({
+                    success: false,
+                    message: '昵称不能为空'
+                });
+            }
+            if (cleanNickname.length > 30) {
+                return res.status(400).json({
+                    success: false,
+                    message: '昵称最多30个字符'
+                });
+            }
             updates.push('nickname = ?');
-            params.push(nickname);
+            params.push(cleanNickname);
         }
 
         if (avatar_url !== undefined) {
+            const cleanAvatarUrl = String(avatar_url || '').trim();
             updates.push('avatar_url = ?');
-            params.push(avatar_url);
+            params.push(cleanAvatarUrl || null);
         }
 
         if (phone !== undefined) {
+            const cleanPhone = String(phone || '').trim();
+            if (cleanPhone && !/^1\d{10}$/.test(cleanPhone)) {
+                return res.status(400).json({
+                    success: false,
+                    message: '手机号格式不正确'
+                });
+            }
             updates.push('phone = ?');
-            params.push(phone);
+            params.push(cleanPhone || null);
         }
 
         if (updates.length === 0) {
@@ -310,9 +352,12 @@ router.put('/me', authMiddleware, async (req, res) => {
             params
         );
 
+        const user = await getUserProfile(req.user.id);
+
         res.json({
             success: true,
-            message: '更新成功'
+            message: '更新成功',
+            data: user
         });
     } catch (error) {
         console.error('更新用户信息错误:', error);

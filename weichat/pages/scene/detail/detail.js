@@ -1,5 +1,6 @@
 const api = require('../../../services/api');
 const recorderManager = wx.getRecorderManager();
+const DEFAULT_WORD_PANEL_HEIGHT = 150;
 
 Page({
     data: {
@@ -15,6 +16,9 @@ Page({
         isPlayingUserAudio: false,
         imageWrapperWidth: 375,
         imageWrapperHeight: 500,
+        windowHeight: 667,
+        wordPanelHeight: 0,
+        contentBottomPadding: 0,
     },
 
     _audioCtx: null,
@@ -27,7 +31,10 @@ Page({
 
     onLoad(options) {
         const sysInfo = wx.getSystemInfoSync();
-        this.setData({ imageWrapperWidth: sysInfo.windowWidth });
+        this.setData({
+            imageWrapperWidth: sysInfo.windowWidth,
+            windowHeight: sysInfo.windowHeight
+        });
 
         // 支持普通跳转 ?id=X 和小程序码扫码 scene=id%3DX
         let sceneId = options.id;
@@ -106,8 +113,31 @@ Page({
 
     onImageLoad(e) {
         const { width, height } = e.detail;
-        const renderedHeight = (height / width) * this.data.imageWrapperWidth;
-        this.setData({ imageWrapperHeight: renderedHeight });
+        const fallbackWidth = this.data.imageWrapperWidth;
+        const fallbackHeight = width ? (height / width) * fallbackWidth : this.data.imageWrapperHeight;
+
+        const measure = () => {
+            wx.createSelectorQuery()
+                .select('.main-img')
+                .boundingClientRect((rect) => {
+                    if (rect && rect.width && rect.height) {
+                        this.setData({
+                            imageWrapperWidth: rect.width,
+                            imageWrapperHeight: rect.height
+                        });
+                        return;
+                    }
+
+                    this.setData({ imageWrapperHeight: fallbackHeight });
+                })
+                .exec();
+        };
+
+        if (typeof wx.nextTick === 'function') {
+            wx.nextTick(measure);
+        } else {
+            setTimeout(measure, 0);
+        }
     },
 
     async loadScene(id) {
@@ -129,7 +159,9 @@ Page({
                     sortedHotspots: sorted,
                     currentWord: null,
                     currentIndex: -1,
-                    assessResult: null
+                    assessResult: null,
+                    wordPanelHeight: 0,
+                    contentBottomPadding: 0
                 });
                 wx.setNavigationBarTitle({ title: res.data.name });
             }
@@ -149,8 +181,72 @@ Page({
             currentWord: item,
             currentIndex: index,
             assessResult: null
+        }, () => {
+            this._updateWordPanelHeight(() => {
+                this._ensureHotspotVisible(item);
+            });
         });
         this.playAudio();
+    },
+
+    _updateWordPanelHeight(done) {
+        const measure = () => {
+            wx.createSelectorQuery()
+                .select('.word-panel')
+                .boundingClientRect((rect) => {
+                    const measured = rect && rect.height ? Math.ceil(rect.height) : DEFAULT_WORD_PANEL_HEIGHT;
+                    const nextHeight = measured + 8;
+                    this.setData({
+                        wordPanelHeight: nextHeight,
+                        contentBottomPadding: nextHeight
+                    }, () => {
+                        if (typeof done === 'function') done();
+                    });
+                })
+                .exec();
+        };
+
+        if (typeof wx.nextTick === 'function') {
+            wx.nextTick(measure);
+        } else {
+            setTimeout(measure, 0);
+        }
+    },
+
+    _ensureHotspotVisible(item) {
+        const imageHeight = this.data.imageWrapperHeight || 0;
+        if (!imageHeight || !item) return;
+
+        const topPct = Number(item.position_y) || 0;
+        const heightPct = Number(item.label_height) || 5;
+        const hotspotTop = imageHeight * topPct / 100;
+        const hotspotBottom = imageHeight * (topPct + heightPct) / 100;
+        const bottomReserve = this.data.wordPanelHeight || DEFAULT_WORD_PANEL_HEIGHT;
+        const margin = 24;
+
+        wx.createSelectorQuery()
+            .selectViewport()
+            .scrollOffset((res) => {
+                const scrollTop = res && typeof res.scrollTop === 'number' ? res.scrollTop : 0;
+                const visibleBottom = scrollTop + this.data.windowHeight - bottomReserve - margin;
+                const visibleTop = scrollTop + margin;
+
+                if (hotspotBottom > visibleBottom) {
+                    wx.pageScrollTo({
+                        scrollTop: Math.max(0, hotspotBottom - (this.data.windowHeight - bottomReserve - margin)),
+                        duration: 220
+                    });
+                    return;
+                }
+
+                if (hotspotTop < visibleTop) {
+                    wx.pageScrollTo({
+                        scrollTop: Math.max(0, hotspotTop - margin),
+                        duration: 220
+                    });
+                }
+            })
+            .exec();
     },
 
     // 播放当前单词音频
@@ -294,21 +390,5 @@ Page({
         this._userAudioCtx.onEnded(() => this.setData({ isPlayingUserAudio: false }));
         this._userAudioCtx.onError(() => this.setData({ isPlayingUserAudio: false }));
         this._userAudioCtx.play();
-    },
-
-    onPrev() {
-        const prevId = this.data.scene.prev_id;
-        if (prevId) {
-            this.setData({ id: prevId });
-            this.loadScene(prevId);
-        }
-    },
-
-    onNext() {
-        const nextId = this.data.scene.next_id;
-        if (nextId) {
-            this.setData({ id: nextId });
-            this.loadScene(nextId);
-        }
     }
 });

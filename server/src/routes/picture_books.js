@@ -134,6 +134,7 @@ router.get('/filters', async (req, res) => {
                     { id: 'all', name: '全部' },
                     { id: 'v1', name: 'V1 启蒙' },
                     { id: 'v2', name: 'V2 进阶' },
+                    { id: 'v3_start', name: 'V3 入门' },
                     { id: 'v3', name: 'V3 主题' }
                 ],
                 reader_levels: [

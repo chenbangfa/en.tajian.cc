@@ -10,7 +10,8 @@ const cosService = require('./cos.service');
  * 语音服务 - 支持多引擎TTS + 语音评测
  * 
  * TTS 引擎切换:
- *   在 .env 中设置 TTS_ENGINE=google / tencent / youdao
+ *   在 .env 中设置 TTS_ENGINE=google / tencent / youdao / volcengine
+ *   中文可单独设置 CHINESE_TTS_ENGINE；未设置时跟随 TTS_ENGINE
  *   如果首选引擎失败，会自动尝试下一个引擎（fallback）
  */
 class VoiceService {
@@ -18,7 +19,7 @@ class VoiceService {
         this.youdaoConfig = config.youdao;
         this.tencentConfig = config.tencent;
         // TTS 引擎优先级（可通过环境变量 TTS_ENGINE 设置首选）
-        this.preferredEngine = (process.env.TTS_ENGINE || 'google').toLowerCase();
+        this.preferredEngine = this.normalizeEngine(process.env.TTS_ENGINE || 'google');
         // 评测引擎（可通过环境变量 ASSESS_ENGINE 设置，默认 tencent）
         this.assessEngine = (process.env.ASSESS_ENGINE || 'tencent').toLowerCase();
         console.log(`[VoiceService] TTS 引擎: ${this.preferredEngine} (可在.env中修改 TTS_ENGINE)`);
@@ -49,8 +50,38 @@ class VoiceService {
 
     normalizeEngine(engine = '') {
         const normalized = String(engine || '').trim().toLowerCase();
-        if (['google', 'youdao', 'tencent', 'auto'].includes(normalized)) return normalized;
+        if (['doubao', 'volc'].includes(normalized)) return 'volcengine';
+        if (['google', 'youdao', 'tencent', 'volcengine', 'auto'].includes(normalized)) return normalized;
         return 'auto';
+    }
+
+    prepareChineseTtsText(text = '') {
+        const original = String(text || '').trim();
+        if (!original) return '';
+
+        let cleaned = original
+            // 词义里经常混入英文括注，如“梨(Pear)”，中文 TTS 只读中文部分。
+            .replace(/（\s*[A-Za-z][^）]*）/g, '')
+            .replace(/\(\s*[A-Za-z][^)]*\)/g, '')
+            .replace(/\/[^/\u4e00-\u9fff]*\//g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        const parts = cleaned
+            .split(/[;；,，、|/]+/)
+            .map(part => part.trim())
+            .filter(Boolean)
+            .filter(part => /[\u3400-\u9fff]/.test(part) || !/[A-Za-z]/.test(part));
+
+        if (parts.length) cleaned = parts.join('，');
+        if (/[\u3400-\u9fff]/.test(cleaned)) {
+            cleaned = cleaned
+                .replace(/[A-Za-z][A-Za-z\s'’.-]*/g, '')
+                .replace(/\s+/g, '')
+                .replace(/[，,、；;：:]+$/g, '')
+                .trim();
+        }
+        return /[\u3400-\u9fff]/.test(cleaned) ? cleaned : original;
     }
 
     async textToSpeechByEngine(text, engine = 'auto', voice = 'female', speed = 1.0) {
@@ -63,6 +94,8 @@ class VoiceService {
                 return this._youdaoTTS(text, voice, speed);
             case 'tencent':
                 return this._tencentTTS(text, voice, speed);
+            case 'volcengine':
+                return this._volcengineTTS(text, voice, speed);
             default:
                 return this.textToSpeech(text, voice, speed);
         }
@@ -76,7 +109,7 @@ class VoiceService {
      */
     async textToSpeech(text, voice = 'female', speed = 1.0) {
         // 构建引擎尝试顺序：首选引擎排第一，其余按顺序fallback
-        const allEngines = ['google', 'tencent', 'youdao'];
+        const allEngines = ['volcengine', 'google', 'youdao', 'tencent'];
         const preferred = allEngines.includes(this.preferredEngine) ? this.preferredEngine : 'youdao';
         const engines = [preferred, ...allEngines.filter(e => e !== preferred)];
 
@@ -92,6 +125,9 @@ class VoiceService {
                         break;
                     case 'tencent':
                         result = await this._tencentTTS(text, voice, speed);
+                        break;
+                    case 'volcengine':
+                        result = await this._volcengineTTS(text, voice, speed);
                         break;
                     case 'youdao':
                         result = await this._youdaoTTS(text, voice, speed);
@@ -126,6 +162,153 @@ class VoiceService {
 
     async googleTextToSpeech(text, voice = 'female', speed = 1.0) {
         return this._googleTTS(text, voice, this.normalizeSpeed(speed, 1.0));
+    }
+
+    async textToSpeechChinese(text, voice = 'female', speed = 1.0) {
+        const ttsText = this.prepareChineseTtsText(text);
+        if (!ttsText) return { success: false, error: '中文TTS文本为空' };
+
+        const normalizedSpeed = this.normalizeSpeed(speed, 1.0);
+        const configuredEngine = this.normalizeEngine(process.env.CHINESE_TTS_ENGINE || this.preferredEngine || 'youdao');
+        const allowTencentFallback = String(process.env.ALLOW_TENCENT_TTS_FALLBACK || '').toLowerCase() === 'true';
+        const defaultChineseEngines = ['volcengine', 'google'];
+        let engines = configuredEngine === 'auto'
+            ? defaultChineseEngines
+            : [configuredEngine, ...defaultChineseEngines.filter(engine => engine !== configuredEngine)];
+        // 只有显式指定 youdao 时才尝试它，避免中文被英文发音人误读。
+        if (configuredEngine === 'youdao') {
+            engines = ['youdao', ...defaultChineseEngines];
+        }
+        if (configuredEngine !== 'tencent' && allowTencentFallback) {
+            engines.push('tencent');
+        }
+        if (configuredEngine !== 'tencent') {
+            engines = engines.filter(engine => engine !== 'tencent');
+        }
+
+        for (const engine of engines) {
+            try {
+                let result;
+                if (engine === 'youdao') {
+                    result = await this._youdaoTTS(ttsText, voice, normalizedSpeed);
+                } else if (engine === 'google') {
+                    result = await this._googleTTS(ttsText, 'female', normalizedSpeed);
+                } else if (engine === 'volcengine') {
+                    result = await this._volcengineTTS(ttsText, voice, normalizedSpeed, { isChinese: true });
+                } else if (engine === 'tencent') {
+                    result = await this._tencentTTSChinese(ttsText, voice, normalizedSpeed);
+                } else {
+                    continue;
+                }
+
+                if (result.success) return { ...result, engine: result.engine || `${engine}-zh` };
+                console.warn(`[VoiceService] 中文TTS ${engine} 失败: ${result.error}`);
+            } catch (error) {
+                console.warn(`[VoiceService] 中文TTS ${engine} 异常: ${error.message}`);
+            }
+        }
+
+        return { success: false, error: `中文TTS均不可用: ${engines.join(', ')}` };
+    }
+
+    // ==================== 火山引擎 / 豆包 TTS V3 SSE ====================
+
+    getVolcengineTtsConfig(voice = 'female', { isChinese = false } = {}) {
+        const defaultSpeaker = process.env.VOLCENGINE_TTS_SPEAKER || 'zh_female_yingyujiaoyu_mars_bigtts';
+        const chineseSpeaker = process.env.VOLCENGINE_TTS_SPEAKER_ZH || defaultSpeaker;
+        const speakerMap = {
+            female: process.env.VOLCENGINE_TTS_SPEAKER_FEMALE || defaultSpeaker,
+            male: process.env.VOLCENGINE_TTS_SPEAKER_MALE || defaultSpeaker
+        };
+        return {
+            appId: process.env.VOLCENGINE_TTS_APP_ID,
+            accessKey: process.env.VOLCENGINE_TTS_ACCESS_KEY || process.env.VOLCENGINE_TTS_ACCESS_TOKEN,
+            token: process.env.VOLCENGINE_TTS_ACCESS_TOKEN || process.env.VOLCENGINE_TTS_ACCESS_KEY,
+            endpoint: process.env.VOLCENGINE_TTS_ENDPOINT || 'https://openspeech.bytedance.com/api/v3/tts/unidirectional/sse',
+            resourceId: process.env.VOLCENGINE_TTS_RESOURCE_ID || 'seed-tts-1.0',
+            speaker: isChinese ? chineseSpeaker : (speakerMap[voice] || speakerMap.female)
+        };
+    }
+
+    resolveVolcengineSpeechRate(speed = 1.0) {
+        const normalizedSpeed = this.normalizeSpeed(speed, 1.0);
+        return Math.round((normalizedSpeed - 1.0) * 100);
+    }
+
+    async _volcengineTTS(text, voice = 'female', speed = 1.0, options = {}) {
+        const cfg = this.getVolcengineTtsConfig(voice, options);
+        if (!cfg.appId || !cfg.accessKey || !cfg.token) {
+            return { success: false, error: 'Volcengine: 未配置 VOLCENGINE_TTS_APP_ID/ACCESS_KEY/ACCESS_TOKEN' };
+        }
+
+        const requestId = uuidv4();
+        const payload = {
+            user: { uid: `bookmelo_${Date.now()}` },
+            req_params: {
+                text,
+                speaker: cfg.speaker,
+                audio_params: {
+                    format: 'mp3',
+                    sample_rate: 24000,
+                    speech_rate: this.resolveVolcengineSpeechRate(speed),
+                    loudness_rate: Number(process.env.VOLCENGINE_TTS_LOUDNESS_RATE || 0)
+                }
+            }
+        };
+
+        console.log(`[TTS:Volcengine] speaker=${cfg.speaker}, text="${text.substring(0, 40)}..."`);
+
+        const response = await axios.post(cfg.endpoint, payload, {
+            responseType: 'stream',
+            timeout: 60000,
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'text/event-stream',
+                'Authorization': `Bearer;${cfg.token}`,
+                'X-Api-App-Id': cfg.appId,
+                'X-Api-Access-Key': cfg.accessKey,
+                'X-Api-Resource-Id': cfg.resourceId,
+                'X-Api-Request-Id': requestId
+            },
+            validateStatus: () => true
+        });
+
+        let raw = '';
+        for await (const chunk of response.data) {
+            raw += chunk.toString('utf8');
+        }
+
+        if (response.status < 200 || response.status >= 300) {
+            return { success: false, error: `Volcengine: HTTP ${response.status} ${raw.slice(0, 200)}` };
+        }
+
+        const audioChunks = [];
+        const errors = [];
+        for (const block of raw.split(/\n\n+/)) {
+            const dataLines = block.split(/\n/).filter(line => line.startsWith('data:'));
+            for (const line of dataLines) {
+                const eventText = line.replace(/^data:\s*/, '').trim();
+                if (!eventText || eventText === '[DONE]') continue;
+                let event;
+                try { event = JSON.parse(eventText); } catch { continue; }
+                const code = Number(event.code);
+                if (Number.isFinite(code) && ![0, 3000, 20000000].includes(code)) {
+                    errors.push(event.message || `code=${event.code}`);
+                }
+                if (event.data) {
+                    audioChunks.push(Buffer.from(event.data, 'base64'));
+                }
+            }
+        }
+
+        const audioBuffer = Buffer.concat(audioChunks);
+        if (audioBuffer.length <= 500) {
+            return { success: false, error: `Volcengine: 未返回有效音频${errors.length ? ` (${errors.join('; ')})` : ''}` };
+        }
+
+        const audioPath = await this.saveAudio(audioBuffer, 'tts_volc', 'mp3');
+        console.log(`[TTS:Volcengine] ✅ 成功, ${audioBuffer.length} bytes`);
+        return { success: true, audioUrl: audioPath, engine: 'volcengine' };
     }
 
     // ==================== Google Gemini TTS ====================
@@ -269,6 +452,58 @@ class VoiceService {
         }
 
         const errMsg = result.Response?.Error?.Message || '腾讯云TTS未返回音频';
+        return { success: false, error: `Tencent: ${errMsg}` };
+    }
+
+    getTencentChineseVoiceType(voice = 'female') {
+        const voiceMap = {
+            female: Number(process.env.TENCENT_CHINESE_VOICE_FEMALE || 101002),
+            male: Number(process.env.TENCENT_CHINESE_VOICE_MALE || 101001)
+        };
+        return voiceMap[voice] || voiceMap.female;
+    }
+
+    resolveTencentSpeedValue(speed = 1.0) {
+        const normalizedSpeed = this.normalizeSpeed(speed, 1.0);
+        if (normalizedSpeed <= 0.75) return -2;
+        if (normalizedSpeed <= 0.9) return -1;
+        if (normalizedSpeed >= 1.18) return 2;
+        if (normalizedSpeed >= 1.08) return 1;
+        return 0;
+    }
+
+    async _tencentTTSChinese(text, voice = 'female', speed = 1.0) {
+        const { secretId, secretKey } = this.tencentConfig;
+        if (!secretId || !secretKey) {
+            return { success: false, error: 'Tencent: 未配置 TENCENT_SECRET_ID/KEY' };
+        }
+
+        const voiceType = this.getTencentChineseVoiceType(voice);
+        const timestamp = Math.floor(Date.now() / 1000);
+        const host = 'tts.tencentcloudapi.com';
+        const action = 'TextToVoice';
+        const payload = {
+            Text: text,
+            SessionId: uuidv4(),
+            VoiceType: voiceType,
+            Volume: 5,
+            Speed: this.resolveTencentSpeedValue(speed),
+            Codec: 'wav',
+            SampleRate: 16000,
+            PrimaryLanguage: 1
+        };
+
+        console.log(`[TTS:Tencent:ZH] VoiceType: ${voiceType}, Text: ${text.substring(0, 30)}...`);
+
+        const result = await this.callTencentAPI(host, 'tts', action, payload, secretId, secretKey, timestamp);
+
+        if (result.Response && result.Response.Audio) {
+            const audioBuffer = Buffer.from(result.Response.Audio, 'base64');
+            const audioPath = await this.saveAudio(audioBuffer, 'tts_tc_zh', 'wav');
+            return { success: true, audioUrl: audioPath, engine: 'tencent-zh' };
+        }
+
+        const errMsg = result.Response?.Error?.Message || '腾讯云中文TTS未返回音频';
         return { success: false, error: `Tencent: ${errMsg}` };
     }
 

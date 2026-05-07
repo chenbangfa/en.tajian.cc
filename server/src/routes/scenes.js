@@ -4,6 +4,24 @@ const { optionalAuth } = require('../middlewares/auth');
 
 const router = express.Router();
 
+// API 进程也要保证新字段存在；后台和小程序可能分别运行在不同 PM2 进程。
+const sceneObjectSemanticColumnsReady = (async function ensureSceneObjectSemanticAudioColumns() {
+    try {
+        const columns = [
+            { name: 'translation_audio_url', ddl: 'VARCHAR(500) DEFAULT NULL COMMENT "场景释义中文发音URL"' },
+            { name: 'translation_audio_text', ddl: 'VARCHAR(255) DEFAULT NULL COMMENT "生成场景中文发音时使用的文本"' }
+        ];
+        for (const col of columns) {
+            const rows = await query('SHOW COLUMNS FROM scene_objects LIKE ?', [col.name]);
+            if (!rows || rows.length === 0) {
+                await query(`ALTER TABLE scene_objects ADD COLUMN ${col.name} ${col.ddl}`);
+            }
+        }
+    } catch (e) {
+        console.error('[Scenes API] 补齐场景对象中文音频字段失败:', e.message);
+    }
+})();
+
 // 获取场景列表
 router.get('/', optionalAuth, async (req, res) => {
     try {
@@ -69,6 +87,7 @@ router.get('/', optionalAuth, async (req, res) => {
 // 获取场景详情（包含物体标注）
 router.get('/:id', optionalAuth, async (req, res) => {
     try {
+        await sceneObjectSemanticColumnsReady;
         const { id } = req.params;
 
         const scenes = await query('SELECT * FROM scenes WHERE id = ? AND is_active = 1', [id]);
@@ -89,6 +108,10 @@ router.get('/:id', optionalAuth, async (req, res) => {
              COALESCE(so.translation, w.translation) as translation,
              COALESCE(so.audio_url_female, w.audio_url_female) as audio_url_female,
              COALESCE(so.audio_url_male, w.audio_url_male) as audio_url_male,
+             so.translation_audio_url AS scene_translation_audio_url,
+             so.translation_audio_text AS scene_translation_audio_text,
+             w.translation AS word_translation,
+             w.translation_audio_url AS word_translation_audio_url,
              w.word, w.audio_url as word_audio_url
       FROM scene_objects so
       LEFT JOIN words w ON so.word_id = w.id
@@ -146,6 +169,12 @@ router.get('/:id', optionalAuth, async (req, res) => {
             }
             if (processed.word_audio_url && !processed.word_audio_url.startsWith('http')) {
                 processed.word_audio_url = baseUrl + processed.word_audio_url;
+            }
+            if (processed.scene_translation_audio_url && !processed.scene_translation_audio_url.startsWith('http')) {
+                processed.scene_translation_audio_url = baseUrl + processed.scene_translation_audio_url;
+            }
+            if (processed.word_translation_audio_url && !processed.word_translation_audio_url.startsWith('http')) {
+                processed.word_translation_audio_url = baseUrl + processed.word_translation_audio_url;
             }
             return processed;
         });

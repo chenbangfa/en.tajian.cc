@@ -1,0 +1,704 @@
+<div class="space-y-6">
+    <div class="rounded-3xl bg-gradient-to-br from-emerald-950 via-slate-900 to-slate-950 text-white p-6 shadow-xl overflow-hidden relative">
+        <div class="absolute right-0 top-0 w-80 h-80 bg-emerald-400/10 blur-3xl rounded-full translate-x-20 -translate-y-24"></div>
+        <div class="relative flex flex-col lg:flex-row lg:items-end lg:justify-between gap-5">
+            <div>
+                <div class="inline-flex items-center gap-2 rounded-full bg-white/10 border border-white/10 px-3 py-1 text-xs text-emerald-100 mb-4">
+                    <i class="fas fa-handshake-angle"></i>
+                    微信支付交易级分账 Phase 1
+                </div>
+                <h1 class="text-2xl md:text-3xl font-black tracking-tight">推广员管理</h1>
+                <p class="text-sm text-slate-300 mt-2 max-w-2xl">先完成推广员资格、比例、绑定关系和分账接收方资料管理。真实微信接收方添加与订单分账会在下一阶段接入，避免误触资金链路。</p>
+            </div>
+            <div class="flex flex-wrap gap-3">
+                <button onclick="openEnableModal()" class="px-5 py-3 bg-emerald-500 hover:bg-emerald-400 text-white rounded-2xl text-sm font-bold shadow-lg shadow-emerald-950/30 transition">
+                    <i class="fas fa-user-plus mr-2"></i>新增推广员
+                </button>
+                <button onclick="openManualBindModal()" class="px-5 py-3 bg-white/10 hover:bg-white/15 border border-white/10 text-white rounded-2xl text-sm font-bold transition">
+                    <i class="fas fa-link mr-2"></i>手动绑定
+                </button>
+                <button onclick="loadAll()" class="px-5 py-3 bg-white/10 hover:bg-white/15 border border-white/10 text-white rounded-2xl text-sm font-bold transition">
+                    <i class="fas fa-rotate mr-2"></i>刷新
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4" id="summaryCards">
+        <div class="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm"><div class="text-sm text-slate-500">推广员总数</div><div class="text-3xl font-black mt-2 text-slate-900" data-summary="total_promoters">-</div></div>
+        <div class="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm"><div class="text-sm text-slate-500">启用中</div><div class="text-3xl font-black mt-2 text-emerald-600" data-summary="active_promoters">-</div></div>
+        <div class="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm"><div class="text-sm text-slate-500">接收方已添加</div><div class="text-3xl font-black mt-2 text-blue-600" data-summary="receivers_added">-</div></div>
+        <div class="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm"><div class="text-sm text-slate-500">接收方待处理</div><div class="text-3xl font-black mt-2 text-amber-600" data-summary="receivers_pending">-</div></div>
+    </div>
+
+    <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+        <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
+            <div class="md:col-span-2">
+                <label class="block text-xs font-bold text-slate-500 mb-1">搜索</label>
+                <input id="filterSearch" type="text" placeholder="用户ID / 昵称 / 手机 / openid / 推广码" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none text-sm">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-500 mb-1">状态</label>
+                <select id="filterStatus" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none text-sm">
+                    <option value="">全部</option>
+                    <option value="active">启用</option>
+                    <option value="disabled">停用</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-500 mb-1">接收方</label>
+                <select id="filterReceiver" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none text-sm">
+                    <option value="">全部</option>
+                    <option value="missing">未配置</option>
+                    <option value="pending">待添加</option>
+                    <option value="added">已添加</option>
+                    <option value="failed">失败</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-500 mb-1">层级</label>
+                <select id="filterLevel" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none text-sm">
+                    <option value="">全部</option>
+                    <option value="root">一级推广员</option>
+                    <option value="child">二级推广员</option>
+                </select>
+            </div>
+        </div>
+        <div class="flex flex-wrap items-center justify-between gap-3 mt-4">
+            <div class="text-xs text-slate-500">分账比例以 10000=100% 存储，后台展示为百分比；当前硬限制不超过 30%。</div>
+            <div class="flex gap-2">
+                <button onclick="resetFilters()" class="px-4 py-2 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50">重置</button>
+                <button onclick="loadPromoters(1)" class="px-5 py-2 rounded-xl bg-slate-900 text-white text-sm font-bold hover:bg-slate-800"><i class="fas fa-search mr-1"></i>筛选</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm text-left">
+                <thead class="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide">
+                    <tr>
+                        <th class="px-4 py-3 min-w-[220px]">推广员</th>
+                        <th class="px-4 py-3">层级/推广码</th>
+                        <th class="px-4 py-3">分账比例</th>
+                        <th class="px-4 py-3">接收方</th>
+                        <th class="px-4 py-3 text-right">绑定用户</th>
+                        <th class="px-4 py-3 text-right">销售/分账</th>
+                        <th class="px-4 py-3">创建时间</th>
+                        <th class="px-4 py-3 text-right min-w-[240px]">操作</th>
+                    </tr>
+                </thead>
+                <tbody id="promoterTableBody" class="divide-y divide-slate-100"></tbody>
+            </table>
+        </div>
+        <div class="px-4 py-3 border-t border-slate-100 flex flex-col md:flex-row md:items-center md:justify-between gap-3 text-sm text-slate-600">
+            <span id="pageInfo"></span>
+            <div class="flex flex-wrap gap-2" id="pagination"></div>
+        </div>
+    </div>
+</div>
+
+<div id="enableModal" class="fixed inset-0 bg-slate-950/50 z-50 hidden items-center justify-center p-4">
+    <div class="bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+            <div>
+                <h3 class="text-lg font-black text-slate-900">新增/启用一级推广员</h3>
+                <p class="text-xs text-slate-500 mt-1">搜索用户后设置平台给他的总分账比例，最高 30%。</p>
+            </div>
+            <button onclick="closeModal('enableModal')" class="w-9 h-9 rounded-full hover:bg-slate-100 text-slate-500"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="p-6 space-y-4 overflow-y-auto max-h-[75vh]">
+            <div class="flex gap-2">
+                <input id="userSearchInput" type="text" placeholder="输入用户ID / 昵称 / 手机号 / openid" class="flex-1 px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none text-sm">
+                <button onclick="searchUsersForPromoter()" class="px-5 py-3 rounded-xl bg-slate-900 text-white text-sm font-bold">搜索</button>
+            </div>
+            <div id="candidateUsers" class="space-y-2 max-h-72 overflow-y-auto"></div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
+                <div class="md:col-span-2 rounded-2xl bg-slate-50 border border-slate-100 p-4">
+                    <div class="text-xs font-bold text-slate-500 mb-2">已选择用户</div>
+                    <div id="selectedUserBox" class="text-sm text-slate-500">还未选择用户</div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 mb-1">分账比例(%)</label>
+                    <input id="enableRate" type="number" min="0.01" max="30" step="0.01" value="20" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none text-sm">
+                </div>
+            </div>
+            <div class="flex justify-end gap-2">
+                <button onclick="closeModal('enableModal')" class="px-5 py-3 rounded-xl border border-slate-200 text-sm text-slate-600">取消</button>
+                <button onclick="submitEnablePromoter()" class="px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold">确认启用</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="manualBindModal" class="fixed inset-0 bg-slate-950/50 z-50 hidden items-center justify-center p-4">
+    <div class="bg-white rounded-3xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+            <div>
+                <h3 class="text-lg font-black text-slate-900">手动绑定推广关系</h3>
+                <p class="text-xs text-slate-500 mt-1">用于客服纠错或线下确认归属；保存后会覆盖该用户原有推广归属。</p>
+            </div>
+            <button onclick="closeModal('manualBindModal')" class="w-9 h-9 rounded-full hover:bg-slate-100 text-slate-500"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="p-6 space-y-5 overflow-y-auto max-h-[75vh]">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                <div class="rounded-2xl border border-slate-100 p-4">
+                    <div class="font-black text-slate-900 mb-3">1. 选择要绑定的用户</div>
+                    <div class="flex gap-2">
+                        <input id="bindUserSearch" type="text" placeholder="用户ID / 昵称 / 手机 / openid" class="flex-1 px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none text-sm">
+                        <button onclick="searchBindUsers()" class="px-4 py-3 rounded-xl bg-slate-900 text-white text-sm font-bold">搜索</button>
+                    </div>
+                    <div id="bindUserSelected" class="mt-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-500">未选择用户</div>
+                    <div id="bindUserCandidates" class="mt-3 space-y-2 max-h-72 overflow-y-auto"></div>
+                </div>
+                <div class="rounded-2xl border border-slate-100 p-4">
+                    <div class="font-black text-slate-900 mb-3">2. 选择归属推广员</div>
+                    <div class="flex gap-2">
+                        <input id="bindPromoterSearch" type="text" placeholder="推广员ID / 昵称 / 手机 / 推广码" class="flex-1 px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none text-sm">
+                        <button onclick="searchBindPromoters()" class="px-4 py-3 rounded-xl bg-slate-900 text-white text-sm font-bold">搜索</button>
+                    </div>
+                    <div id="bindPromoterSelected" class="mt-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-500">未选择推广员</div>
+                    <div id="bindPromoterCandidates" class="mt-3 space-y-2 max-h-72 overflow-y-auto"></div>
+                </div>
+            </div>
+            <div class="flex justify-end gap-2">
+                <button onclick="closeModal('manualBindModal')" class="px-5 py-3 rounded-xl border border-slate-200 text-sm text-slate-600">取消</button>
+                <button onclick="submitManualBind()" class="px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold">保存绑定</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="receiverModal" class="fixed inset-0 bg-slate-950/50 z-50 hidden items-center justify-center p-4">
+    <div class="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+            <div>
+                <h3 class="text-lg font-black text-slate-900">分账接收方</h3>
+                <p class="text-xs text-slate-500 mt-1">个人推广员接收方自动使用该用户自己的 OpenID，不再手动填写，避免填错。</p>
+            </div>
+            <button onclick="closeModal('receiverModal')" class="w-9 h-9 rounded-full hover:bg-slate-100 text-slate-500"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="p-6 space-y-4">
+            <input type="hidden" id="receiverUserId">
+            <div id="receiverUserBox" class="rounded-2xl bg-slate-50 border border-slate-100 p-4 text-sm text-slate-600"></div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 mb-1">接收方类型</label>
+                    <div class="px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700">个人 OpenID</div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 mb-1">关系类型</label>
+                    <div class="px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700">SERVICE_PROVIDER</div>
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-xs font-bold text-slate-500 mb-1">自动绑定 OpenID</label>
+                    <div id="receiverAccountView" class="px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700 break-all"></div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 mb-1">展示名称</label>
+                    <div id="receiverNameView" class="px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700"></div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 mb-1">本地状态</label>
+                    <select id="receiverAddStatus" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none text-sm">
+                        <option value="pending">待添加</option>
+                        <option value="added">已添加</option>
+                        <option value="failed">添加失败</option>
+                    </select>
+                </div>
+            </div>
+            <div class="rounded-2xl bg-amber-50 border border-amber-100 text-amber-700 text-xs leading-6 p-4">
+                当前按钮只会重新同步该推广员自己的 OpenID 到本地接收方表，并调整本地状态；真正调用微信支付“添加分账接收方”放到下一阶段处理。
+            </div>
+            <div class="flex justify-end gap-2">
+                <button onclick="closeModal('receiverModal')" class="px-5 py-3 rounded-xl border border-slate-200 text-sm text-slate-600">取消</button>
+                <button onclick="submitReceiver()" class="px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold">同步接收方</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="bindingsModal" class="fixed inset-0 bg-slate-950/50 z-50 hidden items-center justify-center p-4">
+    <div class="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+            <div>
+                <h3 class="text-lg font-black text-slate-900">绑定用户</h3>
+                <p id="bindingsTitle" class="text-xs text-slate-500 mt-1"></p>
+            </div>
+            <button onclick="closeModal('bindingsModal')" class="w-9 h-9 rounded-full hover:bg-slate-100 text-slate-500"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="p-6 overflow-y-auto max-h-[75vh]">
+            <div id="bindingsList" class="space-y-2"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentPage = 1;
+let totalPages = 1;
+let selectedUser = null;
+let candidateUsers = [];
+let bindCandidateUsers = [];
+let bindCandidatePromoters = [];
+let selectedBindUser = null;
+let selectedBindPromoter = null;
+let promoterCache = new Map();
+
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\'': '&#39;', '"': '&quot;' }[c]));
+}
+
+function moneyCent(value) {
+    const cent = Number(value || 0);
+    return `¥${(cent / 100).toFixed(2)}`;
+}
+
+function rateText(bps) {
+    return `${(Number(bps || 0) / 100).toFixed(2).replace(/\.00$/, '')}%`;
+}
+
+function dateText(value) {
+    if (!value) return '-';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '-';
+    return d.toLocaleString('zh-CN', { hour12: false });
+}
+
+function avatarHtml(item, size = 'h-11 w-11') {
+    const src = item.avatar_url ? escapeHtml(item.avatar_url) : '';
+    if (src) return `<img src="${src}" class="${size} rounded-2xl object-cover bg-slate-100" onerror="this.style.display='none'">`;
+    return `<div class="${size} rounded-2xl bg-gradient-to-br from-emerald-100 to-green-200 text-emerald-700 flex items-center justify-center font-black">${escapeHtml((item.nickname || 'U').slice(0, 1))}</div>`;
+}
+
+function statusBadge(status) {
+    if (status === 'active') return '<span class="inline-flex px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold">启用</span>';
+    return '<span class="inline-flex px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-bold">停用</span>';
+}
+
+function receiverBadge(status) {
+    const map = {
+        missing: ['未配置', 'bg-slate-100 text-slate-600'],
+        pending: ['待添加', 'bg-amber-50 text-amber-700'],
+        added: ['已添加', 'bg-blue-50 text-blue-700'],
+        failed: ['失败', 'bg-rose-50 text-rose-700']
+    };
+    const item = map[status] || map.missing;
+    return `<span class="inline-flex px-2.5 py-1 rounded-full ${item[1]} text-xs font-bold">${item[0]}</span>`;
+}
+
+async function fetchJson(url, options = {}) {
+    const res = await fetch(url, {
+        headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+        ...options
+    });
+    const data = await res.json().catch(() => ({ success: false, message: '接口返回异常' }));
+    if (!data.success) throw new Error(data.message || '请求失败');
+    return data;
+}
+
+async function loadSummary() {
+    const data = await fetchJson(`${API_BASE}/promoters/summary`);
+    const summary = data.data || {};
+    document.querySelectorAll('[data-summary]').forEach(el => {
+        const key = el.dataset.summary;
+        el.textContent = Number(summary[key] || 0).toLocaleString('zh-CN');
+    });
+}
+
+async function loadPromoters(page = 1) {
+    currentPage = page;
+    const params = new URLSearchParams({ page, limit: 20 });
+    const search = document.getElementById('filterSearch').value.trim();
+    const status = document.getElementById('filterStatus').value;
+    const receiver = document.getElementById('filterReceiver').value;
+    const level = document.getElementById('filterLevel').value;
+    if (search) params.set('search', search);
+    if (status) params.set('status', status);
+    if (receiver) params.set('receiver_status', receiver);
+    if (level) params.set('level', level);
+
+    try {
+        const data = await fetchJson(`${API_BASE}/promoters?${params}`);
+        const { list, pagination } = data.data;
+        promoterCache = new Map(list.map(item => [String(item.user_id), item]));
+        totalPages = Math.max(1, Math.ceil(pagination.total / pagination.limit));
+        renderPromoters(list);
+        renderPagination(pagination);
+    } catch (e) {
+        showToast(e.message, 'error');
+    }
+}
+
+function renderPromoters(list) {
+    const tbody = document.getElementById('promoterTableBody');
+    if (!list.length) {
+        tbody.innerHTML = '<tr><td colspan="8" class="px-4 py-16 text-center text-slate-400">暂无推广员，先从右上角新增一个。</td></tr>';
+        return;
+    }
+    tbody.innerHTML = list.map(item => {
+        const level = item.parent_promoter_user_id ? '二级推广员' : '一级推广员';
+        const parent = item.parent_nickname ? `<div class="text-xs text-slate-400 mt-1">上级：${escapeHtml(item.parent_nickname)}</div>` : '';
+        const receiverLine = item.receiver_account ? `<div class="text-xs text-slate-500 mt-1 max-w-[180px] truncate" title="${escapeHtml(item.receiver_account)}">自动 OpenID: ${escapeHtml(item.receiver_account)}</div>` : '<div class="text-xs text-slate-400 mt-1">待自动同步 OpenID</div>';
+        return `
+        <tr class="hover:bg-slate-50/70">
+            <td class="px-4 py-4">
+                <div class="flex items-center gap-3">
+                    ${avatarHtml(item)}
+                    <div class="min-w-0">
+                        <div class="font-black text-slate-900 truncate">${escapeHtml(item.nickname || `用户${item.user_id}`)}</div>
+                        <div class="text-xs text-slate-500 mt-0.5">ID ${item.user_id}${item.phone ? ` · ${escapeHtml(item.phone)}` : ''}</div>
+                        <div class="mt-1">${statusBadge(item.status)}</div>
+                    </div>
+                </div>
+            </td>
+            <td class="px-4 py-4">
+                <div class="font-bold text-slate-800">${level}</div>
+                <div class="text-xs text-emerald-700 bg-emerald-50 inline-flex px-2 py-1 rounded-lg mt-1 font-mono">${escapeHtml(item.promoter_code)}</div>
+                ${parent}
+            </td>
+            <td class="px-4 py-4">
+                <div class="text-xl font-black text-slate-900">${rateText(item.commission_rate_bps)}</div>
+                <div class="text-xs text-slate-400">子级上限 ${rateText(item.max_child_rate_bps)}</div>
+            </td>
+            <td class="px-4 py-4">
+                ${receiverBadge(item.receiver_status)}
+                ${receiverLine}
+            </td>
+            <td class="px-4 py-4 text-right">
+                <button onclick="openBindings(${item.user_id})" class="font-black text-slate-900 hover:text-emerald-600">${Number(item.direct_user_count || 0)}</button>
+                <div class="text-xs text-slate-400">根归属 ${Number(item.root_user_count || 0)} · 下级 ${Number(item.child_promoter_count || 0)}</div>
+            </td>
+            <td class="px-4 py-4 text-right">
+                <div class="font-bold text-slate-900">${moneyCent(item.total_sales_cent)}</div>
+                <div class="text-xs text-slate-400">分账 ${moneyCent(item.total_profitsharing_cent)}</div>
+            </td>
+            <td class="px-4 py-4 text-xs text-slate-500">${dateText(item.created_at)}</td>
+            <td class="px-4 py-4 text-right">
+                <div class="flex flex-wrap justify-end gap-2">
+                    <button onclick="changeRate(${item.user_id})" class="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold">比例</button>
+                    <button onclick="openReceiverModal(${item.user_id})" class="px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold">同步接收方</button>
+                    <button onclick="toggleStatus(${item.user_id}, '${item.status === 'active' ? 'disabled' : 'active'}')" class="px-3 py-1.5 rounded-lg ${item.status === 'active' ? 'bg-rose-50 hover:bg-rose-100 text-rose-700' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700'} text-xs font-bold">${item.status === 'active' ? '停用' : '启用'}</button>
+                </div>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+function renderPagination(pagination) {
+    const total = Number(pagination.total || 0);
+    document.getElementById('pageInfo').textContent = `第 ${pagination.page} / ${totalPages} 页，共 ${total} 条`;
+    const wrap = document.getElementById('pagination');
+    const buttons = [];
+    const addButton = (page, label = page, disabled = false, active = false) => {
+        buttons.push(`<button ${disabled ? 'disabled' : `onclick="loadPromoters(${page})"`} class="px-3 py-1.5 rounded-lg border text-sm ${active ? 'bg-slate-900 text-white border-slate-900' : 'border-slate-200 text-slate-600 hover:bg-slate-50'} ${disabled ? 'opacity-40 cursor-not-allowed' : ''}">${label}</button>`);
+    };
+    addButton(Math.max(1, currentPage - 1), '上一页', currentPage <= 1);
+    const start = Math.max(1, currentPage - 2);
+    const end = Math.min(totalPages, currentPage + 2);
+    for (let p = start; p <= end; p++) addButton(p, p, false, p === currentPage);
+    addButton(Math.min(totalPages, currentPage + 1), '下一页', currentPage >= totalPages);
+    wrap.innerHTML = buttons.join('');
+}
+
+function resetFilters() {
+    document.getElementById('filterSearch').value = '';
+    document.getElementById('filterStatus').value = '';
+    document.getElementById('filterReceiver').value = '';
+    document.getElementById('filterLevel').value = '';
+    loadPromoters(1);
+}
+
+function openEnableModal() {
+    selectedUser = null;
+    candidateUsers = [];
+    document.getElementById('userSearchInput').value = '';
+    document.getElementById('candidateUsers').innerHTML = '<div class="text-sm text-slate-400 py-6 text-center">搜索用户后选择推广员。</div>';
+    document.getElementById('selectedUserBox').textContent = '还未选择用户';
+    document.getElementById('enableRate').value = '20';
+    openModal('enableModal');
+}
+
+async function searchUsersForPromoter() {
+    const q = document.getElementById('userSearchInput').value.trim();
+    const box = document.getElementById('candidateUsers');
+    box.innerHTML = '<div class="text-sm text-slate-400 py-6 text-center">搜索中...</div>';
+    try {
+        const data = await fetchJson(`${API_BASE}/promoters/users/search?q=${encodeURIComponent(q)}&limit=30`);
+        const users = data.data || [];
+        if (!users.length) {
+            box.innerHTML = '<div class="text-sm text-slate-400 py-6 text-center">没有找到用户。</div>';
+            return;
+        }
+        candidateUsers = users;
+        box.innerHTML = users.map((u, index) => `
+            <button onclick="selectCandidateByIndex(${index})" class="w-full text-left rounded-2xl border border-slate-100 hover:border-emerald-300 hover:bg-emerald-50/40 p-3 transition">
+                <div class="flex items-center gap-3">
+                    ${avatarHtml(u, 'h-10 w-10')}
+                    <div class="min-w-0 flex-1">
+                        <div class="font-bold text-slate-900 truncate">${escapeHtml(u.nickname || `用户${u.id}`)} <span class="text-xs text-slate-400 font-normal">ID ${u.id}</span></div>
+                        <div class="text-xs text-slate-500 truncate">${escapeHtml(u.phone || u.openid || '无手机号')}</div>
+                        <div class="text-xs mt-1 ${u.promoter_code ? 'text-amber-600' : 'text-slate-400'}">${u.promoter_code ? `已是推广员：${escapeHtml(u.promoter_code)}` : (u.bound_promoter_nickname ? `已绑定：${escapeHtml(u.bound_promoter_nickname)}` : '可设为推广员')}</div>
+                    </div>
+                </div>
+            </button>
+        `).join('');
+    } catch (e) {
+        box.innerHTML = `<div class="text-sm text-rose-500 py-6 text-center">${escapeHtml(e.message)}</div>`;
+    }
+}
+
+function selectCandidateByIndex(index) {
+    selectCandidate(candidateUsers[index]);
+}
+
+function selectCandidate(user) {
+    if (!user) return;
+    selectedUser = user;
+    document.getElementById('selectedUserBox').innerHTML = `<div class="font-bold text-slate-900">${escapeHtml(user.nickname || `用户${user.id}`)}</div><div class="text-xs text-slate-500 mt-1">ID ${user.id}${user.phone ? ` · ${escapeHtml(user.phone)}` : ''}</div>`;
+}
+
+function openManualBindModal() {
+    selectedBindUser = null;
+    selectedBindPromoter = null;
+    bindCandidateUsers = [];
+    bindCandidatePromoters = [];
+    document.getElementById('bindUserSearch').value = '';
+    document.getElementById('bindPromoterSearch').value = '';
+    document.getElementById('bindUserSelected').textContent = '未选择用户';
+    document.getElementById('bindPromoterSelected').textContent = '未选择推广员';
+    document.getElementById('bindUserCandidates').innerHTML = '<div class="text-sm text-slate-400 py-6 text-center">搜索后选择用户。</div>';
+    document.getElementById('bindPromoterCandidates').innerHTML = '<div class="text-sm text-slate-400 py-6 text-center">搜索后选择推广员。</div>';
+    openModal('manualBindModal');
+}
+
+async function searchBindUsers() {
+    const q = document.getElementById('bindUserSearch').value.trim();
+    const box = document.getElementById('bindUserCandidates');
+    box.innerHTML = '<div class="text-sm text-slate-400 py-6 text-center">搜索中...</div>';
+    try {
+        const data = await fetchJson(`${API_BASE}/promoters/users/search?q=${encodeURIComponent(q)}&limit=30`);
+        bindCandidateUsers = data.data || [];
+        if (!bindCandidateUsers.length) {
+            box.innerHTML = '<div class="text-sm text-slate-400 py-6 text-center">没有找到用户。</div>';
+            return;
+        }
+        box.innerHTML = bindCandidateUsers.map((u, index) => `
+            <button onclick="selectBindUser(${index})" class="w-full text-left rounded-2xl border border-slate-100 hover:border-emerald-300 hover:bg-emerald-50/40 p-3 transition">
+                <div class="flex items-center gap-3">
+                    ${avatarHtml(u, 'h-10 w-10')}
+                    <div class="min-w-0">
+                        <div class="font-bold text-slate-900 truncate">${escapeHtml(u.nickname || `用户${u.id}`)} <span class="text-xs text-slate-400 font-normal">ID ${u.id}</span></div>
+                        <div class="text-xs text-slate-500 truncate">${escapeHtml(u.phone || u.openid || '无手机号')}</div>
+                        <div class="text-xs text-slate-400 mt-1">${u.bound_promoter_nickname ? `当前归属：${escapeHtml(u.bound_promoter_nickname)}` : '暂无归属'}</div>
+                    </div>
+                </div>
+            </button>
+        `).join('');
+    } catch (e) {
+        box.innerHTML = `<div class="text-sm text-rose-500 py-6 text-center">${escapeHtml(e.message)}</div>`;
+    }
+}
+
+async function searchBindPromoters() {
+    const q = document.getElementById('bindPromoterSearch').value.trim();
+    const box = document.getElementById('bindPromoterCandidates');
+    box.innerHTML = '<div class="text-sm text-slate-400 py-6 text-center">搜索中...</div>';
+    try {
+        const data = await fetchJson(`${API_BASE}/promoters/users/search?q=${encodeURIComponent(q)}&limit=50`);
+        bindCandidatePromoters = (data.data || []).filter(u => u.promoter_code && u.promoter_status === 'active');
+        if (!bindCandidatePromoters.length) {
+            box.innerHTML = '<div class="text-sm text-slate-400 py-6 text-center">没有找到启用中的推广员。</div>';
+            return;
+        }
+        box.innerHTML = bindCandidatePromoters.map((u, index) => `
+            <button onclick="selectBindPromoter(${index})" class="w-full text-left rounded-2xl border border-slate-100 hover:border-emerald-300 hover:bg-emerald-50/40 p-3 transition">
+                <div class="flex items-center gap-3">
+                    ${avatarHtml(u, 'h-10 w-10')}
+                    <div class="min-w-0">
+                        <div class="font-bold text-slate-900 truncate">${escapeHtml(u.nickname || `用户${u.id}`)} <span class="text-xs text-slate-400 font-normal">ID ${u.id}</span></div>
+                        <div class="text-xs text-emerald-700 font-mono mt-1">${escapeHtml(u.promoter_code)} · ${rateText(u.commission_rate_bps)}</div>
+                    </div>
+                </div>
+            </button>
+        `).join('');
+    } catch (e) {
+        box.innerHTML = `<div class="text-sm text-rose-500 py-6 text-center">${escapeHtml(e.message)}</div>`;
+    }
+}
+
+function selectBindUser(index) {
+    selectedBindUser = bindCandidateUsers[index];
+    if (!selectedBindUser) return;
+    document.getElementById('bindUserSelected').innerHTML = `<div class="font-bold text-slate-900">${escapeHtml(selectedBindUser.nickname || `用户${selectedBindUser.id}`)}</div><div class="text-xs text-slate-500 mt-1">ID ${selectedBindUser.id}${selectedBindUser.phone ? ` · ${escapeHtml(selectedBindUser.phone)}` : ''}</div>`;
+}
+
+function selectBindPromoter(index) {
+    selectedBindPromoter = bindCandidatePromoters[index];
+    if (!selectedBindPromoter) return;
+    document.getElementById('bindPromoterSelected').innerHTML = `<div class="font-bold text-slate-900">${escapeHtml(selectedBindPromoter.nickname || `用户${selectedBindPromoter.id}`)}</div><div class="text-xs text-emerald-700 mt-1 font-mono">${escapeHtml(selectedBindPromoter.promoter_code)} · ${rateText(selectedBindPromoter.commission_rate_bps)}</div>`;
+}
+
+async function submitManualBind() {
+    if (!selectedBindUser) return showToast('请选择要绑定的用户', 'error');
+    if (!selectedBindPromoter) return showToast('请选择归属推广员', 'error');
+    if (selectedBindUser.id === selectedBindPromoter.id) return showToast('不能把用户绑定到自己名下', 'error');
+    if (!window.confirm('确认保存绑定关系吗？这会覆盖该用户原有推广归属。')) return;
+    try {
+        await fetchJson(`${API_BASE}/promoters/bindings/manual`, {
+            method: 'POST',
+            body: JSON.stringify({
+                user_id: selectedBindUser.id,
+                promoter_user_id: selectedBindPromoter.id
+            })
+        });
+        showToast('绑定关系已保存');
+        closeModal('manualBindModal');
+        await loadAll();
+    } catch (e) {
+        showToast(e.message, 'error');
+    }
+}
+
+async function submitEnablePromoter() {
+    if (!selectedUser) return showToast('请先选择用户', 'error');
+    const rate = Number(document.getElementById('enableRate').value);
+    if (!Number.isFinite(rate) || rate <= 0 || rate > 30) return showToast('分账比例必须在 0-30% 之间', 'error');
+    try {
+        await fetchJson(`${API_BASE}/promoters/${selectedUser.id}/enable`, {
+            method: 'POST',
+            body: JSON.stringify({ rate_percent: rate })
+        });
+        showToast('推广员已启用');
+        closeModal('enableModal');
+        await loadAll();
+    } catch (e) {
+        showToast(e.message, 'error');
+    }
+}
+
+function openReceiverModal(userId) {
+    const item = promoterCache.get(String(userId));
+    if (!item) return;
+    document.getElementById('receiverUserId').value = userId;
+    document.getElementById('receiverUserBox').innerHTML = `<div class="font-bold text-slate-900">${escapeHtml(item.nickname || `用户${userId}`)}</div><div class="text-xs text-slate-500 mt-1">推广码 ${escapeHtml(item.promoter_code)} · 当前状态 ${escapeHtml(item.receiver_status || 'missing')}</div>`;
+    document.getElementById('receiverAccountView').textContent = item.receiver_account || item.openid || '该用户暂无 OpenID，不能作为个人分账接收方';
+    document.getElementById('receiverNameView').textContent = item.receiver_name || item.nickname || '-';
+    document.getElementById('receiverAddStatus').value = item.add_status || (item.receiver_status === 'added' ? 'added' : 'pending');
+    openModal('receiverModal');
+}
+
+async function submitReceiver() {
+    const userId = document.getElementById('receiverUserId').value;
+    const payload = {
+        add_status: document.getElementById('receiverAddStatus').value
+    };
+    try {
+        await fetchJson(`${API_BASE}/promoters/${userId}/receiver`, {
+            method: 'PUT',
+            body: JSON.stringify(payload)
+        });
+        showToast('接收方已同步');
+        closeModal('receiverModal');
+        await loadAll();
+    } catch (e) {
+        showToast(e.message, 'error');
+    }
+}
+
+async function changeRate(userId) {
+    const item = promoterCache.get(String(userId));
+    if (!item) return;
+    const input = window.prompt('请输入新的分账比例，单位 %，最高 30', rateText(item.commission_rate_bps).replace('%', ''));
+    if (input === null) return;
+    const rate = Number(input);
+    if (!Number.isFinite(rate) || rate <= 0 || rate > 30) return showToast('分账比例必须在 0-30% 之间', 'error');
+    try {
+        await fetchJson(`${API_BASE}/promoters/${userId}/rate`, {
+            method: 'PUT',
+            body: JSON.stringify({ rate_percent: rate })
+        });
+        showToast('分账比例已更新');
+        await loadAll();
+    } catch (e) {
+        showToast(e.message, 'error');
+    }
+}
+
+async function toggleStatus(userId, status) {
+    const label = status === 'active' ? '启用' : '停用';
+    if (!window.confirm(`确认${label}这个推广员吗？`)) return;
+    try {
+        await fetchJson(`${API_BASE}/promoters/${userId}/status`, {
+            method: 'PATCH',
+            body: JSON.stringify({ status })
+        });
+        showToast(`已${label}`);
+        await loadAll();
+    } catch (e) {
+        showToast(e.message, 'error');
+    }
+}
+
+async function openBindings(userId) {
+    const item = promoterCache.get(String(userId));
+    document.getElementById('bindingsTitle').textContent = item ? `${item.nickname || `用户${userId}`} 的直接/根归属用户` : '';
+    document.getElementById('bindingsList').innerHTML = '<div class="text-sm text-slate-400 py-8 text-center">加载中...</div>';
+    openModal('bindingsModal');
+    try {
+        const data = await fetchJson(`${API_BASE}/promoters/${userId}/bindings?limit=50`);
+        const list = (data.data && data.data.list) || [];
+        if (!list.length) {
+            document.getElementById('bindingsList').innerHTML = '<div class="text-sm text-slate-400 py-8 text-center">暂无绑定用户。</div>';
+            return;
+        }
+        document.getElementById('bindingsList').innerHTML = list.map(row => `
+            <div class="rounded-2xl border border-slate-100 p-4 flex items-center justify-between gap-3">
+                <div class="flex items-center gap-3 min-w-0">
+                    ${avatarHtml(row, 'h-10 w-10')}
+                    <div class="min-w-0">
+                        <div class="font-bold text-slate-900 truncate">${escapeHtml(row.nickname || `用户${row.user_id}`)} <span class="text-xs text-slate-400 font-normal">ID ${row.user_id}</span></div>
+                        <div class="text-xs text-slate-500 truncate">直接归属：${escapeHtml(row.promoter_nickname || row.promoter_user_id)} · 根归属：${escapeHtml(row.root_promoter_nickname || row.root_promoter_user_id)}</div>
+                    </div>
+                </div>
+                <div class="text-xs text-slate-400 whitespace-nowrap">${dateText(row.bound_at)}</div>
+            </div>
+        `).join('');
+    } catch (e) {
+        document.getElementById('bindingsList').innerHTML = `<div class="text-sm text-rose-500 py-8 text-center">${escapeHtml(e.message)}</div>`;
+    }
+}
+
+function openModal(id) {
+    const modal = document.getElementById(id);
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+}
+
+function closeModal(id) {
+    const modal = document.getElementById(id);
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+}
+
+async function loadAll() {
+    await Promise.all([loadSummary(), loadPromoters(currentPage)]);
+}
+
+['filterSearch', 'userSearchInput', 'bindUserSearch', 'bindPromoterSearch'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+            if (id === 'filterSearch') loadPromoters(1);
+            if (id === 'userSearchInput') searchUsersForPromoter();
+            if (id === 'bindUserSearch') searchBindUsers();
+            if (id === 'bindPromoterSearch') searchBindPromoters();
+        }
+    });
+});
+
+['filterStatus', 'filterReceiver', 'filterLevel'].forEach(id => {
+    document.getElementById(id).addEventListener('change', () => loadPromoters(1));
+});
+
+document.addEventListener('DOMContentLoaded', loadAll);
+</script>

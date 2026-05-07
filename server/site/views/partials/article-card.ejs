@@ -1,0 +1,7 @@
+<article class="guide-card">
+  <% const articleHref = article.href || (article.id ? `/parents/${article.id}` : '/parents'); %>
+  <span class="guide-tag"><%= article.source_type_label || 'Parent Guide' %></span>
+  <h3><a href="<%= articleHref %>"><%= article.title %></a></h3>
+  <p><%= article.summary || article.excerpt || '帮助家长更轻松地陪孩子进入英语场景、绘本和表达练习。' %></p>
+  <a href="<%= articleHref %>" class="text-link">阅读指南</a>
+</article>

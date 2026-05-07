@@ -1,11 +1,8 @@
 <!--pages/scene/detail/detail.wxml-->
-<view class="container">
+<view class="container" style="padding-bottom:{{currentWord && !assessResult ? contentBottomPadding : 0}}px;">
 
   <!-- 图片 + 热点 -->
-  <view wx:if="{{scene}}"
-    class="image-wrap"
-    style="height:{{imageWrapperHeight}}px"
-  >
+  <view wx:if="{{scene}}" class="image-wrap">
     <image
       class="main-img"
       src="{{scene.image_url}}"
@@ -35,8 +32,8 @@
     <text class="hint-count">共 {{scene.objects.length}} 个词条</text>
   </view>
 
-  <!-- 词条面板 -->
-  <view wx:if="{{currentWord}}" class="word-panel {{assessResult ? 'has-assess' : ''}}">
+  <!-- 词条面板（轻量固定底部） -->
+  <view wx:if="{{currentWord && !assessResult}}" class="word-panel">
 
     <!-- 词条内容 + 操作区（水平布局） -->
     <view class="word-row">
@@ -44,8 +41,9 @@
       <view class="word-info">
         <view class="word-title-row">
           <text class="word-en">{{currentWord.word || currentWord.custom_label}}</text>
+          <text wx:if="{{currentWord.phonetic}}" class="word-phonetic">/{{currentWord.phonetic}}/</text>
         </view>
-        <text wx:if="{{currentWord.phonetic}}" class="word-phonetic">/{{currentWord.phonetic}}/</text>
+
         <text class="word-zh">{{currentWord.translation || ''}}</text>
         <!-- 播放按钮 -->
         <view class="voice-actions">
@@ -71,19 +69,6 @@
         </view>
         <text class="record-label">{{isAssessing ? '评测中' : (isRecording ? '点击停止' : '点击跟读')}}</text>
       </view>
-    </view>
-  </view>
-
-  <!-- 场景翻页导航（固定底部） -->
-  <view wx:if="{{scene}}" class="scene-nav-bar">
-    <view class="scene-nav-btn {{!scene.prev_id ? 'disabled' : ''}}" bindtap="onPrev">
-      <text class="nav-arrow">‹</text>
-      <text>上一页</text>
-    </view>
-    <text class="scene-nav-page">{{scene.name || ''}}</text>
-    <view class="scene-nav-btn {{!scene.next_id ? 'disabled' : ''}}" bindtap="onNext">
-      <text>下一页</text>
-      <text class="nav-arrow">›</text>
     </view>
   </view>
 

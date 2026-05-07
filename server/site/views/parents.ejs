@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><%- include('partials/head', { metaTitle, metaDescription, metaKeywords, canonicalUrl, metaImage }) %></head>
+<body data-page="parents">
+  <div class="site-shell">
+    <%- include('partials/header', { ctaHref: '#mini-program', ctaLabel: '立即体验' }) %>
+    <main>
+      <section class="sub-hero">
+        <div class="container sub-hero-inner">
+          <span>For Parents</span>
+          <h1>家长不必额外备课，也能把陪伴做得自然有效。</h1>
+          <p>这里沉淀方法、路径和使用建议，让英语学习不再只靠焦虑推进。</p>
+        </div>
+      </section>
+      <section class="container guide-grid-section">
+        <div class="section-title"><span>Articles</span><h2>给家长看的内容入口</h2></div>
+        <div class="guide-grid"><% articles.forEach(article => { %><%- include('partials/article-card', { article }) %><% }) %></div>
+      </section>
+      <%- include('partials/footer-cta', { title: '了解方法之后，让孩子马上试一试。', text: '扫码体验场景点读、绘本阅读和跟读练习。' }) %>
+    </main>
+    <%- include('partials/footer', {}) %>
+  </div>
+  <script>window.__SITE_INITIAL__ = <%- JSON.stringify(initialState) %>;</script>
+  <script src="/assets/site.js"></script>
+</body>
+</html>

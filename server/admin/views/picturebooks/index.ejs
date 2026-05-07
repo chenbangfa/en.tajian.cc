@@ -45,6 +45,14 @@
             class="px-4 py-2 border border-gray-200 rounded-lg outline-none focus:border-green-500 bg-gray-50">
             <option value="">全部分类</option>
         </select>
+        <select id="stageFilter" onchange="loadBooks()"
+            class="px-4 py-2 border border-gray-200 rounded-lg outline-none focus:border-green-500 bg-gray-50">
+            <option value="all">全部阶段</option>
+            <option value="v1">V1 启蒙</option>
+            <option value="v2">V2 进阶</option>
+            <option value="v3_start">V3 入门</option>
+            <option value="v3">V3 主题</option>
+        </select>
         <div class="relative flex-1 max-w-md">
             <input type="text" id="searchInput" onkeyup="if(event.key==='Enter') loadBooks()" placeholder="搜索绘本标题..."
                 class="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg outline-none focus:border-green-500 bg-gray-50">
@@ -124,10 +132,12 @@ let _videoStatusMap = {};
 
 async function loadBooks() {
     const categoryId = document.getElementById('categoryFilter').value;
+    const readerStage = document.getElementById('stageFilter').value;
     const keyword = document.getElementById('searchInput').value;
 
     let url = '/picture-books/api/list?';
     if (categoryId) url += `category_id=${categoryId}&`;
+    if (readerStage && readerStage !== 'all') url += `reader_stage=${encodeURIComponent(readerStage)}&`;
     if (keyword) url += `keyword=${encodeURIComponent(keyword)}&`;
 
     try {
@@ -200,6 +210,11 @@ function renderBooks(books) {
             <div class="p-4">
                 <h3 class="font-bold text-gray-800 text-lg mb-1 truncate">${book.title}</h3>
                 <p class="text-sm text-gray-500 mb-2 truncate">${book.title_en || ''}</p>
+                <div class="flex items-center gap-2 mb-2 flex-wrap">
+                    <span class="text-xs font-semibold px-2 py-1 rounded-full ${getStageBadgeClass(book.reader_stage)}">
+                        ${escapeHtml(book.reader_stage_name || 'V3 主题阅读')}
+                    </span>
+                </div>
                 <div class="flex items-center justify-between mt-4">
                     <span class="text-xs text-gray-400 bg-gray-50 px-2 py-1 rounded">
                         <i class="fas fa-folder mr-1"></i> ${book.category_name || '未分类'}
@@ -219,6 +234,22 @@ function renderBooks(books) {
             </div>
         </div>
     `}).join('');
+}
+
+function getStageBadgeClass(stage) {
+    if (stage === 'v1') return 'bg-emerald-50 text-emerald-700';
+    if (stage === 'v2') return 'bg-blue-50 text-blue-700';
+    if (stage === 'v3_start') return 'bg-amber-50 text-amber-700';
+    return 'bg-purple-50 text-purple-700';
+}
+
+function escapeHtml(value) {
+    return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 }
 
 // ===== 视频生成对话框 =====

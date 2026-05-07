@@ -1229,14 +1229,25 @@ Only return the JSON array, no other text.`
      * @param {string} customPrompt - 自定义提示词（可选）
      * @returns {Object} 增强后的单词数据
      */
-    async enhanceWordData(word, translation = '', customPrompt = null) {
-        // 配置了 PROXY_BASE_URL 时，走美国服务器代理
-        if (process.env.PROXY_BASE_URL) {
-            return this._enhanceWordViaProxy(word, translation, customPrompt);
+    async enhanceWordData(word, translation = '', customPrompt = null, engine = 'deepseek') {
+        const normalizedEngine = String(engine || 'deepseek').trim().toLowerCase() === 'gemini' ? 'gemini' : 'deepseek';
+
+        // DeepSeek 优先本地直连，避免所有文本增强都绕到美国代理
+        if (normalizedEngine === 'deepseek' && process.env.DEEPSEEK_API_KEY) {
+            return this._enhanceWordDirect(word, translation, customPrompt, normalizedEngine);
         }
 
+        // 其余能力（主要是 Gemini）在配置了 PROXY_BASE_URL 时走美国服务器代理
+        if (process.env.PROXY_BASE_URL) {
+            return this._enhanceWordViaProxy(word, translation, customPrompt, normalizedEngine);
+        }
+
+        return this._enhanceWordDirect(word, translation, customPrompt, normalizedEngine);
+    }
+
+    async _enhanceWordDirect(word, translation = '', customPrompt = null, normalizedEngine = 'deepseek') {
         try {
-            console.log(`[AIService] 增强单词数据: ${word}`);
+            console.log(`[AIService] 增强单词数据: ${word}, engine=${normalizedEngine}`);
 
             const needTranslation = !translation || translation.trim() === '';
 
@@ -1274,23 +1285,50 @@ Respond ONLY with a valid JSON object in this exact format:
 }`;
             }
 
-            const headers = await this.vertexAuth.getAuthHeaders();
-            const response = await axios.post(
-                this.vertexAuth.getUrl('gemini-2.5-flash'),
-                {
-                    contents: [{
-                        role: 'user',
-                        parts: [{ text: prompt }]
-                    }],
-                    generationConfig: {
-                        temperature: 0.3,
-                        maxOutputTokens: 1024
-                    }
-                },
-                { headers, timeout: 30000 }
-            );
+            let text = '';
 
-            const text = response.data.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (normalizedEngine === 'deepseek' && process.env.DEEPSEEK_API_KEY) {
+                const response = await axios.post(
+                    'https://api.deepseek.com/chat/completions',
+                    {
+                        model: 'deepseek-chat',
+                        messages: [
+                            { role: 'system', content: 'You are a helpful English-learning content assistant. Output only valid JSON.' },
+                            { role: 'user', content: prompt }
+                        ],
+                        temperature: 0.3,
+                        max_tokens: 1024,
+                        response_format: { type: 'json_object' }
+                    },
+                    {
+                        headers: {
+                            Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+                            'Content-Type': 'application/json'
+                        },
+                        timeout: 30000
+                    }
+                );
+                text = response.data?.choices?.[0]?.message?.content || '';
+            } else {
+                const headers = await this.vertexAuth.getAuthHeaders();
+                const response = await axios.post(
+                    this.vertexAuth.getUrl('gemini-2.5-flash'),
+                    {
+                        contents: [{
+                            role: 'user',
+                            parts: [{ text: prompt }]
+                        }],
+                        generationConfig: {
+                            temperature: 0.3,
+                            maxOutputTokens: 1024
+                        }
+                    },
+                    { headers, timeout: 30000 }
+                );
+
+                text = response.data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            }
+
             if (text) {
                 // 提取 JSON
                 const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -1331,12 +1369,12 @@ Respond ONLY with a valid JSON object in this exact format:
      * @param {string} customPrompt - 自定义提示词（可选）
      * @returns {Object} { results: Array, promptUsed: string }
      */
-    async batchEnhanceWords(words, customPrompt = null) {
+    async batchEnhanceWords(words, customPrompt = null, engine = 'deepseek') {
         const results = [];
         let promptUsed = null;
 
         for (const item of words) {
-            const result = await this.enhanceWordData(item.word, item.translation, customPrompt);
+            const result = await this.enhanceWordData(item.word, item.translation, customPrompt, engine);
             if (!promptUsed && result.prompt) {
                 promptUsed = result.prompt;
             }
@@ -1363,9 +1401,9 @@ Respond ONLY with a valid JSON object in this exact format:
     /**
      * 通过美国代理服务器增强单词数据
      */
-    async _enhanceWordViaProxy(word, translation, customPrompt) {
+    async _enhanceWordViaProxy(word, translation, customPrompt, engine = 'deepseek') {
         try {
-            console.log(`[AIService] 通过代理增强单词: ${word}`);
+            console.log(`[AIService] 通过代理增强单词: ${word}, engine=${engine}`);
 
             // 先从本地数据库读取提示词模板（数据库在腾讯云，可直接访问）
             let prompt = customPrompt;
@@ -1382,7 +1420,7 @@ Respond ONLY with a valid JSON object in this exact format:
 
             const response = await this._postProxyWithRetry(
                 '/proxy/enhance-word',
-                { word, translation, prompt },
+                { word, translation, prompt, engine },
                 { timeout: 35000, maxAttempts: 3, baseDelayMs: 1200 }
             );
 

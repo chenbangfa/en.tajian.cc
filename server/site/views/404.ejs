@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><%- include('partials/head', { metaTitle, metaDescription, metaKeywords, canonicalUrl, metaImage }) %></head>
+<body data-page="404">
+  <div class="site-shell">
+    <%- include('partials/header', { ctaHref: '/', ctaLabel: '回到首页' }) %>
+    <main class="container empty-page">
+      <span>404</span>
+      <h1>这个页面暂时走丢了</h1>
+      <p>可以先回到首页，或者继续浏览场景库和绘本馆。</p>
+      <div class="hero-actions"><a class="primary-btn" href="/">回到首页</a><a class="secondary-btn" href="/scenes">浏览场景</a></div>
+    </main>
+    <%- include('partials/footer', {}) %>
+  </div>
+  <script src="/assets/site.js"></script>
+</body>
+</html>

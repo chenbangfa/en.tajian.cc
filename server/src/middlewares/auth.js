@@ -1,6 +1,13 @@
 const jwt = require('jsonwebtoken');
+const fs = require('fs');
 const config = require('../config');
 const { query } = require('../config/database');
+
+function cleanupUploadedFile(req) {
+    const filePath = req && req.file && req.file.path;
+    if (!filePath) return;
+    fs.unlink(filePath, () => {});
+}
 
 // 验证JWT令牌
 const authMiddleware = async (req, res, next) => {
@@ -97,6 +104,7 @@ const requireVip = (req, res, next) => {
 const requirePoints = (pointsNeeded) => {
     return (req, res, next) => {
         if (!req.user) {
+            cleanupUploadedFile(req);
             return res.status(401).json({
                 success: false,
                 message: '请先登录'
@@ -104,6 +112,7 @@ const requirePoints = (pointsNeeded) => {
         }
 
         if (req.user.points < pointsNeeded) {
+            cleanupUploadedFile(req);
             return res.status(403).json({
                 success: false,
                 message: `积分不足，需要${pointsNeeded}积分`,

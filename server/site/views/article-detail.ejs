@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><%- include('partials/head', { metaTitle, metaDescription, metaKeywords, canonicalUrl, metaImage }) %></head>
+<body data-page="parents">
+  <div class="site-shell">
+    <%- include('partials/header', { ctaHref: '#mini-program', ctaLabel: '立即体验' }) %>
+    <main>
+      <section class="article-hero-section">
+        <div class="container article-shell">
+          <a class="crumb" href="/parents">← 返回家长指南</a>
+          <span class="eyebrow"><%= article.source_type_label || 'Parent Guide' %></span>
+          <h1><%= article.title %></h1>
+          <p><%= article.summary || article.excerpt || '帮助家长更轻松地陪孩子进入英语场景、绘本和表达练习。' %></p>
+        </div>
+      </section>
+      <section class="container article-layout">
+        <article class="article-body"><%- article.body_html %></article>
+        <aside class="detail-aside" id="mini-program">
+          <div class="sticky-card">
+            <h3>继续体验内容</h3>
+            <div class="qr-card"><img id="site-mini-qr" class="qr-image" alt="看图学英语小程序码" hidden><div class="qr-pattern" data-qr-pattern></div><div class="qr-loading" data-qr-loading>正在加载小程序码...</div></div>
+            <p>看完方法以后，直接进入小程序体验真实学习内容。</p>
+          </div>
+        </aside>
+      </section>
+    </main>
+    <%- include('partials/footer', {}) %>
+  </div>
+  <script src="/assets/site.js"></script>
+</body>
+</html>

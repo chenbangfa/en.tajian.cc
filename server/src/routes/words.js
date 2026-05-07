@@ -5,6 +5,15 @@ const voiceService = require('../services/voice.service');
 
 const router = express.Router();
 
+(async () => {
+    try {
+        await query(`ALTER TABLE words ADD COLUMN translation_audio_url VARCHAR(500) DEFAULT NULL COMMENT '中文词义发音URL' AFTER translation`).catch(() => {});
+        await query(`ALTER TABLE words ADD COLUMN example_translation_audio_url VARCHAR(500) DEFAULT NULL COMMENT '中文例句发音URL' AFTER example_translation`).catch(() => {});
+    } catch (error) {
+        console.error('[Words] 初始化中文音频字段失败:', error.message);
+    }
+})();
+
 // 获取单词列表
 router.get('/', optionalAuth, async (req, res) => {
     try {
@@ -140,7 +149,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
  * POST /words/:id/ensure-audio
  * 
  * 小程序进入单词详情页时调用。
- * 后台异步生成缺失的音频（单词男女声、例句男女声），不阻塞前端。
+ * 后台异步生成缺失的音频（中文词义、单词男女声、中文例句、例句男女声），不阻塞前端。
  * 返回: { success: true, generating: ['audio_url_female', ...], word: {...} }
  */
 router.post('/:id/ensure-audio', optionalAuth, async (req, res) => {
@@ -148,7 +157,14 @@ router.post('/:id/ensure-audio', optionalAuth, async (req, res) => {
         const { id } = req.params;
 
         // 查询当前单词的音频状态
-        const words = await query('SELECT id, word, example_sentence, audio_url_female, audio_url_male, example_audio_female, example_audio_male FROM words WHERE id = ?', [id]);
+        const words = await query(
+            `SELECT id, word, translation, example_sentence, example_translation,
+                    audio_url_female, audio_url_male,
+                    translation_audio_url, example_translation_audio_url,
+                    example_audio_female, example_audio_male
+             FROM words WHERE id = ?`,
+            [id]
+        );
         if (words.length === 0) {
             return res.status(404).json({ success: false, message: '单词不存在' });
         }
@@ -157,8 +173,14 @@ router.post('/:id/ensure-audio', optionalAuth, async (req, res) => {
         const missing = [];
 
         // 检测缺失的音频
+        if (w.translation && !w.translation_audio_url) {
+            missing.push({ field: 'translation_audio_url', text: w.translation, voice: 'female', isChinese: true });
+        }
         if (!w.audio_url_female) missing.push({ field: 'audio_url_female', text: w.word, voice: 'female' });
         if (!w.audio_url_male) missing.push({ field: 'audio_url_male', text: w.word, voice: 'male' });
+        if (w.example_translation && !w.example_translation_audio_url) {
+            missing.push({ field: 'example_translation_audio_url', text: w.example_translation, voice: 'female', isChinese: true });
+        }
         if (w.example_sentence) {
             if (!w.example_audio_female) missing.push({ field: 'example_audio_female', text: w.example_sentence, voice: 'female' });
             if (!w.example_audio_male) missing.push({ field: 'example_audio_male', text: w.example_sentence, voice: 'male' });
@@ -183,7 +205,9 @@ router.post('/:id/ensure-audio', optionalAuth, async (req, res) => {
                 const item = missing[i];
                 try {
                     console.log(`[AutoAudio] 生成 word#${w.id} ${item.field} (${item.voice})...`);
-                    const result = await voiceService.textToSpeech(item.text, item.voice);
+                    const result = item.isChinese
+                        ? await voiceService.textToSpeechChinese(item.text, 'female', voiceService.getGoogleTtsSpeed('default'))
+                        : await voiceService.textToSpeech(item.text, item.voice);
                     if (result.success && result.audioUrl) {
                         await query(`UPDATE words SET ${item.field} = ?, updated_at = NOW() WHERE id = ?`, [result.audioUrl, w.id]);
                         console.log(`[AutoAudio] ✅ word#${w.id} ${item.field} 完成 (${result.engine || 'unknown'})`);

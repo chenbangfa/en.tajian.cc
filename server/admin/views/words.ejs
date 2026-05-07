@@ -1,4 +1,199 @@
 <style>
+    .words-table {
+        min-width: 1200px;
+    }
+    .words-table th {
+        vertical-align: middle;
+    }
+    .word-row-card {
+        display: flex;
+        align-items: flex-start;
+        gap: 14px;
+    }
+    .word-cover {
+        width: 64px;
+        height: 64px;
+        min-width: 64px;
+        border-radius: 14px;
+        object-fit: cover;
+        border: 1px solid #e5e7eb;
+        background: #f8fafc;
+    }
+    .word-cover-placeholder {
+        width: 64px;
+        height: 64px;
+        min-width: 64px;
+        border-radius: 14px;
+        border: 1px dashed #d1d5db;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 22px;
+        color: #cbd5e1;
+        background: #f8fafc;
+    }
+    .word-meta-title {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-bottom: 6px;
+    }
+    .word-meta-badges {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 8px;
+    }
+    .word-section-title {
+        font-size: 11px;
+        line-height: 1;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #94a3b8;
+        margin-bottom: 10px;
+    }
+    .audio-chip-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(118px, 1fr));
+        gap: 8px;
+    }
+    .audio-chip {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 8px 10px;
+        border-radius: 12px;
+        border: 1px solid #e5e7eb;
+        background: #fff;
+        font-size: 12px;
+        line-height: 1.1;
+        color: #475569;
+        white-space: nowrap;
+        min-height: 38px;
+    }
+    .audio-chip.has-audio {
+        border-color: #bbf7d0;
+        background: #f0fdf4;
+        color: #15803d;
+    }
+    .audio-chip.missing-audio {
+        border-color: #e5e7eb;
+        background: #f8fafc;
+        color: #64748b;
+    }
+    .audio-chip.disabled-chip {
+        opacity: 0.55;
+        cursor: default;
+    }
+    .audio-chip button {
+        border: none;
+        background: transparent;
+        padding: 0;
+        cursor: pointer;
+        font-size: 12px;
+    }
+    .audio-chip button:disabled {
+        cursor: not-allowed;
+        opacity: 0.6;
+    }
+    .audio-chip-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-weight: 700;
+    }
+    .audio-chip-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .audio-regen-btn {
+        font-size: 11px !important;
+        font-weight: 700;
+    }
+    .example-card {
+        padding: 12px;
+        border-radius: 14px;
+        border: 1px solid #e5e7eb;
+        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+    }
+    .example-thumb {
+        width: 52px;
+        height: 52px;
+        min-width: 52px;
+        object-fit: cover;
+        border-radius: 12px;
+        border: 1px solid #e5e7eb;
+        background: #fff;
+    }
+    .stats-stack {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+    .stat-pill {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 10px 12px;
+        border-radius: 12px;
+        background: #f8fafc;
+        border: 1px solid #e5e7eb;
+        font-size: 12px;
+        color: #475569;
+    }
+    .mini-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 3px 8px;
+        border-radius: 999px;
+        background: #eff6ff;
+        color: #2563eb;
+        font-size: 11px;
+        font-weight: 600;
+    }
+    .audio-status-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+    }
+    .audio-status-item {
+        border-radius: 12px;
+        border: 1px solid #e5e7eb;
+        background: #f8fafc;
+        padding: 10px 12px;
+    }
+    .audio-status-item strong {
+        display: block;
+        color: #0f172a;
+        margin-bottom: 6px;
+        font-size: 12px;
+    }
+    .audio-status-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+    .audio-status-actions button {
+        font-size: 12px;
+        font-weight: 700;
+    }
+    .batch-tip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: #eef2ff;
+        color: #4f46e5;
+        font-size: 12px;
+        font-weight: 500;
+    }
     .ai-actions {
         display: flex;
         flex-wrap: wrap;
@@ -38,12 +233,31 @@
 <div class="bg-white rounded-xl shadow-sm border border-gray-100">
     <!-- Header & Filters -->
     <div class="p-6 border-b border-gray-100 bg-gray-50 rounded-t-xl space-y-4">
-        <div class="flex justify-between items-center">
-            <h2 class="text-lg font-bold text-gray-800">单词列表</h2>
-            <div class="flex gap-2">
+        <div class="flex justify-between items-center gap-3 flex-wrap">
+            <div>
+                <h2 class="text-lg font-bold text-gray-800">单词列表</h2>
+                <p class="text-sm text-gray-500 mt-1">单词内容、发音素材和营销视频入口都可以从这里快速进入。</p>
+            </div>
+            <div class="flex gap-2 flex-wrap justify-end">
+                <a href="/marketing/videos"
+                    class="px-4 py-2 border border-blue-200 text-blue-700 rounded-lg hover:bg-blue-50 transition-colors shadow-sm flex items-center text-sm">
+                    <i class="fas fa-video mr-2"></i> 每日一词视频
+                </a>
+                <a href="/marketing/category-videos"
+                    class="px-4 py-2 border border-purple-200 text-purple-700 rounded-lg hover:bg-purple-50 transition-colors shadow-sm flex items-center text-sm">
+                    <i class="fas fa-layer-group mr-2"></i> 分类视频
+                </a>
+                <a href="/words/batch-enhance"
+                    class="px-4 py-2 border border-violet-200 text-violet-700 rounded-lg hover:bg-violet-50 transition-colors shadow-sm flex items-center text-sm">
+                    <i class="fas fa-wand-magic-sparkles mr-2"></i> AI补全工坊
+                </a>
                 <!-- 批量操作栏（选中时才显示） -->
                 <div id="batch-actions" class="hidden flex items-center gap-2">
                     <span class="text-sm text-gray-600">已选 <strong id="selected-count">0</strong> 个</span>
+                    <button onclick="batchEnhanceSelectedWords()"
+                        class="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors shadow-sm flex items-center text-sm">
+                        <i class="fas fa-wand-magic-sparkles mr-2"></i> 批量AI补全
+                    </button>
                     <button onclick="batchDeleteWords()"
                         class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors shadow-sm flex items-center text-sm">
                         <i class="fas fa-trash mr-2"></i> 批量删除
@@ -80,31 +294,34 @@
                 </button>
             </div>
         </div>
+
+        <div class="flex flex-wrap items-center gap-3">
+            <a href="/words/batch-enhance"
+                class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm flex items-center text-sm">
+                <i class="fas fa-bolt mr-2"></i> 进入批量AI补全工坊
+            </a>
+            <span class="batch-tip">
+                <i class="fas fa-circle-info"></i>
+                自动补齐缺失的音标、例句、中文翻译和语法详解；句子类型不会再生成例句，且不会覆盖已有字段。
+            </span>
+        </div>
     </div>
 
     <!-- Table -->
     <div class="overflow-x-auto">
-        <table class="w-full text-left" id="words-table">
+        <table class="w-full text-left words-table" id="words-table">
             <thead>
                 <tr class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wider border-b border-gray-100">
                     <th class="px-2 py-3 w-10 text-center">
                         <input type="checkbox" id="select-all" onchange="toggleSelectAll(this)" class="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer">
                     </th>
-                    <th class="px-4 py-3 font-semibold w-16">图片</th>
-                    <th class="px-4 py-3 font-semibold">单词</th>
-                    <th class="px-4 py-3 font-semibold w-28">音标</th>
-                    <th class="px-4 py-3 font-semibold">翻译</th>
-                    <th class="px-4 py-3 font-semibold w-24">分类</th>
-                    <th class="px-4 py-3 font-semibold w-16 text-center">女声</th>
-                    <th class="px-4 py-3 font-semibold w-16 text-center">男声</th>
-                    <th class="px-4 py-3 font-semibold" style="max-width: 150px;">例句</th>
-                    <th class="px-4 py-3 font-semibold w-16 text-center">例图</th>
-                    <th class="px-4 py-3 font-semibold w-14 text-center">例♀</th>
-                    <th class="px-4 py-3 font-semibold w-14 text-center">例♂</th>
-                    <th class="px-3 py-3 font-semibold w-16 text-center cursor-pointer select-none hover:text-blue-600" onclick="toggleSort('view_count')" title="按浏览量排序">
+                    <th class="px-4 py-3 font-semibold">核心词信息</th>
+                    <th class="px-4 py-3 font-semibold w-[280px]">发音</th>
+                    <th class="px-4 py-3 font-semibold w-[320px]">例句与例图</th>
+                    <th class="px-3 py-3 font-semibold w-28 text-center cursor-pointer select-none hover:text-blue-600" onclick="toggleSort('view_count')" title="按浏览量排序">
                         浏览 <i class="fas fa-sort text-gray-300" id="sort-icon-view_count"></i>
                     </th>
-                    <th class="px-3 py-3 font-semibold w-16 text-center cursor-pointer select-none hover:text-blue-600" onclick="toggleSort('assess_count')" title="按评测次数排序">
+                    <th class="px-3 py-3 font-semibold w-28 text-center cursor-pointer select-none hover:text-blue-600" onclick="toggleSort('assess_count')" title="按评测次数排序">
                         评测 <i class="fas fa-sort text-gray-300" id="sort-icon-assess_count"></i>
                     </th>
                     <th class="px-4 py-3 font-semibold w-24 text-right">操作</th>
@@ -148,6 +365,12 @@
                 </button>
                 <button type="button" class="ai-btn ai-btn-purple" onclick="generateWordVoice('male')" id="btn-ai-voice-m">
                     🔊 生成男声
+                </button>
+                <button type="button" class="ai-btn ai-btn-blue" onclick="generateTranslationVoice()" id="btn-ai-voice-cn">
+                    🇨🇳 词义发音
+                </button>
+                <button type="button" class="ai-btn ai-btn-blue" onclick="generateExampleTranslationVoice()" id="btn-ai-ex-cn">
+                    🇨🇳 例句发音
                 </button>
                 <button type="button" class="ai-btn ai-btn-green" onclick="generateExVoice('female')" id="btn-ai-ex-f">
                     📝 例句女声
@@ -226,12 +449,31 @@
             <!-- Audio Status (edit mode only) -->
             <div id="word-audio-status" style="display: none;">
                 <label class="block text-sm font-medium text-gray-700 mb-1">发音状态</label>
-                <div class="flex gap-4 flex-wrap text-xs text-gray-500 bg-gray-50 rounded-lg p-3">
-                    <span>♀ 女声: <span id="audio-female-label">-</span></span>
-                    <span>♂ 男声: <span id="audio-male-label">-</span></span>
-                    <span class="text-gray-300">|</span>
-                    <span>例句♀: <span id="audio-ex-female-label">-</span></span>
-                    <span>例句♂: <span id="audio-ex-male-label">-</span></span>
+                <div class="audio-status-grid text-xs text-gray-500">
+                    <div class="audio-status-item">
+                        <strong>中文词义</strong>
+                        <span id="audio-translation-label">-</span>
+                    </div>
+                    <div class="audio-status-item">
+                        <strong>英文女声</strong>
+                        <span id="audio-female-label">-</span>
+                    </div>
+                    <div class="audio-status-item">
+                        <strong>英文男声</strong>
+                        <span id="audio-male-label">-</span>
+                    </div>
+                    <div class="audio-status-item">
+                        <strong>中文例句</strong>
+                        <span id="audio-ex-translation-label">-</span>
+                    </div>
+                    <div class="audio-status-item">
+                        <strong>例句女声</strong>
+                        <span id="audio-ex-female-label">-</span>
+                    </div>
+                    <div class="audio-status-item">
+                        <strong>例句男声</strong>
+                        <span id="audio-ex-male-label">-</span>
+                    </div>
                 </div>
             </div>
 
@@ -250,6 +492,7 @@
     let searchTimeout;
     let allCategories = [];
     let currentEditWord = null;
+    let currentWordList = [];
     let currentSort = 'id';     // 当前排序字段
     let currentOrder = 'desc';  // 排序方向
 
@@ -270,6 +513,65 @@
         let fullUrl = url;
         if (url && url.startsWith('/')) fullUrl = window.location.origin + url;
         new Audio(fullUrl).play().catch(e => showToast('播放失败: ' + e.message, 'error'));
+    }
+
+    function renderAudioChip(label, url, { color = 'green', missingLabel = '+生成', onMissing = '', disabled = false } = {}) {
+        const chipClass = url ? 'audio-chip has-audio' : `audio-chip missing-audio${disabled ? ' disabled-chip' : ''}`;
+        const playClass = color === 'pink' ? 'text-pink-600 hover:text-pink-700'
+            : color === 'blue' ? 'text-blue-600 hover:text-blue-700'
+            : 'text-green-600 hover:text-green-700';
+        const addClass = color === 'pink' ? 'text-pink-500 hover:text-pink-700'
+            : color === 'blue' ? 'text-blue-500 hover:text-blue-700'
+            : 'text-slate-500 hover:text-slate-700';
+
+        if (url) {
+            const regenBtn = onMissing
+                ? `<button class="${addClass} audio-regen-btn" onclick="${onMissing}" title="重新生成并覆盖当前发音">重生</button>`
+                : '';
+            return `<span class="${chipClass}">
+                <span class="audio-chip-label"><i class="fas fa-check-circle"></i>${label}</span>
+                <span class="audio-chip-actions">
+                    <button class="${playClass}" onclick="playAudio('${escJs(url)}')" title="播放"><i class="fas fa-play-circle"></i></button>
+                    ${regenBtn}
+                </span>
+            </span>`;
+        }
+        if (disabled || !onMissing) {
+            return `<span class="${chipClass}"><span class="audio-chip-label">${label}</span><span class="text-gray-300">—</span></span>`;
+        }
+        return `<span class="${chipClass}"><span class="audio-chip-label">${label}</span><button class="${addClass} audio-regen-btn" onclick="${onMissing}" title="生成">${missingLabel}</button></span>`;
+    }
+
+    function renderStatCard(label, value, theme = 'gray') {
+        const colorClass = theme === 'blue'
+            ? 'text-blue-600'
+            : theme === 'green'
+                ? 'text-green-600'
+                : 'text-slate-600';
+        return `<div class="stat-pill"><span>${label}</span><strong class="${colorClass}">${value || 0}</strong></div>`;
+    }
+
+    function hasText(value) {
+        return !!(value && String(value).trim());
+    }
+
+    function needsAiEnhance(word) {
+        const contentType = word.content_type || 'word';
+        const hasExample = hasText(word.example_sentence);
+        const needPhonetic = contentType === 'word' && !hasText(word.phonetic);
+        const needExample = contentType !== 'sentence' && !hasExample;
+        const needExampleTranslation = !hasText(word.example_translation);
+        const needGrammar = !hasText(word.grammar_explanation);
+        return needPhonetic || needExample || needExampleTranslation || needGrammar;
+    }
+
+    function buildWordsListUrl(page = 1, limit = 20) {
+        const category = document.getElementById('filter-category').value;
+        const search = document.getElementById('filter-search').value;
+        let url = `${API_BASE}/words?page=${page}&limit=${limit}&sort=${currentSort}&order=${currentOrder}`;
+        if (category) url += `&category_id=${category}`;
+        if (search) url += `&search=${encodeURIComponent(search)}`;
+        return url;
     }
 
     // ==================== Categories ====================
@@ -311,9 +613,7 @@
         const search = document.getElementById('filter-search').value;
         const imageFilter = document.getElementById('filter-image').value;
 
-        let url = `${API_BASE}/words?page=${page}&limit=20&sort=${currentSort}&order=${currentOrder}`;
-        if (category) url += `&category_id=${category}`;
-        if (search) url += `&search=${encodeURIComponent(search)}`;
+        let url = buildWordsListUrl(page, 20);
 
         try {
             const res = await fetch(url);
@@ -322,9 +622,116 @@
                 let words = data.data.list;
                 if (imageFilter === 'with') words = words.filter(w => w.image_url);
                 if (imageFilter === 'without') words = words.filter(w => !w.image_url);
+                currentWordList = words;
                 renderWords(words, data.data.pagination);
             }
         } catch (e) { showToast('加载单词失败', 'error'); }
+    }
+
+    async function fetchAllFilteredWordsForEnhance() {
+        const limit = 200;
+        let page = 1;
+        let totalPages = 1;
+        const allWords = [];
+
+        while (page <= totalPages) {
+            const res = await fetch(buildWordsListUrl(page, limit));
+            const data = await res.json();
+            if (!data.success) {
+                throw new Error(data.message || '加载筛选结果失败');
+            }
+            const list = data.data?.list || [];
+            allWords.push(...list);
+            const total = Number(data.data?.pagination?.total || list.length || 0);
+            totalPages = Math.max(1, Math.ceil(total / limit));
+            page += 1;
+        }
+
+        return allWords;
+    }
+
+    async function runBatchEnhance(wordIds, sourceLabel) {
+        const uniqueIds = Array.from(new Set(wordIds.map(id => parseInt(id, 10)).filter(Boolean)));
+        const defaultEnhanceEngine = 'deepseek';
+        if (uniqueIds.length === 0) {
+            showToast('当前没有需要补全的单词', 'error');
+            return;
+        }
+
+        if (!confirm(`确定开始为${sourceLabel}的 ${uniqueIds.length} 个单词批量 AI 补全吗？\n\n将使用 DeepSeek 自动补齐缺失的音标、例句、中文翻译和语法详解，并按每批 10 个顺序执行；已有字段不会被覆盖。`)) {
+            return;
+        }
+
+        const triggerBtn = document.getElementById('btn-enhance-filtered');
+        const originalText = triggerBtn ? triggerBtn.innerHTML : '';
+        if (triggerBtn) {
+            triggerBtn.disabled = true;
+            triggerBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> 正在批量补全...';
+        }
+
+        const chunks = [];
+        for (let i = 0; i < uniqueIds.length; i += 10) {
+            chunks.push(uniqueIds.slice(i, i + 10));
+        }
+
+        let success = 0;
+        let failed = 0;
+        let skipped = 0;
+
+        try {
+            for (let i = 0; i < chunks.length; i++) {
+                if (triggerBtn) {
+                    triggerBtn.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i> 补全中 ${i + 1}/${chunks.length}`;
+                }
+
+                const res = await fetch(`${API_BASE}/batch/enhance-existing`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ word_ids: chunks[i], engine: defaultEnhanceEngine })
+                });
+                const result = await res.json();
+                if (!result.success) {
+                    throw new Error(result.message || '批量补全失败');
+                }
+
+                success += result.data?.success?.length || 0;
+                failed += result.data?.failed?.length || 0;
+                skipped += result.data?.skipped?.length || 0;
+            }
+
+            await loadWords(currentPage);
+            clearSelection();
+            showToast(`批量补全完成：成功 ${success}，跳过 ${skipped}，失败 ${failed}`);
+        } catch (error) {
+            showToast(`批量补全失败: ${error.message}`, 'error');
+        } finally {
+            if (triggerBtn) {
+                triggerBtn.disabled = false;
+                triggerBtn.innerHTML = originalText;
+            }
+        }
+    }
+
+    async function batchEnhanceSelectedWords() {
+        const ids = getSelectedIds();
+        if (ids.length === 0) {
+            showToast('请先选择要补全的单词', 'error');
+            return;
+        }
+        await runBatchEnhance(ids, '已选');
+    }
+
+    async function batchEnhanceCurrentFilter() {
+        try {
+            let filteredWords = await fetchAllFilteredWordsForEnhance();
+            const imageFilter = document.getElementById('filter-image').value;
+            if (imageFilter === 'with') filteredWords = filteredWords.filter(w => w.image_url);
+            if (imageFilter === 'without') filteredWords = filteredWords.filter(w => !w.image_url);
+            const ids = filteredWords.filter(needsAiEnhance).map(item => item.id);
+            await runBatchEnhance(ids, '当前筛选结果');
+        } catch (error) {
+            showToast(`加载筛选结果失败: ${error.message}`, 'error');
+        }
     }
 
     function renderWords(words, pagination) {
@@ -334,70 +741,104 @@
         updateBatchActions();
 
         if (words.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="15" class="px-6 py-8 text-center text-gray-500">暂无单词数据</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" class="px-6 py-8 text-center text-gray-500">暂无单词数据</td></tr>';
             return;
         }
 
         tbody.innerHTML = words.map(w => {
-            const sw = escHtml(w.word);
-            const st = escHtml(w.translation);
+            const sw = escHtml(w.word || '');
+            const st = escHtml(w.translation || '');
             const se = escHtml(w.example_sentence || '');
+            const set = escHtml(w.example_translation || '');
             // onclick 内 JS 字符串需要独立转义
-            const jsw = escJs(w.word);
+            const jsw = escJs(w.word || '');
             const jse = escJs(w.example_sentence || '');
+            const categoryName = escHtml(w.category_name || '未分类');
+            const imageThumb = w.image_url
+                ? `<img src="${escHtml(w.image_url)}" class="word-cover" onerror="this.outerHTML='<div class=&quot;word-cover-placeholder&quot;>📷</div>'">`
+                : `<div class="word-cover-placeholder">📷</div>`;
+            const exampleThumb = w.example_image_url
+                ? `<img src="${escHtml(w.example_image_url)}" class="example-thumb cursor-pointer hover:border-orange-400" onclick="previewFullImage('${escJs(w.example_image_url)}')" title="点击查看大图">`
+                : `<div class="example-thumb flex items-center justify-center text-gray-300 border-dashed">${w.example_sentence ? '<button class="text-orange-500 hover:text-orange-700 text-xs" onclick="quickGenExImage(' + w.id + ', this)">🎨+</button>' : '—'}</div>`;
+            const audioChips = [
+                renderAudioChip('中词', w.translation_audio_url, {
+                    color: 'blue',
+                    onMissing: `quickGenCnAudio(${w.id}, 'translation', this)`,
+                    disabled: !w.translation
+                }),
+                renderAudioChip('女声', w.audio_url_female, {
+                    color: 'pink',
+                    onMissing: `quickGenAudio(${w.id}, '${jsw}', 'female', this)`
+                }),
+                renderAudioChip('男声', w.audio_url_male, {
+                    color: 'blue',
+                    onMissing: `quickGenAudio(${w.id}, '${jsw}', 'male', this)`
+                }),
+                renderAudioChip('中句', w.example_translation_audio_url, {
+                    color: 'blue',
+                    onMissing: `quickGenCnAudio(${w.id}, 'example_translation', this)`,
+                    disabled: !w.example_translation
+                }),
+                renderAudioChip('例♀', w.example_audio_female, {
+                    color: 'pink',
+                    onMissing: `quickGenExAudio(${w.id}, '${jse}', 'female', this)`,
+                    disabled: !w.example_sentence
+                }),
+                renderAudioChip('例♂', w.example_audio_male, {
+                    color: 'blue',
+                    onMissing: `quickGenExAudio(${w.id}, '${jse}', 'male', this)`,
+                    disabled: !w.example_sentence
+                })
+            ].join('');
+
             return `
             <tr class="hover:bg-gray-50 transition-colors" data-word-id="${w.id}">
                 <td class="px-2 py-3 text-center">
                     <input type="checkbox" class="word-checkbox w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer" value="${w.id}" onchange="updateBatchActions()">
                 </td>
-                <td class="px-4 py-3">
-                    ${w.image_url
-                ? `<img src="${escHtml(w.image_url)}" style="width:48px;height:48px;min-width:48px;object-fit:cover;" class="rounded-lg border border-gray-200" onerror="this.style.display='none'">`
-                : `<div style="width:48px;height:48px;min-width:48px;" class="bg-gray-100 rounded-lg flex items-center justify-center text-lg border border-gray-200 text-gray-300">📷</div>`}
+                <td class="px-4 py-4 align-top">
+                    <div class="word-row-card">
+                        ${imageThumb}
+                        <div class="min-w-0">
+                            <div class="word-meta-title">
+                                <span class="text-lg font-bold text-slate-900">${sw}</span>
+                                ${w.phonetic ? `<span class="font-mono text-xs text-slate-500 bg-slate-100 rounded-full px-3 py-1">${escHtml(w.phonetic)}</span>` : '<span class="font-mono text-xs text-slate-300 bg-slate-50 rounded-full px-3 py-1">无音标</span>'}
+                            </div>
+                            <div class="text-sm text-slate-700">${st}</div>
+                            <div class="word-meta-badges">
+                                <span class="mini-badge">${categoryName}</span>
+                                <span class="mini-badge bg-orange-50 text-orange-600">ID ${w.id}</span>
+                            </div>
+                        </div>
+                    </div>
                 </td>
-                <td class="px-4 py-3 font-bold text-gray-900">${sw}</td>
-                <td class="px-4 py-3 text-gray-500 font-mono text-xs">${escHtml(w.phonetic) || '-'}</td>
-                <td class="px-4 py-3 text-gray-700 text-sm">${st}</td>
-                <td class="px-4 py-3"><span class="px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-xs">${escHtml(w.category_name) || '-'}</span></td>
-                <td class="px-4 py-3 text-center">
-                    ${w.audio_url_female
-                ? `<button class="text-pink-500 hover:text-pink-700" onclick="playAudio('${escJs(w.audio_url_female)}')"><i class="fas fa-volume-up"></i></button>`
-                : `<button class="text-gray-300 hover:text-pink-600 text-xs" onclick="quickGenAudio(${w.id}, '${jsw}', 'female', this)">♀+</button>`}
+                <td class="px-4 py-4 align-top">
+                    <div class="word-section-title">音频资源</div>
+                    <div class="audio-chip-grid">${audioChips}</div>
                 </td>
-                <td class="px-4 py-3 text-center">
-                    ${w.audio_url_male
-                ? `<button class="text-blue-500 hover:text-blue-700" onclick="playAudio('${escJs(w.audio_url_male)}')"><i class="fas fa-volume-up"></i></button>`
-                : `<button class="text-gray-300 hover:text-blue-600 text-xs" onclick="quickGenAudio(${w.id}, '${jsw}', 'male', this)">♂+</button>`}
+                <td class="px-4 py-4 align-top">
+                    <div class="example-card">
+                        <div class="word-section-title">例句内容</div>
+                        <div class="flex gap-3 items-start">
+                            ${exampleThumb}
+                            <div class="min-w-0 flex-1">
+                                <div class="text-sm text-slate-800 font-medium break-words">${se || '<span class="text-slate-300">暂无例句</span>'}</div>
+                                <div class="text-xs text-slate-500 mt-2 break-words">${set || '<span class="text-slate-300">暂无中文例句</span>'}</div>
+                            </div>
+                        </div>
+                    </div>
                 </td>
-                <td class="px-4 py-3 text-xs text-gray-600" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${se}">${se || '-'}</td>
-                <td class="px-4 py-3 text-center">
-                    ${w.example_image_url
-                ? `<img src="${escHtml(w.example_image_url)}" style="width:40px;height:40px;min-width:40px;object-fit:cover;margin:0 auto;" class="rounded border border-gray-200 cursor-pointer hover:border-orange-400" onclick="previewFullImage('${escJs(w.example_image_url)}')" title="点击查看大图">`
-                : w.example_sentence
-                    ? `<button class="text-gray-300 hover:text-orange-600 text-xs" onclick="quickGenExImage(${w.id}, this)" title="AI生成例句图">🎨+</button>`
-                    : '<span class="text-gray-300">-</span>'}
+                <td class="px-3 py-4 align-top">
+                    <div class="stats-stack">
+                        ${renderStatCard('浏览量', w.view_count, 'blue')}
+                    </div>
                 </td>
-                <td class="px-4 py-3 text-center">
-                    ${w.example_audio_female
-                ? `<button class="text-pink-500 hover:text-pink-700" onclick="playAudio('${escJs(w.example_audio_female)}')"><i class="fas fa-volume-up text-xs"></i></button>`
-                : w.example_sentence
-                    ? `<button class="text-gray-300 hover:text-pink-600 text-xs" onclick="quickGenExAudio(${w.id}, '${jse}', 'female', this)">♀+</button>`
-                    : '<span class="text-gray-300">-</span>'}
+                <td class="px-3 py-4 align-top">
+                    <div class="stats-stack">
+                        ${renderStatCard('评测数', w.assess_count, 'green')}
+                    </div>
                 </td>
-                <td class="px-4 py-3 text-center">
-                    ${w.example_audio_male
-                ? `<button class="text-blue-500 hover:text-blue-700" onclick="playAudio('${escJs(w.example_audio_male)}')"><i class="fas fa-volume-up text-xs"></i></button>`
-                : w.example_sentence
-                    ? `<button class="text-gray-300 hover:text-blue-600 text-xs" onclick="quickGenExAudio(${w.id}, '${jse}', 'male', this)">♂+</button>`
-                    : '<span class="text-gray-300">-</span>'}
-                </td>
-                <td class="px-3 py-3 text-center">
-                    <span class="text-xs font-medium ${w.view_count > 0 ? 'text-blue-600' : 'text-gray-300'}">${w.view_count || 0}</span>
-                </td>
-                <td class="px-3 py-3 text-center">
-                    <span class="text-xs font-medium ${w.assess_count > 0 ? 'text-green-600' : 'text-gray-300'}">${w.assess_count || 0}</span>
-                </td>
-                <td class="px-4 py-3 text-right" style="white-space:nowrap;">
+                <td class="px-4 py-4 text-right align-top" style="white-space:nowrap;">
                     <button class="text-blue-600 hover:text-blue-800 mr-2" onclick="openWordModal(${w.id})" title="编辑"><i class="fas fa-edit"></i></button>
                     <button class="text-red-500 hover:text-red-700" onclick="deleteWord(${w.id})" title="删除"><i class="fas fa-trash"></i></button>
                 </td>
@@ -484,6 +925,7 @@
     // ==================== Quick Audio (from list) ====================
 
     async function quickGenAudio(id, word, voice, btn) {
+        const original = btn.innerHTML;
         btn.disabled = true;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin text-xs"></i>';
         try {
@@ -499,16 +941,17 @@
             } else {
                 showToast(result.message || '生成失败', 'error');
                 btn.disabled = false;
-                btn.textContent = voice === 'male' ? '♂+' : '♀+';
+                btn.innerHTML = original;
             }
         } catch (e) {
             showToast('生成失败: ' + e.message, 'error');
             btn.disabled = false;
-            btn.textContent = voice === 'male' ? '♂+' : '♀+';
+            btn.innerHTML = original;
         }
     }
 
     async function quickGenExAudio(id, sentence, voice, btn) {
+        const original = btn.innerHTML;
         btn.disabled = true;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin text-xs"></i>';
         try {
@@ -524,12 +967,41 @@
             } else {
                 showToast(result.message || '生成失败', 'error');
                 btn.disabled = false;
-                btn.textContent = voice === 'male' ? '♂+' : '♀+';
+                btn.innerHTML = original;
             }
         } catch (e) {
             showToast('生成失败: ' + e.message, 'error');
             btn.disabled = false;
-            btn.textContent = voice === 'male' ? '♂+' : '♀+';
+            btn.innerHTML = original;
+        }
+    }
+
+    async function quickGenCnAudio(id, type, btn) {
+        const isExample = type === 'example_translation';
+        const original = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin text-xs"></i>';
+        try {
+            const endpoint = isExample
+                ? `${API_BASE}/words/${id}/generate-example-translation-audio`
+                : `${API_BASE}/words/${id}/generate-translation-audio`;
+            const res = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const result = await res.json();
+            if (result.success) {
+                showToast(isExample ? '中文例句发音生成成功' : '中文词义发音生成成功');
+                loadWords(currentPage);
+            } else {
+                showToast(result.message || '生成失败', 'error');
+                btn.disabled = false;
+                btn.innerHTML = original;
+            }
+        } catch (e) {
+            showToast('生成失败: ' + e.message, 'error');
+            btn.disabled = false;
+            btn.innerHTML = original;
         }
     }
 
@@ -625,6 +1097,11 @@
         const exPrev = document.getElementById('word-example-image-preview');
         if (exPrev) { exPrev.src = ''; exPrev.style.display = 'none'; }
         document.getElementById('word-audio-status').style.display = 'none';
+        ['audio-translation-label', 'audio-female-label', 'audio-male-label', 'audio-ex-translation-label', 'audio-ex-female-label', 'audio-ex-male-label']
+            .forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.innerHTML = '<span class="text-gray-400">-</span>';
+            });
         currentEditWord = null;
 
         if (id) {
@@ -685,8 +1162,10 @@
 
             // Show audio status
             document.getElementById('word-audio-status').style.display = 'block';
+            setAudioLabel('audio-translation-label', w.translation_audio_url, !w.translation);
             setAudioLabel('audio-female-label', w.audio_url_female);
             setAudioLabel('audio-male-label', w.audio_url_male);
+            setAudioLabel('audio-ex-translation-label', w.example_translation_audio_url, !w.example_translation);
             setAudioLabel('audio-ex-female-label', w.example_audio_female, !w.example_sentence);
             setAudioLabel('audio-ex-male-label', w.example_audio_male, !w.example_sentence);
         } catch (e) {
@@ -696,12 +1175,27 @@
 
     function setAudioLabel(elId, url, noSentence = false) {
         const el = document.getElementById(elId);
+        const regenMap = {
+            'audio-translation-label': 'generateTranslationVoice()',
+            'audio-female-label': "generateWordVoice('female')",
+            'audio-male-label': "generateWordVoice('male')",
+            'audio-ex-translation-label': 'generateExampleTranslationVoice()',
+            'audio-ex-female-label': "generateExVoice('female')",
+            'audio-ex-male-label': "generateExVoice('male')"
+        };
+        const regenAction = regenMap[elId] || '';
         if (noSentence) {
             el.innerHTML = '<span class="text-gray-400">-</span>';
         } else if (url) {
-            el.innerHTML = `<span class="text-green-600 cursor-pointer" onclick="playAudio('${escHtml(url)}')">✅ 已有 <i class="fas fa-play-circle text-xs"></i></span>`;
+            el.innerHTML = `<span class="audio-status-actions">
+                <button type="button" class="text-green-600 hover:text-green-700" onclick="playAudio('${escJs(url)}')"><i class="fas fa-play-circle text-xs mr-1"></i>播放</button>
+                ${regenAction ? `<button type="button" class="text-blue-600 hover:text-blue-700" onclick="${regenAction}"><i class="fas fa-sync-alt text-xs mr-1"></i>重新生成</button>` : ''}
+            </span>`;
         } else {
-            el.innerHTML = '<span class="text-red-500">❌ 无</span>';
+            el.innerHTML = `<span class="audio-status-actions">
+                <span class="text-red-500">无音频</span>
+                ${regenAction ? `<button type="button" class="text-blue-600 hover:text-blue-700" onclick="${regenAction}"><i class="fas fa-plus-circle text-xs mr-1"></i>生成</button>` : ''}
+            </span>`;
         }
     }
 
@@ -1038,6 +1532,72 @@
         } finally {
             btn.disabled = false;
             btn.textContent = voice === 'male' ? '📝 例句男声' : '📝 例句女声';
+        }
+    }
+
+    async function generateTranslationVoice() {
+        const translation = document.getElementById('word-translation').value.trim();
+        if (!translation) { showToast('请先填写中文词义', 'error'); return; }
+
+        const btn = document.getElementById('btn-ai-voice-cn');
+        btn.disabled = true;
+        btn.textContent = '🇨🇳 生成中...';
+
+        try {
+            const wordId = await ensureWordIdBeforeAudio();
+            if (!wordId) return;
+
+            const res = await fetch(`${API_BASE}/words/${wordId}/generate-translation-audio`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: translation })
+            });
+            const result = await res.json();
+            if (result.success) {
+                document.getElementById('word-audio-status').style.display = 'block';
+                setAudioLabel('audio-translation-label', result.data.audio_url);
+                showToast('中文词义发音生成成功');
+            } else {
+                showToast(result.message || '生成失败', 'error');
+            }
+        } catch (e) {
+            showToast('生成失败: ' + e.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '🇨🇳 词义发音';
+        }
+    }
+
+    async function generateExampleTranslationVoice() {
+        const exampleTranslation = document.getElementById('word-example-trans').value.trim();
+        if (!exampleTranslation) { showToast('请先填写中文例句', 'error'); return; }
+
+        const btn = document.getElementById('btn-ai-ex-cn');
+        btn.disabled = true;
+        btn.textContent = '🇨🇳 生成中...';
+
+        try {
+            const wordId = await ensureWordIdBeforeAudio();
+            if (!wordId) return;
+
+            const res = await fetch(`${API_BASE}/words/${wordId}/generate-example-translation-audio`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: exampleTranslation })
+            });
+            const result = await res.json();
+            if (result.success) {
+                document.getElementById('word-audio-status').style.display = 'block';
+                setAudioLabel('audio-ex-translation-label', result.data.audio_url);
+                showToast('中文例句发音生成成功');
+            } else {
+                showToast(result.message || '生成失败', 'error');
+            }
+        } catch (e) {
+            showToast('生成失败: ' + e.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '🇨🇳 例句发音';
         }
     }
 

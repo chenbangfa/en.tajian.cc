@@ -13,7 +13,7 @@ require('dotenv').config({ path: path.join(__dirname, '../.env') });
 const vertexAuth = require('../src/utils/vertex-auth');
 
 const app = express();
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '25mb' }));
 
 const PORT = process.env.PROXY_PORT || 3005;
 const API_KEY = process.env.PROXY_API_KEY;
@@ -54,11 +54,11 @@ let ttsLastRequestAt = 0;
 let ttsCooldownUntil = 0;
 const PROXY_IMAGE_MIN_INTERVAL_MS = Math.max(
     1000,
-    Number(process.env.PROXY_IMAGE_MIN_INTERVAL_MS || 30000)
+    Number(process.env.PROXY_IMAGE_MIN_INTERVAL_MS || 10000)
 );
 const PROXY_IMAGE_COOLDOWN_MS = Math.max(
     PROXY_IMAGE_MIN_INTERVAL_MS,
-    Number(process.env.PROXY_IMAGE_COOLDOWN_MS || 10 * 60 * 1000)
+    Number(process.env.PROXY_IMAGE_COOLDOWN_MS || 60 * 1000)
 );
 let imageQueue = Promise.resolve();
 let imageLastRequestAt = 0;
@@ -107,6 +107,45 @@ function mapProxyStatus(error) {
     }
     if (status >= 400 && status < 500) return status;
     return 500;
+}
+
+function normalizeGeminiBoxCoordinate(value, maxAbs) {
+    const n = Number(value) || 0;
+    // Gemini 有时会按 0-1 小数返回 bbox；主提示词要求 0-1000，这里两种都兼容。
+    return maxAbs <= 1.5 ? n : n / 1000;
+}
+
+function extractJsonArrayText(rawText = '') {
+    const cleaned = stripMarkdownJsonFence(rawText);
+    const first = cleaned.indexOf('[');
+    const last = cleaned.lastIndexOf(']');
+    if (first < 0 || last <= first) return cleaned;
+    return cleaned.slice(first, last + 1);
+}
+
+function parseGeminiJsonArray(rawText = '') {
+    const source = extractJsonArrayText(rawText);
+    const attempts = [
+        source,
+        source
+            .replace(/[“”]/g, '"')
+            .replace(/[‘’]/g, "'")
+            .replace(/,\s*([}\]])/g, '$1')
+            .replace(/}\s*{/g, '},{')
+            .replace(/(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)(?=\s*[\],])/g, '$1, $2')
+    ];
+
+    let lastError;
+    for (const candidate of attempts) {
+        try {
+            return JSON.parse(candidate);
+        } catch (error) {
+            lastError = error;
+        }
+    }
+    const err = new Error(lastError?.message || 'Gemini 未返回有效 JSON');
+    err.rawText = String(rawText || '').slice(0, 1000);
+    throw err;
 }
 
 function stripMarkdownJsonFence(rawText = '') {
@@ -785,11 +824,17 @@ app.post('/proxy/veo/poll', auth, async (req, res) => {
  */
 app.post('/proxy/enhance-word', auth, async (req, res) => {
     const { word, translation, prompt: customPrompt } = req.body;
+    const requestedEngine = String(req.body?.engine || 'gemini').trim().toLowerCase();
+    const hasDeepSeek = !!process.env.DEEPSEEK_API_KEY;
     if (!word) {
         return res.status(400).json({ success: false, error: '缺少 word 参数' });
     }
 
-    if (!vertexAuth.isConfigured) {
+    if (requestedEngine === 'deepseek' && !hasDeepSeek) {
+        return res.status(500).json({ success: false, error: '未配置 DeepSeek API' });
+    }
+
+    if (requestedEngine !== 'deepseek' && !vertexAuth.isConfigured) {
         return res.status(500).json({ success: false, error: '未配置 Vertex AI' });
     }
 
@@ -814,27 +859,52 @@ Respond ONLY with a valid JSON object:
   "grammar_explanation": "这是一个简单的主谓宾句式。I(主语)+like(谓语)+to eat apples(宾语)。"
 }`;
 
-        console.log(`[Proxy] 增强单词: ${word}`);
+        console.log(`[Proxy] 增强单词: ${word}, engine=${requestedEngine}`);
 
-        const headers = await vertexAuth.getAuthHeaders();
-        const response = await enqueueAnalyzeRequest(() => withRetry(
-            'enhance-word',
-            () => axios.post(
-                vertexAuth.getUrl('gemini-2.5-flash'),
+        let text = '';
+        if (requestedEngine === 'deepseek') {
+            const response = await axios.post(
+                'https://api.deepseek.com/chat/completions',
                 {
-                    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-                    generationConfig: { temperature: 0.3, maxOutputTokens: 1024 }
+                    model: 'deepseek-chat',
+                    messages: [
+                        { role: 'system', content: 'You are a JSON-only assistant. Return ONLY valid JSON, no markdown, no explanation.' },
+                        { role: 'user', content: prompt }
+                    ],
+                    temperature: 0.2,
+                    max_tokens: 1024,
+                    response_format: { type: 'json_object' }
                 },
-                { headers, timeout: 30000 }
-            ),
-            { maxAttempts: 2, baseDelayMs: 30000, retryOnRateLimit: false }
-        ));
+                {
+                    headers: {
+                        'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: 60000
+                }
+            );
+            text = response.data?.choices?.[0]?.message?.content || '';
+        } else {
+            const headers = await vertexAuth.getAuthHeaders();
+            const response = await enqueueAnalyzeRequest(() => withRetry(
+                'enhance-word',
+                () => axios.post(
+                    vertexAuth.getUrl('gemini-2.5-flash'),
+                    {
+                        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                        generationConfig: { temperature: 0.3, maxOutputTokens: 1024 }
+                    },
+                    { headers, timeout: 30000 }
+                ),
+                { maxAttempts: 2, baseDelayMs: 30000, retryOnRateLimit: false }
+            ));
+            text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        }
 
-        const text = response.data.candidates?.[0]?.content?.parts?.[0]?.text;
         if (text) {
-            const jsonMatch = text.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-                const data = JSON.parse(jsonMatch[0]);
+            const jsonText = extractJsonObjectText(text);
+            if (jsonText) {
+                const data = JSON.parse(jsonText);
                 console.log(`[Proxy] 单词增强成功: ${word}`);
                 return res.json({ success: true, data });
             }
@@ -960,7 +1030,7 @@ Text:
 ${chunkText}`;
 }
 
-async function analyzeChunk(chunkText) {
+async function analyzeChunkWithGemini(chunkText) {
     const headers = await vertexAuth.getAuthHeaders();
     const response = await enqueueAnalyzeRequest(() => withRetry(
         'analyze-podcast',
@@ -968,7 +1038,7 @@ async function analyzeChunk(chunkText) {
             vertexAuth.getUrl('gemini-2.5-flash'),
             {
                 contents: [{ role: 'user', parts: [{ text: buildAnalyzePrompt(chunkText) }] }],
-                generationConfig: { temperature: 0.2, maxOutputTokens: 8192 }
+                generationConfig: { temperature: 0.2, maxOutputTokens: 8192, responseMimeType: 'application/json' }
             },
             { headers, timeout: 90000 }
         ),
@@ -979,10 +1049,43 @@ async function analyzeChunk(chunkText) {
     return parsed.sentences;
 }
 
+async function analyzeChunkWithDeepSeek(chunkText) {
+    const response = await axios.post(
+        'https://api.deepseek.com/chat/completions',
+        {
+            model: 'deepseek-chat',
+            messages: [
+                { role: 'system', content: 'You are a JSON-only assistant. Return ONLY valid JSON, no markdown, no explanation.' },
+                { role: 'user', content: buildAnalyzePrompt(chunkText) }
+            ],
+            temperature: 0,
+            max_tokens: 8192,
+            response_format: { type: 'json_object' }
+        },
+        {
+            headers: {
+                'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+                'Content-Type': 'application/json'
+            },
+            timeout: 90000
+        }
+    );
+    const parsed = JSON.parse(extractJsonObjectText(response.data.choices?.[0]?.message?.content || ''));
+    if (!Array.isArray(parsed.sentences)) throw new Error('AI返回格式错误');
+    return parsed.sentences;
+}
+
 app.post('/proxy/analyze-podcast', auth, async (req, res) => {
     const { text } = req.body;
+    const requestedEngine = String(req.body?.engine || 'deepseek').trim().toLowerCase();
+    const hasDeepSeek = !!process.env.DEEPSEEK_API_KEY;
+    const engine = requestedEngine === 'gemini'
+        ? 'gemini'
+        : (hasDeepSeek ? 'deepseek' : 'gemini');
     if (!text) return res.status(400).json({ success: false, error: '缺少 text 参数' });
-    if (!vertexAuth.isConfigured) return res.status(500).json({ success: false, error: '未配置 Vertex AI' });
+    if (!vertexAuth.isConfigured && !hasDeepSeek) {
+        return res.status(500).json({ success: false, error: '未配置 AI 引擎（Vertex AI 或 DeepSeek）' });
+    }
 
     try {
         // 按句子分割，每块不超过 PODCAST_CHUNK_SIZE 句，避免输出超出 token 限制
@@ -992,16 +1095,18 @@ app.post('/proxy/analyze-podcast', auth, async (req, res) => {
             chunks.push(sentenceList.slice(i, i + PODCAST_CHUNK_SIZE).join('').trim());
         }
 
-        console.log(`[Proxy] 分析播客, 文本长度: ${text.length}, 分 ${chunks.length} 块处理`);
+        console.log(`[Proxy] 分析播客, engine=${engine}, 文本长度: ${text.length}, 分 ${chunks.length} 块处理`);
 
         const allSentences = [];
         for (const chunk of chunks) {
-            const sentences = await analyzeChunk(chunk);
+            const sentences = engine === 'deepseek'
+                ? await analyzeChunkWithDeepSeek(chunk)
+                : await analyzeChunkWithGemini(chunk);
             allSentences.push(...sentences);
         }
 
         console.log(`[Proxy] 播客分析成功, ${allSentences.length} 句`);
-        res.json({ success: true, sentences: allSentences });
+        res.json({ success: true, sentences: allSentences, engine });
     } catch (error) {
         const up = getUpstreamError(error);
         const status = mapProxyStatus(error);
@@ -1132,6 +1237,152 @@ app.post('/proxy/analyze-picturebook-words', auth, async (req, res) => {
         res.status(status).json({
             success: false,
             error: friendlyMessage,
+            code: up.code,
+            retryAfterMs: status === 429 && retryAfterMs > 0 ? retryAfterMs : undefined
+        });
+    }
+});
+
+// ==================== 海报卡片 bbox 识别 ====================
+
+/**
+ * POST /proxy/detect-cards
+ * body: {
+ *   imageData: string (base64, 不含 data: 前缀),
+ *   mimeType: string,
+ *   expectedColumns: number,
+ *   expectedCount: number,
+ *   expectedRows?: number
+ * }
+ * response: { success, cards: [{row, col, rect:{x,y,w,h} (%)}] }
+ */
+app.post('/proxy/detect-cards', auth, async (req, res) => {
+    const {
+        imageData,
+        mimeType = 'image/jpeg',
+        expectedColumns = 4,
+        expectedCount = 0,
+        expectedRows
+    } = req.body || {};
+
+    if (!imageData) {
+        return res.status(400).json({ success: false, error: '缺少 imageData 参数' });
+    }
+    if (!vertexAuth.isConfigured) {
+        return res.status(500).json({ success: false, error: '未配置 Vertex AI' });
+    }
+
+    const cols = Math.max(parseInt(expectedColumns, 10) || 4, 1);
+    const count = Math.max(parseInt(expectedCount, 10) || 0, 0);
+    const rows = Math.max(
+        parseInt(expectedRows, 10) || Math.ceil((count || cols) / cols),
+        1
+    );
+
+    const expectedDesc = count > 0
+        ? `图中大约有 ${count} 张卡片，按 ${cols} 列 × ${rows} 行的网格排布。`
+        : `图中卡片大约按 ${cols} 列排布。`;
+
+    const prompt = `你在分析一张英语学习信息图海报。请识别图中"每一张独立的词汇卡片"的矩形边界框（只要是一张卡片就输出一条，不要合并成整块网格，也不要把标题、背景、装饰当作卡片）。
+
+${expectedDesc}
+请只输出一个 JSON 数组，不要 markdown、注释、说明文字，也不要输出示例值。
+数组中每个元素必须是对象，只允许包含这三个字段：
+- row: 整数，从 0 开始，从上到下递增
+- col: 整数，从 0 开始，从左到右递增
+- box: 长度为 4 的数字数组，顺序为 [ymin, xmin, ymax, xmax]
+
+要求：
+1. box 的四个数字使用 0-1000 的整数归一化坐标（相对于整张图片的高/宽），顺序严格为 [ymin, xmin, ymax, xmax]。
+2. row 从 0 开始从上到下递增；col 从 0 开始从左到右递增；按 row 升序、再 col 升序排列。
+3. 每张卡片的 bbox 要紧贴卡片外边框（包含卡片的圆角边框，但不要把卡片之间的间隙也框进去）。
+4. 如果卡片之间列宽、行高本身不一致，请按实际位置返回，不要强行对齐。
+5. 不要返回标题、背景、装饰元素，只返回卡片本身。
+6. 必须输出完整、可 JSON.parse 的数组；所有对象和数字之间必须有英文逗号。`;
+
+    try {
+        const headers = await vertexAuth.getAuthHeaders();
+        const response = await enqueueAnalyzeRequest(() => withRetry(
+            'detect-cards',
+            () => axios.post(
+                vertexAuth.getUrl('gemini-2.5-flash'),
+                {
+                    contents: [{
+                        role: 'user',
+                        parts: [
+                            { text: prompt },
+                            { inline_data: { mime_type: mimeType, data: imageData } }
+                        ]
+                    }],
+                    generationConfig: {
+                        temperature: 0,
+                        responseMimeType: 'application/json',
+                        maxOutputTokens: 8192
+                    }
+                },
+                { headers, timeout: 60000 }
+            ),
+            { maxAttempts: 2, baseDelayMs: 20000, retryOnRateLimit: false }
+        ));
+
+        const text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const parsed = parseGeminiJsonArray(text);
+
+        if (!Array.isArray(parsed) || !parsed.length) {
+            return res.status(500).json({ success: false, error: 'Gemini 未识别到任何卡片' });
+        }
+
+        const cards = parsed
+            .map((item) => {
+                const box = item.box || item.bbox || [];
+                const [ymin, xmin, ymax, xmax] = box.map((n) => Number(n) || 0);
+                if (xmax <= xmin || ymax <= ymin) return null;
+                const maxAbs = Math.max(Math.abs(ymin), Math.abs(xmin), Math.abs(ymax), Math.abs(xmax));
+                const nxMin = normalizeGeminiBoxCoordinate(xmin, maxAbs);
+                const nyMin = normalizeGeminiBoxCoordinate(ymin, maxAbs);
+                const nxMax = normalizeGeminiBoxCoordinate(xmax, maxAbs);
+                const nyMax = normalizeGeminiBoxCoordinate(ymax, maxAbs);
+                const cx = Math.max(0, Math.min(1, nxMin));
+                const cy = Math.max(0, Math.min(1, nyMin));
+                const cw = Math.max(0, Math.min(1 - cx, nxMax - nxMin));
+                const ch = Math.max(0, Math.min(1 - cy, nyMax - nyMin));
+                return {
+                    row: Number.isFinite(Number(item.row)) ? parseInt(item.row, 10) : 0,
+                    col: Number.isFinite(Number(item.col)) ? parseInt(item.col, 10) : 0,
+                    rect: {
+                        x: Number((cx * 100).toFixed(4)),
+                        y: Number((cy * 100).toFixed(4)),
+                        w: Number((cw * 100).toFixed(4)),
+                        h: Number((ch * 100).toFixed(4))
+                    }
+                };
+            })
+            .filter(Boolean);
+
+        cards.sort((a, b) => {
+            const ay = a.rect.y + a.rect.h / 2;
+            const by = b.rect.y + b.rect.h / 2;
+            const rowGap = Math.max(a.rect.h, b.rect.h) * 0.5;
+            if (Math.abs(ay - by) > rowGap) return ay - by;
+            return (a.rect.x + a.rect.w / 2) - (b.rect.x + b.rect.w / 2);
+        });
+
+        console.log(`[Proxy] detect-cards ok, ${cards.length} cards (expected ${count || '?'})`);
+        res.json({ success: true, cards, rawCount: parsed.length });
+    } catch (error) {
+        const up = getUpstreamError(error);
+        const status = mapProxyStatus(error);
+        const retryAfterMs = error.retryAfterMs || (status === 429 ? getAnalyzeCooldownRemainingMs() : 0);
+        console.error('[Proxy] detect-cards error:', status, up.code, up.message);
+        if (error.rawText) {
+            console.error('[Proxy] detect-cards raw response:', error.rawText);
+        }
+        if (status === 429 && retryAfterMs > 0) {
+            res.set('Retry-After', String(Math.max(1, Math.ceil(retryAfterMs / 1000))));
+        }
+        res.status(status).json({
+            success: false,
+            error: up.message,
             code: up.code,
             retryAfterMs: status === 429 && retryAfterMs > 0 ? retryAfterMs : undefined
         });

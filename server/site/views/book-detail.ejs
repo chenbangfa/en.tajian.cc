@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><%- include('partials/head', { metaTitle, metaDescription, metaKeywords, canonicalUrl, metaImage }) %></head>
+<body data-page="book-detail">
+  <div class="site-shell">
+    <%- include('partials/header', { ctaHref: '#book-mini-program', ctaLabel: '扫码读这本书' }) %>
+    <main>
+      <section class="detail-hero-section">
+        <div class="container detail-hero-card">
+          <div class="detail-cover">
+            <% if (book.cover_url) { %><img src="<%= book.cover_url %>" alt="<%= book.title || '绘本封面' %>"><% } else { %><div class="cover-placeholder large"><span><%= (book.title_en || book.title || 'Book').slice(0, 2).toUpperCase() %></span></div><% } %>
+          </div>
+          <div class="detail-copy">
+            <a class="crumb" href="/books">← 返回绘本馆</a>
+            <span class="eyebrow"><%= book.category_name || 'Picture Book' %></span>
+            <h1><%= book.title || '绘本详情' %></h1>
+            <p class="en-title"><%= book.title_en || '' %></p>
+            <div class="pill-row"><span>Lv.<%= book.difficulty_level || 3 %></span><span><%= book.page_count || pages.length || 0 %> pages</span><span><%= book.is_free ? '免费内容' : '会员内容' %></span></div>
+            <p><%= book.description || '这本绘本把画面、故事和英语表达连在一起，让孩子在有内容的阅读里理解语言。' %></p>
+            <div class="hero-actions"><a class="primary-btn" href="#book-mini-program">扫码读这本书</a><a class="secondary-btn" href="/books">更多绘本</a></div>
+          </div>
+        </div>
+      </section>
+      <section class="container detail-layout">
+        <div class="detail-main">
+          <h2>正文预览</h2>
+          <div class="page-list">
+            <% previewPages.forEach(page => { %>
+              <article class="page-item">
+                <div class="page-thumb"><% if (page.image_url) { %><img src="<%= page.image_url %>" alt="Page <%= page.page_number %>"><% } else { %><span>P<%= page.page_number %></span><% } %></div>
+                <div><strong>Page <%= page.page_number %></strong><p><%= page.text_en || '' %></p><% if (page.text_cn) { %><small><%= page.text_cn %></small><% } %></div>
+              </article>
+            <% }) %>
+          </div>
+          <% if (relatedBooks && relatedBooks.length) { %>
+            <h2>继续看同类型内容</h2>
+            <div class="content-grid compact"><% relatedBooks.forEach(item => { %><%- include('partials/book-card', { book: item }) %><% }) %></div>
+          <% } %>
+        </div>
+        <aside class="detail-aside" id="book-mini-program">
+          <div class="sticky-card">
+            <h3>小程序继续阅读</h3>
+            <div class="qr-card"><img id="book-mini-qr" class="qr-image" alt="绘本小程序码" hidden><div class="qr-pattern" data-qr-pattern></div><div class="qr-loading" data-qr-loading>正在加载小程序码...</div></div>
+            <p>扫码后直接进入这本绘本，继续点读、听音频和跟读。</p>
+          </div>
+        </aside>
+      </section>
+    </main>
+    <%- include('partials/footer', {}) %>
+  </div>
+  <script>window.__SITE_INITIAL__ = <%- JSON.stringify(initialState) %>;</script>
+  <script src="/assets/site.js"></script>
+</body>
+</html>

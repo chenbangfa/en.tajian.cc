@@ -1,0 +1,43 @@
+<view class="day-page day-overview-page">
+  <view class="day-hero" wx:if="{{day.id}}">
+    <view class="day-kicker">Day {{day.day_number}}</view>
+    <view class="day-title">{{day.title}}</view>
+    <view class="day-objective">{{day.objective}}</view>
+    <view class="summary-bar">
+      <view class="summary-fill" style="width: {{summary.required_count > 0 ? summary.completed_required * 100 / summary.required_count : 0}}%"></view>
+    </view>
+    <view class="summary-text">必修完成 {{summary.completed_required}} / {{summary.required_count}}</view>
+  </view>
+
+  <view class="overview-section" wx:if="{{modules.length}}">
+    <view class="overview-head">
+      <view>
+        <view class="overview-kicker">TODAY TASKS</view>
+        <view class="overview-title">今日目标</view>
+      </view>
+      <view class="overview-count">{{summary.completed_required}}/{{summary.required_count}}</view>
+    </view>
+
+    <view class="module-entry {{item.progress.completed ? 'done' : ''}}" wx:for="{{modules}}" wx:key="id" bindtap="openModuleTask" data-id="{{item.id}}">
+      <view class="module-entry-left">
+        <view class="module-entry-index {{item.progress.completed ? 'done' : ''}}">{{item.sort_order}}</view>
+        <view class="module-entry-copy">
+          <view class="module-entry-title">{{item.title}}</view>
+          <view class="module-entry-meta">
+            <text>{{item.type_label || item.module_type}}</text>
+            <text wx:if="{{item.item_summary}}"> · 任务 {{item.item_summary.completed_required}}/{{item.item_summary.required_count}}</text>
+            <text> · {{item.estimated_minutes || 0}} 分钟</text>
+          </view>
+        </view>
+      </view>
+      <view class="module-entry-status {{item.progress.completed ? 'done' : ''}}">
+        {{item.progress.completed ? '已完成' : '进入'}}
+      </view>
+    </view>
+  </view>
+
+  <view class="next-card" wx:if="{{summary.complete && day.preview_next}}">
+    <view class="next-title">今日已合格</view>
+    <view class="next-text">{{day.preview_next}}</view>
+  </view>
+</view>

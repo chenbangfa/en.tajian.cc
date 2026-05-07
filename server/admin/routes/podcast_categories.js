@@ -1,27 +1,15 @@
 const express = require('express');
 const router = express.Router();
 const { query } = require('../../src/config/database');
+const { getPodcastCategorySnapshot } = require('../utils/podcast-category-tree');
 
 // 获取分类树
 router.get('/', async (req, res) => {
     try {
-        // 获取一级分类
-        const categories = await query(
-            'SELECT * FROM podcast_categories WHERE parent_id = 0 ORDER BY sort_order ASC, created_at DESC'
-        );
-
-        // 获取每个一级分类的子分类
-        for (let cat of categories) {
-            const subCategories = await query(
-                'SELECT * FROM podcast_categories WHERE parent_id = ? ORDER BY sort_order ASC, created_at DESC',
-                [cat.id]
-            );
-            cat.children = subCategories;
-        }
-
+        const snapshot = await getPodcastCategorySnapshot(query);
         res.json({
             success: true,
-            data: categories
+            data: snapshot
         });
     } catch (error) {
         console.error('获取播客分类失败:', error);

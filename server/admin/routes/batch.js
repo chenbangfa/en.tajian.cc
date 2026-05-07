@@ -1,9 +1,21 @@
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
 const { query, transaction } = require('../../src/config/database');
 const aiService = require('../../src/services/ai.service');
 const voiceService = require('../../src/services/voice.service');
 
 const router = express.Router();
+
+function deleteLocalFile(filePath) {
+    if (!filePath || !String(filePath).startsWith('/uploads/')) return;
+    const fullPath = path.join(__dirname, '../../', filePath);
+    fs.unlink(fullPath, (err) => {
+        if (err && err.code !== 'ENOENT') {
+            console.error(`[删除文件失败] ${fullPath}:`, err.message);
+        }
+    });
+}
 
 /**
  * 优化的AI提示词生成器
@@ -116,6 +128,7 @@ IMPORTANT:
 router.post('/ai-enhance', async (req, res) => {
     try {
         let words = [];
+        const engine = String(req.body.engine || 'deepseek').trim().toLowerCase() === 'gemini' ? 'gemini' : 'deepseek';
 
         if (req.body.words && Array.isArray(req.body.words)) {
             // CSV 导入模式：直接接收解析后的数组
@@ -136,12 +149,13 @@ router.post('/ai-enhance', async (req, res) => {
         console.log(`[Batch] AI增强 ${words.length} 个单词...`);
 
         // 调用AI增强 - 现在返回 {results, promptUsed}
-        const { results: enhancedWords, promptUsed } = await aiService.batchEnhanceWords(words);
+        const { results: enhancedWords, promptUsed } = await aiService.batchEnhanceWords(words, null, engine);
 
         res.json({
             success: true,
             data: enhancedWords,
             promptUsed: promptUsed,
+            engine,
             message: `成功增强 ${enhancedWords.filter(w => !w.error).length} 个单词`
         });
     } catch (error) {
@@ -351,10 +365,20 @@ router.post('/generate-audio-single', async (req, res) => {
         // 如果有word_id，更新数据库（根据voice决定更新哪个字段）
         if (word_id) {
             const column = voice === 'male' ? 'audio_url_male' : 'audio_url_female';
+            const [oldRow] = await query(`SELECT ${column} AS old_audio_url FROM words WHERE id = ?`, [word_id]);
             await query(
                 `UPDATE words SET ${column} = ?, updated_at = NOW() WHERE id = ?`,
                 [audioResult.audioUrl, word_id]
             );
+            await query(
+                `UPDATE scene_objects SET ${column} = ? WHERE word_id = ?`,
+                [audioResult.audioUrl, word_id]
+            ).catch((error) => {
+                console.warn(`[Audio] 同步 scene_objects ${column} 失败: ${error.message}`);
+            });
+            if (oldRow?.old_audio_url && oldRow.old_audio_url !== audioResult.audioUrl) {
+                deleteLocalFile(oldRow.old_audio_url);
+            }
         }
 
         res.json({
@@ -397,10 +421,14 @@ router.post('/generate-example-audio', async (req, res) => {
         // 如果有word_id，更新数据库
         if (word_id) {
             const column = voice === 'male' ? 'example_audio_male' : 'example_audio_female';
+            const [oldRow] = await query(`SELECT ${column} AS old_audio_url FROM words WHERE id = ?`, [word_id]);
             await query(
                 `UPDATE words SET ${column} = ?, updated_at = NOW() WHERE id = ?`,
                 [audioResult.audioUrl, word_id]
             );
+            if (oldRow?.old_audio_url && oldRow.old_audio_url !== audioResult.audioUrl) {
+                deleteLocalFile(oldRow.old_audio_url);
+            }
         }
 
         res.json({
@@ -744,12 +772,12 @@ NO text, labels, or watermarks in the image.`;
 });
 
 /**
- * 批量 AI 补全已有单词（音标 / 例句翻译）
+ * 批量 AI 补全已有单词（音标 / 例句 / 例句翻译 / 语法详解）
  *
  * 规则：
- *   - content_type = 'word'   : 缺音标 → 补音标；有例句无翻译 → 补例句翻译；无例句 → 生成例句+翻译
- *   - content_type = 'phrase' : 不补音标；有例句无翻译 → 补例句翻译；无例句 → 生成例句+翻译
- *   - content_type = 'sentence': 不补音标；将 example_sentence（或 word 本身）翻译填入 example_translation
+ *   - content_type = 'word'   : 缺音标 / 缺例句 / 缺例句翻译 / 缺语法详解都补
+ *   - content_type = 'phrase' : 不补音标；缺例句 / 缺例句翻译 / 缺语法详解都补
+ *   - content_type = 'sentence': 不补例句；补中文翻译与语法详解
  *
  * body: { word_ids: number[] }
  */
@@ -769,9 +797,91 @@ function stripPinyin(text) {
     return result.trim();
 }
 
+function hasValue(value) {
+    return !!(value && String(value).trim());
+}
+
+function buildBatchEnhancePrompt(wordRow) {
+    const ct = wordRow.content_type || 'word';
+    const word = wordRow.word;
+    const translation = wordRow.translation || '';
+    const exampleSentence = wordRow.example_sentence || '';
+    const hasExample = hasValue(exampleSentence);
+    const needPhonetic = ct === 'word' && !hasValue(wordRow.phonetic);
+    const needExample = ct !== 'sentence' && !hasExample;
+    const needExampleTranslation = !hasValue(wordRow.example_translation);
+    const needGrammar = !hasValue(wordRow.grammar_explanation);
+
+    if (ct === 'sentence') {
+        const targetSentence = hasExample ? exampleSentence : word;
+        return `You are an English teacher creating concise learning materials for Chinese children (ages 5-10).
+
+For the English sentence "${targetSentence}", provide the missing study fields below.
+
+Requirements:
+- example_translation: natural Chinese translation, Chinese characters only, no pinyin
+- grammar_explanation: short Chinese explanation of sentence structure and key grammar points, 2-3 short sentences
+
+Respond ONLY with valid JSON in this format:
+{
+  "example_translation": "中文翻译",
+  "grammar_explanation": "简短语法说明"
+}`;
+    }
+
+    if (!hasExample) {
+        const basePrompt = ct === 'phrase'
+            ? `You are an English teacher creating learning materials for Chinese children (ages 5-10).
+
+For the English phrase "${word}"${translation ? ` (meaning: ${translation})` : ''}, generate a natural example sentence and the related study fields.
+
+Requirements:
+- example_sentence: simple and natural English sentence, max 12 words
+- example_translation: natural Chinese translation, Chinese characters only, no pinyin
+- grammar_explanation: short Chinese explanation of the sentence structure, 2-3 short sentences
+
+Respond ONLY with valid JSON in this format:
+{
+  "example_sentence": "Example sentence.",
+  "example_translation": "中文翻译",
+  "grammar_explanation": "简短语法说明"
+}`
+            : `You are an English teacher creating learning materials for Chinese children (ages 5-10).
+
+For the English word "${word}"${translation ? ` (meaning: ${translation})` : ''}, generate the missing study fields below.
+
+Requirements:
+${needPhonetic ? '- phonetic: IPA phonetic transcription\n' : ''}- example_sentence: simple and natural English sentence, max 10 words
+- example_translation: natural Chinese translation, Chinese characters only, no pinyin
+- grammar_explanation: short Chinese explanation of the sentence structure, 2-3 short sentences
+
+Respond ONLY with valid JSON in this format:
+{
+  ${needPhonetic ? '"phonetic": "/fəˈnɛtɪk/",\n  ' : ''}"example_sentence": "Example sentence.",
+  "example_translation": "中文翻译",
+  "grammar_explanation": "简短语法说明"
+}`;
+
+        return basePrompt;
+    }
+
+    return `You are an English teacher creating learning materials for Chinese children (ages 5-10).
+
+The study item is "${word}"${translation ? ` (${translation})` : ''}.
+Existing English example sentence: "${exampleSentence}".
+
+Please provide only the missing fields below:
+${needPhonetic ? '- phonetic: IPA phonetic transcription\n' : ''}${needExampleTranslation ? '- example_translation: natural Chinese translation, Chinese characters only, no pinyin\n' : ''}${needGrammar ? '- grammar_explanation: short Chinese explanation of the sentence structure, 2-3 short sentences\n' : ''}
+
+Respond ONLY with valid JSON in this format:
+{
+  ${needPhonetic ? '"phonetic": "/fəˈnɛtɪk/",\n  ' : ''}${needExampleTranslation ? '"example_translation": "中文翻译",\n  ' : ''}${needGrammar ? '"grammar_explanation": "简短语法说明"\n' : '"ok": true\n'}}`;
+}
+
 router.post('/enhance-existing', async (req, res) => {
     try {
         const { word_ids } = req.body;
+        const engine = String(req.body.engine || 'deepseek').trim().toLowerCase() === 'gemini' ? 'gemini' : 'deepseek';
         if (!Array.isArray(word_ids) || word_ids.length === 0) {
             return res.status(400).json({ success: false, message: '请提供单词ID列表' });
         }
@@ -779,79 +889,35 @@ router.post('/enhance-existing', async (req, res) => {
         const ids = word_ids.slice(0, 10);
 
         const words = await query(
-            `SELECT id, word, translation, phonetic, content_type, example_sentence, example_translation
+            `SELECT id, word, translation, phonetic, content_type, example_sentence, example_translation, grammar_explanation
              FROM words WHERE id IN (${ids.map(() => '?').join(',')})`,
             ids
         );
 
         const results = { success: [], failed: [], skipped: [] };
 
-        // 从数据库加载提示词模板（统一管理入口：后台 /prompts 页面）
-        const [tmplWord, tmplWordTranslate, tmplPhraseEnhance, tmplPhraseTranslate, tmplSentence] = await Promise.all([
-            aiService.getPromptTemplate('word_enhance'),
-            aiService.getPromptTemplate('word_translate'),
-            aiService.getPromptTemplate('phrase_enhance'),
-            aiService.getPromptTemplate('phrase_translate'),
-            aiService.getPromptTemplate('sentence_translate'),
-        ]);
-
         for (let i = 0; i < words.length; i++) {
             const w = words[i];
             const ct = w.content_type || 'word';
 
             // 判断需要补什么
-            const needPhonetic = !w.phonetic && ct === 'word';
-            const hasExample   = !!(w.example_sentence && w.example_sentence.trim());
-            const needExTrans  = !w.example_translation || !w.example_translation.trim();
+            const needPhonetic = !hasValue(w.phonetic) && ct === 'word';
+            const hasExample = hasValue(w.example_sentence);
+            const needExample = ct !== 'sentence' && !hasExample;
+            const needExTrans = !hasValue(w.example_translation);
+            const needGrammar = !hasValue(w.grammar_explanation);
 
             // sentence 类型：word 字段本身就是句子，直接翻译
             const isSentenceType = ct === 'sentence';
 
-            if (!needPhonetic && !needExTrans && !isSentenceType) {
+            if (!needPhonetic && !needExample && !needExTrans && !needGrammar) {
                 results.skipped.push({ id: w.id, word: w.word, reason: '字段已完整' });
                 continue;
             }
-            // sentence 类型已有翻译也跳过
-            if (isSentenceType && !needExTrans) {
-                results.skipped.push({ id: w.id, word: w.word, reason: '已有翻译' });
-                continue;
-            }
-
-            // 从数据库模板构建 prompt，模板不存在时使用兜底
-            let prompt;
-
-            if (isSentenceType) {
-                const toTranslate = hasExample ? w.example_sentence : w.word;
-                prompt = tmplSentence
-                    ? aiService.replaceTemplateVariables(tmplSentence, { sentence: toTranslate, translation: w.translation || '' })
-                    : `Translate this English sentence into natural Chinese for children (ages 5-10). IMPORTANT: Output ONLY Chinese characters, no pinyin.\nEnglish: "${toTranslate}"\nRespond ONLY with valid JSON: {"example_translation": "中文翻译"}`;
-
-            } else if (ct === 'phrase') {
-                if (hasExample && needExTrans) {
-                    prompt = tmplPhraseTranslate
-                        ? aiService.replaceTemplateVariables(tmplPhraseTranslate, { word: w.word, translation: w.translation || '', example_sentence: w.example_sentence })
-                        : `Translate this English example sentence to Chinese (ages 5-10). IMPORTANT: Output ONLY Chinese characters, no pinyin.\nPhrase: "${w.word}" (${w.translation})\nSentence: "${w.example_sentence}"\nRespond ONLY with valid JSON: {"example_translation": "中文翻译"}`;
-                } else {
-                    prompt = tmplPhraseEnhance
-                        ? aiService.replaceTemplateVariables(tmplPhraseEnhance, { word: w.word, translation: w.translation || '' })
-                        : `Generate a simple English example sentence (max 12 words) for the phrase "${w.word}" (${w.translation}) and translate it to Chinese. IMPORTANT: Chinese must be ONLY Chinese characters, no pinyin.\nRespond ONLY with valid JSON: {"example_sentence": "...", "example_translation": "中文翻译"}`;
-                }
-
-            } else {
-                // word 类型：用 word_enhance（含例句）或 word_translate（仅翻译已有例句）
-                if (hasExample && needExTrans && !needPhonetic) {
-                    prompt = tmplWordTranslate
-                        ? aiService.replaceTemplateVariables(tmplWordTranslate, { word: w.word, translation: w.translation || '', example_sentence: w.example_sentence })
-                        : `Translate this English example sentence to Chinese for children (ages 5-10). IMPORTANT: Output ONLY Chinese characters, no pinyin.\nWord: "${w.word}" (${w.translation})\nSentence: "${w.example_sentence}"\nRespond ONLY with valid JSON: {"example_translation": "中文翻译"}`;
-                } else {
-                    prompt = tmplWord
-                        ? aiService.replaceTemplateVariables(tmplWord, { word: w.word, translation: w.translation || '', existing_sentence: hasExample ? w.example_sentence : '' })
-                        : `You are an English teacher for children (ages 5-10). For "${w.word}"${w.translation ? ` (${w.translation})` : ''}, provide phonetic, example_sentence, example_translation. IMPORTANT: example_translation must be ONLY Chinese characters, no pinyin.\nRespond ONLY with valid JSON: {"phonetic": "/wɜːd/", "example_sentence": "I know this word.", "example_translation": "我知道这个单词。"}`;
-                }
-            }
+            const prompt = buildBatchEnhancePrompt(w);
 
             try {
-                const result = await aiService.enhanceWordData(w.word, w.translation, prompt);
+                const result = await aiService.enhanceWordData(w.word, w.translation, prompt, engine);
                 if (!result.success) {
                     results.failed.push({ id: w.id, word: w.word, error: result.error });
                 } else {
@@ -863,17 +929,14 @@ router.post('/enhance-existing', async (req, res) => {
                         sets.push('phonetic = ?'); params.push(d.phonetic);
                     }
                     // 不覆盖已有例句
-                    if (!hasExample && d.example_sentence) {
+                    if (needExample && d.example_sentence) {
                         sets.push('example_sentence = ?'); params.push(d.example_sentence);
                     }
                     if (needExTrans && d.example_translation) {
                         sets.push('example_translation = ?'); params.push(stripPinyin(d.example_translation));
                     }
-                    // sentence 类型：翻译放 example_translation
-                    if (isSentenceType && needExTrans && d.example_translation) {
-                        if (!sets.find(s => s.startsWith('example_translation'))) {
-                            sets.push('example_translation = ?'); params.push(stripPinyin(d.example_translation));
-                        }
+                    if (needGrammar && d.grammar_explanation) {
+                        sets.push('grammar_explanation = ?'); params.push(d.grammar_explanation.trim());
                     }
 
                     if (sets.length) {
@@ -882,7 +945,9 @@ router.post('/enhance-existing', async (req, res) => {
                         results.success.push({
                             id: w.id, word: w.word,
                             phonetic: d.phonetic || null,
-                            example_translation: d.example_translation || null
+                            example_sentence: d.example_sentence || null,
+                            example_translation: d.example_translation || null,
+                            grammar_explanation: d.grammar_explanation || null
                         });
                     } else {
                         results.skipped.push({ id: w.id, word: w.word, reason: 'AI返回空数据' });
@@ -892,13 +957,14 @@ router.post('/enhance-existing', async (req, res) => {
                 results.failed.push({ id: w.id, word: w.word, error: err.message });
             }
 
-            // 避免触发 Gemini 频率限制 (15 RPM，约 4s 间隔留余量)
+            // 批量补全保持顺序执行，降低 DeepSeek / Gemini 连续调用压力
             if (i < words.length - 1) await sleep(2000);
         }
 
         res.json({
             success: true,
             message: `补全完成：成功 ${results.success.length}，跳过 ${results.skipped.length}，失败 ${results.failed.length}`,
+            engine,
             data: results
         });
     } catch (error) {

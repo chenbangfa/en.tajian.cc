@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <%- include('partials/head', { metaTitle, metaDescription, metaKeywords, canonicalUrl, metaImage }) %>
+</head>
+<body data-page="<%= pageKey %>">
+  <div class="site-shell">
+    <%- include('partials/header', { ctaHref, ctaLabel }) %>
+    <main><%- body %></main>
+    <%- include('partials/footer', {}) %>
+  </div>
+  <% if (typeof initialState !== 'undefined') { %>
+  <script>window.__SITE_INITIAL__ = <%- JSON.stringify(initialState) %>;</script>
+  <% } %>
+  <script src="/assets/site.js"></script>
+</body>
+</html>

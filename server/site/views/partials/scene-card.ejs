@@ -1,0 +1,18 @@
+<article class="content-card scene-card">
+  <a class="content-cover" href="/scenes/<%= scene.id %>">
+    <% if (scene.image_url) { %>
+      <img src="<%= scene.image_url %>" alt="<%= scene.name || scene.name_en || '学习场景' %>" loading="lazy">
+    <% } else { %>
+      <div class="cover-placeholder"><span><%= (scene.name_en || scene.name || 'Scene').slice(0, 2).toUpperCase() %></span></div>
+    <% } %>
+  </a>
+  <div class="content-info">
+    <div class="pill-row">
+      <span><%= scene.category_name || 'Scene' %></span>
+      <span>Lv.<%= scene.difficulty_level || 3 %></span>
+    </div>
+    <h3><a href="/scenes/<%= scene.id %>"><%= scene.name || '学习场景' %></a></h3>
+    <p><%= scene.description || scene.name_en || '点击画面学习真实场景里的英语表达。' %></p>
+    <a class="circle-link" href="/scenes/<%= scene.id %>" aria-label="查看场景详情">›</a>
+  </div>
+</article>

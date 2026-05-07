@@ -28,6 +28,26 @@ function toAudioUrl(filePath) {
     return '/uploads/recordings/' + path.basename(filePath);
 }
 
+function cleanupUploadedFile(filePath) {
+    if (!filePath) return;
+    fs.unlink(filePath, () => {});
+}
+
+function inferAudioExt(file = {}) {
+    const originalExt = path.extname(file.originalname || '').toLowerCase();
+    if (originalExt) return originalExt;
+
+    const mime = String(file.mimetype || '').toLowerCase();
+    if (mime.includes('wav') || mime === 'application/octet-stream') return '.wav';
+    if (mime.includes('mpeg') || mime.includes('mp3')) return '.mp3';
+    if (mime.includes('m4a') || mime.includes('mp4')) return '.m4a';
+    if (mime.includes('aac')) return '.aac';
+    if (mime.includes('ogg')) return '.ogg';
+    if (mime.includes('webm')) return '.webm';
+    if (mime.startsWith('audio/')) return '.wav';
+    return '.wav';
+}
+
 // 初始化分享表（首次启动自动创建）
 (async () => {
     try {
@@ -60,7 +80,7 @@ const storage = multer.diskStorage({
     },
     filename: (req, file, cb) => {
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, uniqueSuffix + path.extname(file.originalname));
+        cb(null, uniqueSuffix + inferAudioExt(file));
     }
 });
 
@@ -68,15 +88,10 @@ const upload = multer({
     storage,
     limits: { fileSize: 10 * 1024 * 1024 },
     fileFilter: (req, file, cb) => {
-        // 微信小程序录音可能发送各种 mimetype，放宽限制
-        const allowedTypes = ['audio/mp3', 'audio/wav', 'audio/mpeg', 'audio/m4a', 'audio/silk', 'audio/mp4', 'audio/aac', 'audio/ogg', 'audio/webm', 'video/mp4'];
-        const allowedExts = ['.mp3', '.wav', '.silk', '.m4a', '.aac', '.ogg', '.webm', '.mp4'];
-        const ext = path.extname(file.originalname).toLowerCase();
-        if (allowedTypes.includes(file.mimetype) || allowedExts.includes(ext) || file.mimetype.startsWith('audio/')) {
-            cb(null, true);
-        } else {
-            cb(new Error('不支持的音频格式: ' + file.mimetype));
-        }
+        // 录音评测链路不在上传阶段卡 mime。
+        // 微信真机经常把临时录音文件发成 application/octet-stream，甚至不给扩展名。
+        // 这里统一先接收，再交给后面的评测服务做真实音频有效性判断。
+        cb(null, true);
     }
 });
 
@@ -149,7 +164,7 @@ const handleUpload = (req, res, next) => {
     });
 };
 
-router.post('/assess', authMiddleware, requirePoints(5), handleUpload, async (req, res) => {
+router.post('/assess', authMiddleware, handleUpload, requirePoints(5), async (req, res) => {
     try {
         const { reference_text, content_type = 'sentence', source = 'checkin', source_id, sentence_index } = req.body;
 
@@ -161,6 +176,7 @@ router.post('/assess', authMiddleware, requirePoints(5), handleUpload, async (re
         }
 
         if (!reference_text) {
+            cleanupUploadedFile(req.file.path);
             return res.status(400).json({
                 success: false,
                 message: '请提供参考文本'
@@ -175,6 +191,7 @@ router.post('/assess', authMiddleware, requirePoints(5), handleUpload, async (re
         );
 
         if (!result.success) {
+            cleanupUploadedFile(req.file.path);
             return res.status(500).json({
                 success: false,
                 message: result.error || '语音评测失败'
@@ -251,6 +268,7 @@ router.post('/assess', authMiddleware, requirePoints(5), handleUpload, async (re
         });
     } catch (error) {
         console.error('语音评测错误:', error);
+        cleanupUploadedFile(req.file && req.file.path);
         res.status(500).json({
             success: false,
             message: '语音评测失败'

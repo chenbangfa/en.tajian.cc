@@ -1,0 +1,476 @@
+<div class="space-y-6">
+    <div class="flex justify-between items-center bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+        <div>
+            <h2 class="text-2xl font-bold bg-gradient-to-r from-green-700 to-emerald-600 bg-clip-text text-transparent">
+                绘本批量生图</h2>
+            <p class="text-gray-500 mt-1">浏览器串行批量生成封面图和内容页图，完成后自动从待处理列表移除</p>
+        </div>
+        <a href="/picture-books"
+            class="flex items-center gap-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 px-5 py-3 rounded-xl transition-all duration-300">
+            <i class="fas fa-arrow-left"></i>
+            <span>返回绘本管理</span>
+        </a>
+    </div>
+
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+            <div class="text-sm text-gray-500">待处理</div>
+            <div class="text-3xl font-bold text-gray-800 mt-2" id="stat-pending">0</div>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+            <div class="text-sm text-gray-500">已完成</div>
+            <div class="text-3xl font-bold text-green-600 mt-2" id="stat-success">0</div>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+            <div class="text-sm text-gray-500">失败</div>
+            <div class="text-3xl font-bold text-red-500 mt-2" id="stat-failed">0</div>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+            <div class="text-sm text-gray-500">总任务数</div>
+            <div class="text-3xl font-bold text-blue-600 mt-2" id="stat-total">0</div>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="p-5 border-b border-gray-100 bg-gray-50 space-y-4">
+            <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                <div class="font-semibold">生图安全模式</div>
+                <div class="mt-1">批量生图同样会消耗 Vertex AI 额度。现在代理端已做全局串行和冷却保护；若触发 429，本页会自动等待冷却结束后继续，无需手动重启。</div>
+            </div>
+            <div class="flex flex-wrap gap-3">
+                <button id="tab-cover" type="button" onclick="switchTab('cover')"
+                    class="px-4 py-2 rounded-lg text-sm font-medium bg-green-600 text-white">
+                    封面图
+                </button>
+                <button id="tab-page" type="button" onclick="switchTab('page')"
+                    class="px-4 py-2 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200">
+                    内容页图
+                </button>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-3">
+                <select id="batch-category" onchange="loadCandidates()"
+                    class="px-4 py-2 border border-gray-200 rounded-lg outline-none focus:border-green-500 bg-white text-sm">
+                    <option value="">全部分类</option>
+                </select>
+
+                <select id="batch-mode" onchange="loadCandidates()"
+                    class="px-4 py-2 border border-gray-200 rounded-lg outline-none focus:border-green-500 bg-white text-sm">
+                    <option value="missing">仅无图</option>
+                    <option value="all">强制全部重生</option>
+                </select>
+
+                <button onclick="loadCandidates()"
+                    class="px-4 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-lg text-sm font-medium">
+                    <i class="fas fa-rotate-right mr-1"></i>刷新列表
+                </button>
+
+                <button id="btn-start-batch" onclick="startBatchGenerate()"
+                    class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium">
+                    <i class="fas fa-rocket mr-1"></i>开始生成
+                </button>
+
+                <button id="btn-stop-batch" onclick="stopBatchGenerate()"
+                    class="hidden px-5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium animate-pulse">
+                    <i class="fas fa-stop mr-1"></i>停止
+                </button>
+            </div>
+
+            <div id="batch-progress" class="hidden">
+                <div class="flex justify-between text-sm mb-2 font-medium">
+                    <span id="batch-progress-text" class="text-blue-600">准备中...</span>
+                    <span id="batch-progress-count" class="text-gray-500">0/0</span>
+                </div>
+                <div class="h-2 bg-gray-100 rounded-full overflow-hidden">
+                    <div id="batch-progress-bar" class="h-full bg-blue-600 transition-all duration-300" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-0">
+            <div class="p-5 border-r border-gray-100 min-h-[480px]">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="font-bold text-gray-800">待处理列表</h3>
+                    <span class="text-xs text-gray-400" id="queue-hint">加载中...</span>
+                </div>
+                <div id="candidate-list" class="space-y-3">
+                    <div class="text-center py-16 text-gray-400">
+                        <i class="fas fa-spinner fa-spin text-2xl mb-3"></i>
+                        <p>正在加载待处理项目...</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-5 bg-gray-50/60 min-h-[480px]">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="font-bold text-gray-800">失败列表</h3>
+                    <button onclick="retryFailedItems()"
+                        class="px-3 py-1.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-lg text-xs font-medium">
+                        重试失败项
+                    </button>
+                </div>
+                <div id="failed-list" class="space-y-3">
+                    <div class="text-center py-16 text-gray-400 text-sm">暂无失败项</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentTab = 'cover';
+let queue = [];
+let failedItems = [];
+let isGenerating = false;
+const IMAGE_SETTLE_DELAY_MS = 5000;
+const IMAGE_COOLDOWN_POLL_MS = 1000;
+let progress = {
+    total: 0,
+    success: 0,
+    failed: 0
+};
+
+function escapeHtml(value = '') {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function formatWait(ms = 0) {
+    const totalSeconds = Math.max(1, Math.ceil(ms / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    if (minutes > 0) return `${minutes}分${seconds ? `${seconds}秒` : ''}`;
+    return `${seconds}秒`;
+}
+
+async function fetchJson(url, options = {}) {
+    const res = await fetch(url, options);
+    const text = await res.text();
+    let data = null;
+    try {
+        data = text ? JSON.parse(text) : {};
+    } catch (e) {
+        throw new Error(text.startsWith('<') ? '接口返回了 HTML 页面，请刷新后台登录后重试' : '接口返回了非 JSON 数据');
+    }
+
+    if (!res.ok || !data.success) {
+        const err = new Error(data.message || data.error || `请求失败（${res.status}）`);
+        err.status = res.status;
+        err.retryAfterMs = data.retryAfterMs;
+        throw err;
+    }
+
+    return data;
+}
+
+async function loadCategories() {
+    try {
+        const res = await fetch('/picture-books/categories/api/list');
+        const result = await res.json();
+        if (!result.success) return;
+        const select = document.getElementById('batch-category');
+        result.data.forEach(cat => {
+            if (cat.is_active) {
+                select.innerHTML += `<option value="${cat.id}">${cat.icon || ''} ${cat.name}</option>`;
+            }
+        });
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+function switchTab(tab) {
+    if (isGenerating) {
+        showToast('生成进行中，请先停止后再切换', 'error');
+        return;
+    }
+    currentTab = tab;
+    document.getElementById('tab-cover').className = tab === 'cover'
+        ? 'px-4 py-2 rounded-lg text-sm font-medium bg-green-600 text-white'
+        : 'px-4 py-2 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200';
+    document.getElementById('tab-page').className = tab === 'page'
+        ? 'px-4 py-2 rounded-lg text-sm font-medium bg-green-600 text-white'
+        : 'px-4 py-2 rounded-lg text-sm font-medium bg-white text-gray-600 border border-gray-200';
+    resetRunState();
+    loadCandidates();
+}
+
+function resetRunState() {
+    queue = [];
+    failedItems = [];
+    isGenerating = false;
+    progress = { total: 0, success: 0, failed: 0 };
+    document.getElementById('btn-start-batch').classList.remove('hidden');
+    document.getElementById('btn-stop-batch').classList.add('hidden');
+    document.getElementById('batch-progress').classList.add('hidden');
+    renderFailedList();
+    updateStats();
+}
+
+async function loadCandidates() {
+    const categoryId = document.getElementById('batch-category').value;
+    const mode = document.getElementById('batch-mode').value;
+    const list = document.getElementById('candidate-list');
+    list.innerHTML = `
+        <div class="text-center py-16 text-gray-400">
+            <i class="fas fa-spinner fa-spin text-2xl mb-3"></i>
+            <p>正在加载待处理项目...</p>
+        </div>
+    `;
+
+    try {
+        const url = currentTab === 'cover'
+            ? `/picture-books/api/batch/cover-candidates?category_id=${encodeURIComponent(categoryId)}&mode=${encodeURIComponent(mode)}`
+            : `/picture-books/api/batch/page-candidates?category_id=${encodeURIComponent(categoryId)}&mode=${encodeURIComponent(mode)}`;
+
+        const result = await fetchJson(url);
+
+        queue = result.data || [];
+        failedItems = [];
+        progress = { total: queue.length, success: 0, failed: 0 };
+        renderQueue();
+        renderFailedList();
+        updateStats();
+    } catch (e) {
+        list.innerHTML = `<div class="text-center py-16 text-red-400">${escapeHtml(e.message || '加载失败')}</div>`;
+        document.getElementById('queue-hint').textContent = '加载失败';
+    }
+}
+
+function renderQueue() {
+    const list = document.getElementById('candidate-list');
+    document.getElementById('queue-hint').textContent = `剩余 ${queue.length} 项`;
+
+    if (queue.length === 0) {
+        list.innerHTML = `<div class="text-center py-16 text-gray-400 bg-white rounded-xl border border-dashed border-gray-200">
+            <i class="fas fa-circle-check text-3xl mb-3 text-green-500"></i>
+            <p>当前筛选下没有待处理项</p>
+        </div>`;
+        return;
+    }
+
+    list.innerHTML = queue.map((item, index) => {
+        if (currentTab === 'cover') {
+            return `
+                <div class="rounded-xl border border-gray-100 bg-white p-4 flex items-center gap-4" id="queue-item-cover-${item.id}">
+                    <div class="w-20 h-24 rounded-lg bg-gray-100 overflow-hidden shrink-0 flex items-center justify-center text-gray-300">
+                        ${item.cover_url ? `<img src="${item.cover_url}" class="w-full h-full object-cover">` : '<i class="fas fa-book-open text-2xl"></i>'}
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs font-medium px-2 py-1 rounded-full bg-green-50 text-green-700">封面图</span>
+                            <span class="text-xs text-gray-400">#${index + 1}</span>
+                        </div>
+                        <div class="font-bold text-gray-800 mt-2 truncate">${escapeHtml(item.title || '')}</div>
+                        <div class="text-sm text-gray-500 truncate">${escapeHtml(item.title_en || '')}</div>
+                        <div class="text-xs text-gray-400 mt-2">${escapeHtml(item.category_name || '未分类')} · ${item.page_count || 0} 页</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        return `
+            <div class="rounded-xl border border-gray-100 bg-white p-4" id="queue-item-page-${item.page_id}">
+                <div class="flex items-start justify-between gap-4">
+                    <div class="min-w-0 flex-1">
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs font-medium px-2 py-1 rounded-full bg-blue-50 text-blue-700">第 ${item.page_number} 页</span>
+                            <span class="text-xs text-gray-400">${escapeHtml(item.category_name || '未分类')}</span>
+                        </div>
+                        <div class="font-bold text-gray-800 mt-2 truncate">${escapeHtml(item.title || '')}</div>
+                        <div class="text-sm text-gray-500 truncate">${escapeHtml(item.title_en || '')}</div>
+                        <div class="text-xs text-gray-600 mt-2 leading-5">${escapeHtml((item.text_en || '').slice(0, 160))}${(item.text_en || '').length > 160 ? '...' : ''}</div>
+                    </div>
+                    <div class="text-xs text-gray-400 shrink-0">#${index + 1}</div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function renderFailedList() {
+    const list = document.getElementById('failed-list');
+    if (failedItems.length === 0) {
+        list.innerHTML = '<div class="text-center py-16 text-gray-400 text-sm">暂无失败项</div>';
+        return;
+    }
+
+    list.innerHTML = failedItems.map(item => `
+        <div class="rounded-xl border border-red-100 bg-white p-4">
+            <div class="flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                    <div class="font-bold text-gray-800 truncate">
+                        ${currentTab === 'cover'
+                            ? escapeHtml(item.title || '')
+                            : `${escapeHtml(item.title || '')} · 第 ${item.page_number} 页`
+                        }
+                    </div>
+                    <div class="text-xs text-red-500 mt-1 leading-5">${escapeHtml(item.error || '生成失败')}</div>
+                </div>
+                <button onclick="retrySingleFailed('${currentTab}', ${currentTab === 'cover' ? item.id : item.page_id})"
+                    class="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-xs font-medium shrink-0">
+                    重试
+                </button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function updateStats() {
+    document.getElementById('stat-total').textContent = progress.total;
+    document.getElementById('stat-success').textContent = progress.success;
+    document.getElementById('stat-failed').textContent = progress.failed;
+    document.getElementById('stat-pending').textContent = queue.length;
+}
+
+function updateProgressText(text) {
+    document.getElementById('batch-progress-text').textContent = text;
+    const completed = progress.success + progress.failed;
+    const total = Math.max(progress.total, 1);
+    document.getElementById('batch-progress-count').textContent = `${completed}/${progress.total}`;
+    document.getElementById('batch-progress-bar').style.width = `${(completed / total) * 100}%`;
+}
+
+async function waitForImageCooldown(retryAfterMs, label) {
+    let remainingMs = Math.max(1000, Number(retryAfterMs || 60000));
+    while (isGenerating && remainingMs > 0) {
+        updateProgressText(`${label} · 触发生图冷却，${formatWait(remainingMs)} 后自动继续`);
+        const waitMs = Math.min(IMAGE_COOLDOWN_POLL_MS, remainingMs);
+        await sleep(waitMs);
+        remainingMs -= waitMs;
+    }
+}
+
+async function startBatchGenerate() {
+    if (queue.length === 0) {
+        showToast('当前没有待生成项目', 'error');
+        return;
+    }
+
+    isGenerating = true;
+    document.getElementById('btn-start-batch').classList.add('hidden');
+    document.getElementById('btn-stop-batch').classList.remove('hidden');
+    document.getElementById('batch-progress').classList.remove('hidden');
+    updateProgressText('准备开始...');
+
+    while (isGenerating && queue.length > 0) {
+        const item = queue[0];
+        const label = currentTab === 'cover'
+            ? `正在生成封面：${item.title}`
+            : `正在生成页面：${item.title} · 第 ${item.page_number} 页`;
+        updateProgressText(label);
+
+        try {
+            if (currentTab === 'cover') {
+                await generateSingleCover(item);
+            } else {
+                await generateSinglePage(item);
+            }
+            progress.success += 1;
+        } catch (e) {
+            if (e.status === 429 || e.retryAfterMs) {
+                const retryAfterMs = Math.max(1000, Number(e.retryAfterMs || 60000));
+                showToast(`已触发生图冷却保护，等待 ${formatWait(retryAfterMs)} 后自动继续`, 'error');
+                await waitForImageCooldown(retryAfterMs, label);
+                if (!isGenerating) {
+                    break;
+                }
+                continue;
+            }
+            progress.failed += 1;
+            failedItems.push({ ...item, error: e.message || '生成失败' });
+        }
+
+        queue.shift();
+        renderQueue();
+        renderFailedList();
+        updateStats();
+        if (queue.length > 0 && isGenerating) {
+            await sleep(IMAGE_SETTLE_DELAY_MS);
+        }
+    }
+
+    isGenerating = false;
+    document.getElementById('btn-start-batch').classList.remove('hidden');
+    document.getElementById('btn-stop-batch').classList.add('hidden');
+    updateProgressText(queue.length === 0 ? '本轮已完成' : '已停止');
+}
+
+function stopBatchGenerate() {
+    isGenerating = false;
+    showToast('已停止批量生成');
+}
+
+async function generateSingleCover(item) {
+    const data = await fetchJson(`/picture-books/api/${item.id}/generate-cover`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+    });
+    if (!data.imageUrl) {
+        throw new Error(data.message || '封面生成失败');
+    }
+}
+
+async function generateSinglePage(item) {
+    const data = await fetchJson(`/picture-books/api/${item.book_id}/pages/${item.page_id}/generate-image`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+    });
+    if (!data.imageUrl) {
+        throw new Error(data.message || '页面图片生成失败');
+    }
+}
+
+async function retryFailedItems() {
+    if (failedItems.length === 0) {
+        showToast('暂无失败项', 'error');
+        return;
+    }
+    if (isGenerating) {
+        showToast('请先停止当前批量任务', 'error');
+        return;
+    }
+
+    queue = [...failedItems];
+    failedItems = [];
+    progress.total = queue.length;
+    progress.success = 0;
+    progress.failed = 0;
+    renderQueue();
+    renderFailedList();
+    updateStats();
+    showToast(`已载入 ${queue.length} 个失败项，可重新开始生成`);
+}
+
+function retrySingleFailed(type, id) {
+    if (isGenerating) {
+        showToast('请先停止当前批量任务', 'error');
+        return;
+    }
+    const index = failedItems.findIndex(item => (type === 'cover' ? item.id : item.page_id) === id);
+    if (index < 0) return;
+    const [item] = failedItems.splice(index, 1);
+    queue.unshift(item);
+    progress.failed = Math.max(progress.failed - 1, 0);
+    progress.total = queue.length + progress.success + progress.failed;
+    renderQueue();
+    renderFailedList();
+    updateStats();
+    showToast('已加入待处理队列顶部');
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+    await loadCategories();
+    await loadCandidates();
+});
+</script>
