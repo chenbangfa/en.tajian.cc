@@ -158,7 +158,7 @@ function isGrammarModule(moduleType) {
 }
 
 function isVocabularyLikeModule(moduleType) {
-    return moduleType === 'vocabulary' || moduleType === 'pronunciation';
+    return moduleType === 'vocabulary';
 }
 
 function normalizeGrammarItem(row) {

@@ -41,23 +41,6 @@ const DAY1_MODULES = [
         }
     },
     {
-        type: 'pronunciation',
-        title: '发音 5 个',
-        minutes: 20,
-        required: true,
-        content: {
-            note: '今天不要求完美，只要求开口跟读。',
-            words: [
-                { word: 'China', hint: 'chai-nuh', translation: '中国' },
-                { word: 'Chinese', hint: 'chai-neez', translation: '中国人/中文' },
-                { word: 'English', hint: 'ing-glish', translation: '英语' },
-                { word: 'work', hint: 'werk', translation: '工作' },
-                { word: 'learn', hint: 'lern', translation: '学习' }
-            ],
-            tips: ['English 不要读成“英格利西”', 'work 和 learn 里都有类似 er 的音，嘴巴不要张太大']
-        }
-    },
-    {
         type: 'grammar',
         title: '语法：I am / I want to',
         minutes: 25,
@@ -275,10 +258,6 @@ function buildModuleItems(module) {
                 };
             return makeItem(value, index, 'word');
         });
-    }
-
-    if (type === 'pronunciation' && Array.isArray(content.words)) {
-        return content.words.map((word, index) => makeItem({ ...word, type: 'pronunciation', prompt: word.word }, index, 'pronunciation'));
     }
 
     if ((type === 'grammar' || type === 'grammar_drill') && Array.isArray(content.patterns)) {
@@ -525,7 +504,6 @@ async function seedDayOne() {
     const metadata = {
         month_goal: {
             words: '500-800 个基础词',
-            pronunciation: '看到简单单词能读',
             grammar: '会用 I am / I have / I like / I want / I can',
             listening: '能听懂慢速简单句',
             speaking: '能自我介绍 1 分钟',
@@ -547,7 +525,7 @@ async function seedDayOne() {
             COURSE_CODE,
             'IELTS General Training',
             'IELTS General Training',
-            '阶段目标先稳住 7.0，同时按更高分能力建设：单词、发音、基础句型、慢速听力、口语自我介绍与短文写作。',
+            '阶段目标先稳住 7.0，同时按更高分能力建设：单词、基础句型、慢速听力、口语表达与短文写作。',
             '7.0',
             30,
             120,

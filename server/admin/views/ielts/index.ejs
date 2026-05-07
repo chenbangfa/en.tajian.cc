@@ -135,7 +135,7 @@
         </div>
         <div class="p-6 grid grid-cols-1 md:grid-cols-4 gap-4">
             <input id="moduleId" type="hidden">
-            <label class="space-y-1"><span class="text-sm text-gray-500">类型</span><select id="moduleType" class="form-input"><option value="vocabulary">vocabulary</option><option value="pronunciation">pronunciation</option><option value="grammar">grammar</option><option value="grammar_drill">grammar_drill</option><option value="listening">listening</option><option value="podcast_listening">podcast_listening</option><option value="shadowing">shadowing</option><option value="speaking">speaking</option><option value="speaking_output">speaking_output</option><option value="writing">writing</option><option value="sentence_builder">sentence_builder</option><option value="typing_writing">typing_writing</option><option value="review">review</option><option value="quiz">quiz</option></select></label>
+            <label class="space-y-1"><span class="text-sm text-gray-500">类型</span><select id="moduleType" class="form-input"><option value="vocabulary">vocabulary</option><option value="grammar">grammar</option><option value="grammar_drill">grammar_drill</option><option value="listening">listening</option><option value="podcast_listening">podcast_listening</option><option value="shadowing">shadowing</option><option value="speaking">speaking</option><option value="speaking_output">speaking_output</option><option value="writing">writing</option><option value="sentence_builder">sentence_builder</option><option value="typing_writing">typing_writing</option><option value="review">review</option><option value="quiz">quiz</option></select></label>
             <label class="space-y-1 md:col-span-2"><span class="text-sm text-gray-500">标题</span><input id="moduleTitle" class="form-input"></label>
             <label class="space-y-1"><span class="text-sm text-gray-500">排序</span><input id="moduleSort" type="number" class="form-input"></label>
             <label class="space-y-1"><span class="text-sm text-gray-500">分钟</span><input id="moduleMinutes" type="number" class="form-input"></label>
@@ -395,7 +395,7 @@
     }
 
     function syncVocabularyToJson() {
-        if (!['vocabulary', 'pronunciation'].includes(document.getElementById('moduleType').value)) return;
+        if (!['vocabulary'].includes(document.getElementById('moduleType').value)) return;
         let content = {};
         try { content = readJson('moduleContent'); } catch (_) { content = {}; }
         content.words = moduleVocabularyWords.map(word => ({
@@ -424,7 +424,7 @@
     function toggleVocabularyEditor() {
         const editor = document.getElementById('vocabularyEditor');
         if (!editor) return;
-        const isVocabularyLike = ['vocabulary', 'pronunciation'].includes(document.getElementById('moduleType').value);
+        const isVocabularyLike = ['vocabulary'].includes(document.getElementById('moduleType').value);
         editor.classList.toggle('hidden', !isVocabularyLike);
         if (isVocabularyLike) renderVocabularyWords();
     }
@@ -988,7 +988,7 @@
         document.getElementById('moduleRequired').value = mod && !mod.is_required ? '0' : '1';
         document.getElementById('moduleContent').value = mod ? prettyJson(content) : '{\n  "items": []\n}';
         modulePodcastContent = mod && mod.podcast_content ? mod.podcast_content : null;
-        moduleVocabularyWords = mod && ['vocabulary', 'pronunciation'].includes(mod.module_type) ? getVocabularyWordsFromContent(content) : [];
+        moduleVocabularyWords = mod && ['vocabulary'].includes(mod.module_type) ? getVocabularyWordsFromContent(content) : [];
         moduleGrammarItems = mod && isGrammarModuleType(mod.module_type)
             ? ((mod.grammar_items && mod.grammar_items.length) ? mod.grammar_items.map(normalizeGrammarEntry) : getGrammarItemsFromContent(content))
             : [];
@@ -1020,7 +1020,7 @@
             const id = document.getElementById('moduleId').value;
             const moduleType = document.getElementById('moduleType').value;
             let contentJson = readJson('moduleContent');
-            if (['vocabulary', 'pronunciation'].includes(moduleType) && moduleVocabularyWords.length) {
+            if (['vocabulary'].includes(moduleType) && moduleVocabularyWords.length) {
                 contentJson = {
                     ...contentJson,
                     words: moduleVocabularyWords.map(word => ({
