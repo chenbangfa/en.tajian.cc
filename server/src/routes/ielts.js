@@ -694,11 +694,15 @@ router.get('/days/:dayNumber', authMiddleware, async (req, res) => {
             `, podcastIds);
             podcastById = podcastRows.reduce((acc, row) => {
                 let sentenceCount = 0;
+                let sentencesData = null;
                 if (row.sentences_data && row.sentences_data !== 'processing') {
                     try {
                         const parsed = typeof row.sentences_data === 'string' ? JSON.parse(row.sentences_data) : row.sentences_data;
                         sentenceCount = Array.isArray(parsed && parsed.sentences) ? parsed.sentences.length : 0;
+                        sentencesData = parsed || null;
                     } catch (_) {}
+                } else if (row.sentences_data === 'processing') {
+                    sentencesData = { processing: true };
                 }
                 acc[row.id] = {
                     id: row.id,
@@ -710,6 +714,7 @@ router.get('/days/:dayNumber', authMiddleware, async (req, res) => {
                     female_audio_url: row.female_audio_url,
                     male_audio_url: row.male_audio_url,
                     chinese_audio_url: row.chinese_audio_url,
+                    sentences_data: sentencesData,
                     sentence_count: sentenceCount
                 };
                 return acc;
