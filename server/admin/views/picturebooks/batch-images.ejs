@@ -60,6 +60,13 @@
                     <option value="all">强制全部重生</option>
                 </select>
 
+                <select id="batch-aspect-ratio"
+                    class="px-4 py-2 border border-gray-200 rounded-lg outline-none focus:border-green-500 bg-white text-sm"
+                    title="选择本轮批量生成图片的画幅比例">
+                    <option value="9:16">9:16 竖版（小程序/短视频）</option>
+                    <option value="16:9">16:9 横版（YouTube）</option>
+                </select>
+
                 <button onclick="loadCandidates()"
                     class="px-4 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-lg text-sm font-medium">
                     <i class="fas fa-rotate-right mr-1"></i>刷新列表
@@ -410,10 +417,11 @@ function stopBatchGenerate() {
 }
 
 async function generateSingleCover(item) {
+    const aspectRatio = document.getElementById('batch-aspect-ratio').value || '9:16';
     const data = await fetchJson(`/picture-books/api/${item.id}/generate-cover`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
+        body: JSON.stringify({ aspectRatio })
     });
     if (!data.imageUrl) {
         throw new Error(data.message || '封面生成失败');
@@ -421,10 +429,11 @@ async function generateSingleCover(item) {
 }
 
 async function generateSinglePage(item) {
+    const aspectRatio = document.getElementById('batch-aspect-ratio').value || '9:16';
     const data = await fetchJson(`/picture-books/api/${item.book_id}/pages/${item.page_id}/generate-image`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
+        body: JSON.stringify({ aspectRatio })
     });
     if (!data.imageUrl) {
         throw new Error(data.message || '页面图片生成失败');

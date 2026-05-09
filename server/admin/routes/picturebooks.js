@@ -75,6 +75,37 @@ async function buildCoverPromptPayload(bookId) {
     };
 }
 
+function normalizePictureBookAspectRatio(value) {
+    const ratio = String(value || '').trim();
+    return ratio === '16:9' ? '16:9' : '9:16';
+}
+
+function applyPictureBookAspectToPrompt(prompt = '', aspectRatio = '9:16') {
+    const isWide = aspectRatio === '16:9';
+    const orientationText = isWide
+        ? 'horizontal 16:9 widescreen landscape composition, YouTube-friendly frame'
+        : 'vertical 9:16 portrait composition';
+    let out = String(prompt || '');
+
+    const replacements = [
+        /\bvertical\s*9\s*:\s*16(?:\s*composition)?\b/ig,
+        /\bportrait\s*9\s*:\s*16(?:\s*composition)?\b/ig,
+        /\bhorizontal\s*16\s*:\s*9(?:\s*composition)?\b/ig,
+        /\bwidescreen\s*16\s*:\s*9(?:\s*composition)?\b/ig,
+        /\blandscape\s*16\s*:\s*9(?:\s*composition)?\b/ig
+    ];
+
+    for (const pattern of replacements) {
+        out = out.replace(pattern, orientationText);
+    }
+
+    const safeAreaLine = isWide
+        ? 'Use a cinematic wide layout with extra side space, keep the main action clear in the center third, no cropped faces or bodies.'
+        : 'Use a portrait layout with the main subject clear and centered, no cropped faces or bodies.';
+
+    return normalizeComparableText(`${out} Image format requirement: ${orientationText}. ${safeAreaLine}`);
+}
+
 // Multer config
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
@@ -607,6 +638,7 @@ router.post('/api/:id/pages/:pageId/generate-image', async (req, res) => {
         const bookId = req.params.id;
         const pageId = req.params.pageId;
         const inputPrompt = String(req.body?.prompt || '').trim();
+        const aspectRatio = normalizePictureBookAspectRatio(req.body?.aspectRatio || req.body?.aspect_ratio);
         const book = await getBookPromptContext(bookId);
 
         const [page] = await query(
@@ -620,10 +652,16 @@ router.post('/api/:id/pages/:pageId/generate-image', async (req, res) => {
         if (!finalPrompt) {
             return res.status(400).json({ success: false, message: '请先填写页面图片AI提示词' });
         }
-        const generationPrompt = sanitizePictureBookImagePromptForGeneration(finalPrompt);
-        const fallbackPrompt = buildPictureBookImagePromptFallback(finalPrompt);
+        const generationPrompt = applyPictureBookAspectToPrompt(
+            sanitizePictureBookImagePromptForGeneration(finalPrompt),
+            aspectRatio
+        );
+        const fallbackPrompt = applyPictureBookAspectToPrompt(
+            buildPictureBookImagePromptFallback(finalPrompt),
+            aspectRatio
+        );
 
-        let result = await aiService.generateImage(generationPrompt, { aspectRatio: '9:16' });
+        let result = await aiService.generateImage(generationPrompt, { aspectRatio });
         const needsFallbackRetry = !result.success
             && fallbackPrompt
             && fallbackPrompt !== generationPrompt
@@ -631,7 +669,7 @@ router.post('/api/:id/pages/:pageId/generate-image', async (req, res) => {
 
         if (needsFallbackRetry) {
             console.warn(`[PictureBooks] fallback page image generation retry book=${bookId} page=${pageId}`);
-            result = await aiService.generateImage(fallbackPrompt, { aspectRatio: '9:16' });
+            result = await aiService.generateImage(fallbackPrompt, { aspectRatio });
         }
 
         if (!result.success || !result.imageUrl) {
@@ -951,6 +989,7 @@ router.post('/api/hotspots/:hotspotId/generate', async (req, res) => {
 router.post('/api/:id/generate-cover', async (req, res) => {
     try {
         const inputPrompt = String(req.body?.prompt || '').trim();
+        const aspectRatio = normalizePictureBookAspectRatio(req.body?.aspectRatio || req.body?.aspect_ratio);
         const book = await getBookPromptContext(req.params.id);
         if (!book) return res.status(404).json({ success: false, message: '绘本不存在' });
         const pages = await getBookPagesForPrompt(req.params.id);
@@ -958,16 +997,22 @@ router.post('/api/:id/generate-cover', async (req, res) => {
         const finalPromptRaw = inputPrompt || String(book.cover_prompt || '').trim() || generatedPrompt;
         const normalizedPrompt = normalizePromptBookTitleToEnglish(finalPromptRaw, book?.title || '', book?.title_en || '');
         if (!normalizedPrompt) return res.status(400).json({ success: false, message: '请先填写或重建封面提示词' });
-        const generationPrompt = sanitizePictureBookImagePromptForGeneration(normalizedPrompt);
-        const fallbackPrompt = buildPictureBookImagePromptFallback(normalizedPrompt);
-        let result = await aiService.generateImage(generationPrompt, { aspectRatio: '9:16' });
+        const generationPrompt = applyPictureBookAspectToPrompt(
+            sanitizePictureBookImagePromptForGeneration(normalizedPrompt),
+            aspectRatio
+        );
+        const fallbackPrompt = applyPictureBookAspectToPrompt(
+            buildPictureBookImagePromptFallback(normalizedPrompt),
+            aspectRatio
+        );
+        let result = await aiService.generateImage(generationPrompt, { aspectRatio });
         const needsFallbackRetry = !result.success
             && fallbackPrompt
             && fallbackPrompt !== generationPrompt
             && /未返回有效数据|invalid data|稍后重试/i.test(String(result.error || ''));
         if (needsFallbackRetry) {
             console.warn(`[PictureBooks] fallback cover generation retry book=${req.params.id}`);
-            result = await aiService.generateImage(fallbackPrompt, { aspectRatio: '9:16' });
+            result = await aiService.generateImage(fallbackPrompt, { aspectRatio });
         }
         if (result.success) {
             const sourceText = buildCoverSourceText(book, pages);
