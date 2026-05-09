@@ -4,7 +4,7 @@
     <div class="flex items-center justify-between">
         <div>
             <h2 class="text-2xl font-bold text-gray-800">绘本视频</h2>
-            <p class="text-sm text-gray-500 mt-1">选择绘本，一键生成竖屏短视频（适合 视频号 / 抖音 / 小红书 / TikTok / YouTube Shorts）</p>
+            <p class="text-sm text-gray-500 mt-1">选择绘本，一键生成竖屏 Shorts 或横屏 YouTube 视频，按所选比例使用对应图片素材</p>
         </div>
         <a href="/picture-books" class="text-sm text-green-600 hover:underline"><i class="fas fa-book-open mr-1"></i>返回绘本管理</a>
     </div>
@@ -33,7 +33,7 @@
             <template x-for="b in candidates" :key="b.id">
                 <div @click="selectBook(b)" class="px-4 py-3 hover:bg-pink-50 cursor-pointer flex items-center gap-4 transition"
                     :class="selectedBook && selectedBook.id === b.id ? 'bg-pink-50 border-l-4 border-pink-500' : ''">
-                    <img x-show="b.cover_url" :src="b.cover_url" class="w-12 h-16 rounded object-cover flex-shrink-0 border border-gray-200">
+                    <img x-show="coverForBook(b)" :src="coverForBook(b)" class="w-12 h-16 rounded object-cover flex-shrink-0 border border-gray-200">
                     <div class="flex-1 min-w-0">
                         <div class="font-medium text-gray-800" x-text="b.title_en || b.title"></div>
                         <div class="text-xs text-gray-400" x-text="b.title"></div>
@@ -72,7 +72,7 @@
         <!-- 已选 + 生成配置 -->
         <div x-show="selectedBook" class="border-t pt-4 space-y-4">
             <div class="flex items-center gap-4">
-                <img :src="selectedBook?.cover_url" class="w-16 h-24 rounded object-cover border">
+                <img :src="coverForBook(selectedBook)" class="w-16 h-24 rounded object-cover border">
                 <div class="flex-1">
                     <div class="font-semibold text-gray-800" x-text="selectedBook?.title_en || selectedBook?.title"></div>
                     <div class="text-xs text-gray-500" x-text="selectedBook?.title"></div>
@@ -83,7 +83,15 @@
                 </button>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div>
+                    <label class="block text-sm text-gray-600 mb-1">视频比例</label>
+                    <select x-model="config.aspect_ratio" class="border rounded-lg px-3 py-2 text-sm w-full">
+                        <option value="9:16">9:16 竖版 Shorts</option>
+                        <option value="16:9">16:9 横版 YouTube</option>
+                    </select>
+                    <div class="text-xs text-gray-400 mt-1">横版需要先生成16:9绘本图片</div>
+                </div>
                 <div>
                     <label class="block text-sm text-gray-600 mb-1">字幕模式</label>
                     <select x-model="config.subtitle_mode" class="border rounded-lg px-3 py-2 text-sm w-full">
@@ -153,10 +161,10 @@
                 <template x-for="job in jobs" :key="job.id">
                     <tr class="hover:bg-gray-50">
                         <td class="px-4 py-3">
-                            <template x-if="job.cover_url || job.book_cover">
-                                <img :src="job.cover_url || job.book_cover" class="w-12 h-20 object-cover rounded border border-gray-200" />
+                            <template x-if="jobCover(job)">
+                                <img :src="jobCover(job)" class="w-12 h-20 object-cover rounded border border-gray-200" />
                             </template>
-                            <template x-if="!job.cover_url && !job.book_cover">
+                            <template x-if="!jobCover(job)">
                                 <div class="w-12 h-20 bg-gray-100 rounded flex items-center justify-center text-gray-300">
                                     <i class="fas fa-image"></i>
                                 </div>
@@ -178,6 +186,9 @@
                             </div>
                             <div x-show="parseConfig(job).duration_mode === 'full_75'">
                                 <span class="bg-purple-100 text-purple-700 px-2 py-0.5 rounded">≤75s</span>
+                            </div>
+                            <div>
+                                <span class="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded" x-text="(parseConfig(job).aspect_ratio || '9:16')"></span>
                             </div>
                         </td>
                         <td class="px-4 py-3">
@@ -242,7 +253,7 @@
 
     <!-- 视频预览弹窗 -->
     <div x-show="showPreview" x-transition class="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" @click.self="closePreview()" style="display:none">
-        <div class="rounded-xl overflow-hidden" style="max-height: 80vh; aspect-ratio: 9/16;" @click.stop>
+        <div class="rounded-xl overflow-hidden" :style="`max-height: 80vh; aspect-ratio: ${previewAspect === '16:9' ? '16/9' : '9/16'};`" @click.stop>
             <video x-ref="previewPlayer" :src="previewUrl" controls class="w-full h-full rounded-xl"></video>
         </div>
     </div>
@@ -265,7 +276,8 @@ function pbVideoApp() {
         config: {
             subtitle_mode: 'bilingual',
             duration_mode: 'shorts_60',
-            voice: 'female'
+            voice: 'female',
+            aspect_ratio: '9:16'
         },
         generating: false,
 
@@ -280,6 +292,7 @@ function pbVideoApp() {
         // 预览
         showPreview: false,
         previewUrl: '',
+        previewAspect: '9:16',
 
         get processingCount() {
             return this.jobs.filter(j => j.status === 'processing' || j.status === 'pending').length;
@@ -327,6 +340,18 @@ function pbVideoApp() {
 
         selectBook(b) {
             this.selectedBook = b;
+        },
+
+        coverForBook(book) {
+            if (!book) return '';
+            return this.config.aspect_ratio === '16:9'
+                ? (book.cover_url_wide || book.cover_url || '')
+                : (book.cover_url || book.cover_url_wide || '');
+        },
+
+        jobCover(job) {
+            const cfg = this.parseConfig(job);
+            return job.cover_url || (cfg.aspect_ratio === '16:9' ? (job.book_cover_wide || job.book_cover) : (job.book_cover || job.book_cover_wide)) || '';
         },
 
         // ===== 生成 =====
@@ -399,6 +424,7 @@ function pbVideoApp() {
         // ===== 预览 =====
         previewVideo(job) {
             this.previewUrl = job.video_url;
+            this.previewAspect = this.parseConfig(job).aspect_ratio || '9:16';
             this.showPreview = true;
             this.$nextTick(() => {
                 if (this.$refs.previewPlayer) this.$refs.previewPlayer.play();

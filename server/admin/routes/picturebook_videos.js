@@ -15,9 +15,32 @@ const pbVideoService = require('../../src/services/picturebook-video.service');
 
 const router = express.Router();
 
+function normalizeVideoAspectRatio(value) {
+    const ratio = String(value || '').trim();
+    return ratio === '16:9' ? '16:9' : '9:16';
+}
+
+async function ensurePictureBookAspectColumns() {
+    const addColumnIfMissing = async (table, column, sql) => {
+        const rows = await query(`SHOW COLUMNS FROM ${table} LIKE ?`, [column]);
+        if (!rows.length) await query(sql);
+    };
+    await addColumnIfMissing(
+        'picture_books',
+        'cover_url_wide',
+        `ALTER TABLE picture_books ADD COLUMN cover_url_wide VARCHAR(500) DEFAULT NULL COMMENT '16:9横版封面图' AFTER cover_url`
+    );
+    await addColumnIfMissing(
+        'picture_book_pages',
+        'image_url_wide',
+        `ALTER TABLE picture_book_pages ADD COLUMN image_url_wide VARCHAR(500) DEFAULT NULL COMMENT '16:9横版页面图' AFTER image_url`
+    );
+}
+
 // ===== 建表 =====
 (async () => {
     try {
+        await ensurePictureBookAspectColumns();
         await query(`CREATE TABLE IF NOT EXISTS picture_book_video_jobs (
             id INT AUTO_INCREMENT PRIMARY KEY,
             book_id INT NOT NULL,
@@ -59,7 +82,8 @@ router.get('/', (req, res) => {
 router.get('/api/list', async (req, res) => {
     try {
         const { status, book_id, page = 1, page_size = 20 } = req.query;
-        let sql = `SELECT j.*, b.title as book_title_full, b.title_en as book_title_en, b.cover_url as book_cover
+        let sql = `SELECT j.*, b.title as book_title_full, b.title_en as book_title_en,
+                          b.cover_url as book_cover, b.cover_url_wide as book_cover_wide
                    FROM picture_book_video_jobs j
                    LEFT JOIN picture_books b ON j.book_id = b.id
                    WHERE 1=1`;
@@ -88,30 +112,40 @@ router.get('/api/list', async (req, res) => {
 
 router.post('/api/generate', async (req, res) => {
     try {
+        await ensurePictureBookAspectColumns();
         const {
             book_id,
             subtitle_mode = 'bilingual',     // bilingual | english_only
             duration_mode = 'shorts_60',     // shorts_60 | full_75
             voice = 'female'                 // female (目前唯一)
         } = req.body;
+        const aspect_ratio = normalizeVideoAspectRatio(req.body.aspect_ratio || req.body.aspectRatio);
+        const imageColumn = aspect_ratio === '16:9' ? 'image_url_wide' : 'image_url';
+        const coverColumn = aspect_ratio === '16:9' ? 'cover_url_wide' : 'cover_url';
 
         if (!book_id) return res.status(400).json({ success: false, message: '请选择绘本' });
 
         const [book] = await query(
-            `SELECT id, title, title_en, cover_url, page_count FROM picture_books WHERE id = ?`,
+            `SELECT id, title, title_en, cover_url, cover_url_wide, page_count FROM picture_books WHERE id = ?`,
             [book_id]
         );
         if (!book) return res.status(404).json({ success: false, message: '绘本不存在' });
+        if (!book[coverColumn]) {
+            return res.status(400).json({
+                success: false,
+                message: aspect_ratio === '16:9' ? '该绘本还没有16:9横版封面图，请先在批量生图中生成' : '该绘本还没有9:16竖版封面图，请先补齐'
+            });
+        }
 
         // 校验页面素材齐全度
         const [{ pageTotal, pageWithImg, pageWithAudio }] = await query(
             `SELECT COUNT(*) as pageTotal,
-                    SUM(CASE WHEN image_url IS NOT NULL AND image_url != '' THEN 1 ELSE 0 END) as pageWithImg,
+                    SUM(CASE WHEN ${imageColumn} IS NOT NULL AND ${imageColumn} != '' THEN 1 ELSE 0 END) as pageWithImg,
                     SUM(CASE WHEN audio_url IS NOT NULL AND audio_url != '' THEN 1 ELSE 0 END) as pageWithAudio
                FROM picture_book_pages WHERE book_id = ?`, [book_id]
         );
         if (pageTotal == 0) return res.status(400).json({ success: false, message: '绘本没有页面' });
-        if (pageWithImg < pageTotal) return res.status(400).json({ success: false, message: `还有 ${pageTotal - pageWithImg} 页缺少图片，请先补齐` });
+        if (pageWithImg < pageTotal) return res.status(400).json({ success: false, message: `还有 ${pageTotal - pageWithImg} 页缺少${aspect_ratio}图片，请先补齐` });
         if (pageWithAudio < pageTotal) return res.status(400).json({ success: false, message: `还有 ${pageTotal - pageWithAudio} 页缺少音频，请先合成` });
 
         // 校验参数
@@ -122,7 +156,7 @@ router.post('/api/generate', async (req, res) => {
             return res.status(400).json({ success: false, message: '时长模式无效' });
         }
 
-        const config = { subtitle_mode, duration_mode, voice };
+        const config = { subtitle_mode, duration_mode, voice, aspect_ratio };
         const result = await query(
             `INSERT INTO picture_book_video_jobs (book_id, book_title, config_json, status)
              VALUES (?, ?, ?, 'pending')`,

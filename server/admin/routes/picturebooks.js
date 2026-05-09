@@ -29,6 +29,28 @@ ensurePictureBookPromptColumns(query).catch(err => {
     console.error('[PictureBooks Admin] 提示词同步字段初始化失败:', err.message);
 });
 
+async function ensurePictureBookAspectColumns() {
+    const addColumnIfMissing = async (table, column, sql) => {
+        const rows = await query(`SHOW COLUMNS FROM ${table} LIKE ?`, [column]);
+        if (!rows.length) await query(sql);
+    };
+
+    await addColumnIfMissing(
+        'picture_books',
+        'cover_url_wide',
+        `ALTER TABLE picture_books ADD COLUMN cover_url_wide VARCHAR(500) DEFAULT NULL COMMENT '16:9横版封面图' AFTER cover_url`
+    );
+    await addColumnIfMissing(
+        'picture_book_pages',
+        'image_url_wide',
+        `ALTER TABLE picture_book_pages ADD COLUMN image_url_wide VARCHAR(500) DEFAULT NULL COMMENT '16:9横版页面图' AFTER image_url`
+    );
+}
+
+ensurePictureBookAspectColumns().catch(err => {
+    console.error('[PictureBooks Admin] 横版图片字段初始化失败:', err.message);
+});
+
 async function getBookPromptContext(bookId) {
     const [book] = await query(
         `SELECT b.id, b.title, b.title_en, b.description, b.category_id, b.cover_prompt, b.cover_prompt_source_text, b.cover_prompt_mode,
@@ -184,8 +206,13 @@ router.get('/api/list', async (req, res) => {
 
 router.get('/api/batch/cover-candidates', async (req, res) => {
     try {
+        await ensurePictureBookAspectColumns();
         const { category_id, mode = 'missing' } = req.query;
-        let sql = `SELECT b.id, b.title, b.title_en, b.cover_url, b.cover_prompt, b.page_count,
+        const aspectRatio = normalizePictureBookAspectRatio(req.query.aspectRatio || req.query.aspect_ratio);
+        const imageColumn = aspectRatio === '16:9' ? 'cover_url_wide' : 'cover_url';
+        let sql = `SELECT b.id, b.title, b.title_en, b.cover_url, b.cover_url_wide,
+                          b.${imageColumn} AS target_cover_url,
+                          b.cover_prompt, b.page_count,
                           b.category_id, c.name AS category_name
                      FROM picture_books b
                 LEFT JOIN picture_book_categories c ON b.category_id = c.id
@@ -197,7 +224,7 @@ router.get('/api/batch/cover-candidates', async (req, res) => {
             params.push(parseInt(category_id));
         }
         if (mode !== 'all') {
-            sql += ` AND (b.cover_url IS NULL OR b.cover_url = '')`;
+            sql += ` AND (b.${imageColumn} IS NULL OR b.${imageColumn} = '')`;
         }
 
         sql += ' ORDER BY b.sort_order ASC, b.id ASC';
@@ -210,8 +237,13 @@ router.get('/api/batch/cover-candidates', async (req, res) => {
 
 router.get('/api/batch/page-candidates', async (req, res) => {
     try {
+        await ensurePictureBookAspectColumns();
         const { category_id, mode = 'missing' } = req.query;
-        let sql = `SELECT p.id AS page_id, p.book_id, p.page_number, p.image_url, p.image_prompt, p.text_en,
+        const aspectRatio = normalizePictureBookAspectRatio(req.query.aspectRatio || req.query.aspect_ratio);
+        const imageColumn = aspectRatio === '16:9' ? 'image_url_wide' : 'image_url';
+        let sql = `SELECT p.id AS page_id, p.book_id, p.page_number, p.image_url, p.image_url_wide,
+                          p.${imageColumn} AS target_image_url,
+                          p.image_prompt, p.text_en,
                           b.title, b.title_en, b.category_id, c.name AS category_name
                      FROM picture_book_pages p
                INNER JOIN picture_books b ON p.book_id = b.id
@@ -224,7 +256,7 @@ router.get('/api/batch/page-candidates', async (req, res) => {
             params.push(parseInt(category_id));
         }
         if (mode !== 'all') {
-            sql += ` AND (p.image_url IS NULL OR p.image_url = '')`;
+            sql += ` AND (p.${imageColumn} IS NULL OR p.${imageColumn} = '')`;
         }
 
         sql += ' ORDER BY b.sort_order ASC, b.id ASC, p.page_number ASC';
@@ -635,6 +667,7 @@ router.post('/api/:id/rebuild-page-prompts', async (req, res) => {
 // AI 生成内容页图片（按页面提示词）
 router.post('/api/:id/pages/:pageId/generate-image', async (req, res) => {
     try {
+        await ensurePictureBookAspectColumns();
         const bookId = req.params.id;
         const pageId = req.params.pageId;
         const inputPrompt = String(req.body?.prompt || '').trim();
@@ -680,8 +713,9 @@ router.post('/api/:id/pages/:pageId/generate-image', async (req, res) => {
             });
         }
 
+        const imageField = aspectRatio === '16:9' ? 'image_url_wide' : 'image_url';
         await query(
-            'UPDATE picture_book_pages SET image_url = ?, image_prompt = ? WHERE id = ? AND book_id = ?',
+            `UPDATE picture_book_pages SET ${imageField} = ?, image_prompt = ? WHERE id = ? AND book_id = ?`,
             [result.imageUrl, finalPrompt, pageId, bookId]
         );
         const [updatedPage] = await query('SELECT * FROM picture_book_pages WHERE id = ? AND book_id = ?', [pageId, bookId]);
@@ -988,6 +1022,7 @@ router.post('/api/hotspots/:hotspotId/generate', async (req, res) => {
 
 router.post('/api/:id/generate-cover', async (req, res) => {
     try {
+        await ensurePictureBookAspectColumns();
         const inputPrompt = String(req.body?.prompt || '').trim();
         const aspectRatio = normalizePictureBookAspectRatio(req.body?.aspectRatio || req.body?.aspect_ratio);
         const book = await getBookPromptContext(req.params.id);
@@ -1018,7 +1053,7 @@ router.post('/api/:id/generate-cover', async (req, res) => {
             const sourceText = buildCoverSourceText(book, pages);
             const mode = inputPrompt ? 'manual' : (book.cover_prompt_mode || 'auto');
             await query(
-                'UPDATE picture_books SET cover_url = ?, cover_prompt = ?, cover_prompt_source_text = ?, cover_prompt_mode = ? WHERE id = ?',
+                `UPDATE picture_books SET ${aspectRatio === '16:9' ? 'cover_url_wide' : 'cover_url'} = ?, cover_prompt = ?, cover_prompt_source_text = ?, cover_prompt_mode = ? WHERE id = ?`,
                 [result.imageUrl, normalizedPrompt, sourceText, mode, req.params.id]
             );
             const payload = await buildCoverPromptPayload(req.params.id);
@@ -1026,7 +1061,8 @@ router.post('/api/:id/generate-cover', async (req, res) => {
                 success: true,
                 imageUrl: result.imageUrl,
                 data: {
-                    cover_url: result.imageUrl,
+                    cover_url: aspectRatio === '16:9' ? payload.cover_url : result.imageUrl,
+                    cover_url_wide: aspectRatio === '16:9' ? result.imageUrl : payload.cover_url_wide,
                     cover_prompt: payload.cover_prompt || normalizedPrompt,
                     cover_prompt_mode: payload.cover_prompt_mode || mode,
                     cover_prompt_sync_status: payload.cover_prompt_sync_status,

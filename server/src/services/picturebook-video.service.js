@@ -26,10 +26,10 @@ const SERVER_ROOT = path.join(__dirname, '../..');
 const OUTPUT_DIR = path.join(SERVER_ROOT, 'uploads/picturebook-videos');
 const BGM_PATH = path.join(SERVER_ROOT, 'assets/audio/bgm_fairy_dance.mp3');
 
-const W = 1080;
-const H = 1920;
+let W = 1080;
+let H = 1920;
 // 图层全屏（blur-fill），字幕完全透明悬浮在画面上（文字带黑色描边保障可读性）
-const SUB_H = 620;          // 字幕覆盖区（完全透明，文字底对齐，可承载最多 5 行英文 + 2 行中文）
+let SUB_H = 620;          // 字幕覆盖区（完全透明，文字底对齐，可承载最多 5 行英文 + 2 行中文）
 const FADE = 0.25;
 const GAP = Math.min(1.2, Math.max(0.3, Number(process.env.PB_VIDEO_PAGE_GAP || 0.65))); // 段间静音，孩子需要一点看图反应时间
 const MIN_PAGE_DUR = Math.min(4.0, Math.max(2.0, Number(process.env.PB_VIDEO_MIN_PAGE_DUR || 2.8)));
@@ -66,20 +66,33 @@ class PictureBookVideoService {
         const {
             subtitle_mode = 'bilingual',   // bilingual | english_only
             duration_mode = 'shorts_60',   // shorts_60 | full_75
-            voice = 'female'
+            voice = 'female',
+            aspect_ratio = '9:16'
         } = config;
+        const normalizedAspect = String(aspect_ratio || '').trim() === '16:9' ? '16:9' : '9:16';
+        if (normalizedAspect === '16:9') {
+            W = 1920;
+            H = 1080;
+            SUB_H = 360;
+        } else {
+            W = 1080;
+            H = 1920;
+            SUB_H = 620;
+        }
+        const imageField = normalizedAspect === '16:9' ? 'image_url_wide' : 'image_url';
+        const coverField = normalizedAspect === '16:9' ? 'cover_url_wide' : 'cover_url';
 
         const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), `pbv-${jobId}-`));
 
         try {
             // 1. 拉取绘本 + 页面
             const [book] = await query(
-                `SELECT id, title, title_en, cover_url FROM picture_books WHERE id = ?`, [bookId]
+                `SELECT id, title, title_en, cover_url, cover_url_wide FROM picture_books WHERE id = ?`, [bookId]
             );
             if (!book) throw new Error('绘本不存在');
 
             const pages = await query(
-                `SELECT id, page_number, image_url, text_en, text_cn, audio_url, audio_url_male
+                `SELECT id, page_number, image_url, image_url_wide, text_en, text_cn, audio_url, audio_url_male
                  FROM picture_book_pages WHERE book_id = ? ORDER BY page_number ASC`,
                 [bookId]
             );
@@ -88,10 +101,14 @@ class PictureBookVideoService {
             await this._updateJob(jobId, { progress: 5 });
 
             // 2. 解析素材（本地化）
-            const coverLocal = await this._resolveUrl(book.cover_url, tempDir, 'cover.jpg');
+            const sourceCoverUrl = book[coverField] || book.cover_url;
+            if (normalizedAspect === '16:9' && !book[coverField]) throw new Error('缺少16:9横版封面图');
+            const coverLocal = await this._resolveUrl(sourceCoverUrl, tempDir, 'cover.jpg');
             const pageAssets = [];
             for (const p of pages) {
-                const imgLocal = p.image_url ? await this._resolveUrl(p.image_url, tempDir, `p${p.page_number}.jpg`) : null;
+                const imageUrl = p[imageField] || p.image_url;
+                if (normalizedAspect === '16:9' && !p[imageField]) throw new Error(`第 ${p.page_number} 页缺少16:9横版图片`);
+                const imgLocal = imageUrl ? await this._resolveUrl(imageUrl, tempDir, `p${p.page_number}.jpg`) : null;
                 const audioUrl = voice === 'male' ? (p.audio_url_male || p.audio_url) : p.audio_url;
                 const audioLocal = audioUrl ? await this._resolveUrl(audioUrl, tempDir, `p${p.page_number}.mp3`) : null;
                 pageAssets.push({
@@ -178,7 +195,7 @@ class PictureBookVideoService {
                 cover_url: coverUrl,
                 duration_seconds: Math.round(finalDur)
             });
-            await this._cleanupOldSuccessfulJobs(bookId, jobId);
+            await this._cleanupOldSuccessfulJobs(bookId, jobId, normalizedAspect);
             console.log(`[PBVideo] 完成: ${baseName}.mp4 (${finalDur.toFixed(1)}s)`);
             return videoUrl;
 
@@ -218,9 +235,9 @@ class PictureBookVideoService {
         await query(`UPDATE picture_book_video_jobs SET ${setClause}, updated_at = NOW() WHERE id = ?`, values);
     }
 
-    async _cleanupOldSuccessfulJobs(bookId, keepJobId) {
+    async _cleanupOldSuccessfulJobs(bookId, keepJobId, aspectRatio = '9:16') {
         const oldJobs = await query(
-            `SELECT id, video_url, cover_url
+            `SELECT id, video_url, cover_url, config_json
              FROM picture_book_video_jobs
              WHERE book_id = ?
                AND id != ?
@@ -231,14 +248,20 @@ class PictureBookVideoService {
         if (!oldJobs.length) return;
 
         let deletedFiles = 0;
+        let deletedJobs = 0;
         for (const job of oldJobs) {
+            let oldConfig = {};
+            try { oldConfig = JSON.parse(job.config_json || '{}'); } catch (e) {}
+            const oldAspect = oldConfig.aspect_ratio || '9:16';
+            if (oldAspect !== aspectRatio) continue;
             for (const url of [job.video_url, job.cover_url]) {
                 const deleted = this._deleteUploadFile(url);
                 if (deleted) deletedFiles++;
             }
             await query('DELETE FROM picture_book_video_jobs WHERE id = ?', [job.id]);
+            deletedJobs++;
         }
-        console.log(`[PBVideo] 已清理旧视频: book=${bookId}, keepJob=${keepJobId}, jobs=${oldJobs.length}, files=${deletedFiles}`);
+        console.log(`[PBVideo] 已清理旧视频: book=${bookId}, aspect=${aspectRatio}, keepJob=${keepJobId}, jobs=${deletedJobs}, files=${deletedFiles}`);
     }
 
     _deleteUploadFile(url) {
@@ -391,12 +414,12 @@ class PictureBookVideoService {
         const MAX_ENG_LINES = 5;
 
         // 1. 英文换行：font 从 60 起，若行数 > 5 则递减字号（最低 34）
-        let fontSize = 60;
+        let fontSize = H < 1200 ? 42 : 60;
         let lines;
         while (true) {
             const maxChars = Math.max(12, Math.floor(avail / (fontSize * 0.55)));
             lines = this._wrapTokens(tokens, maxChars);
-            if (lines.length <= MAX_ENG_LINES || fontSize <= 34) break;
+            if (lines.length <= MAX_ENG_LINES || fontSize <= (H < 1200 ? 28 : 34)) break;
             fontSize -= 4;
         }
         if (lines.length > MAX_ENG_LINES) lines = lines.slice(0, MAX_ENG_LINES);
@@ -404,7 +427,7 @@ class PictureBookVideoService {
         const engBlockH = lines.length * lineGap;
 
         // 2. 中文换行（最多 2 行，超出加省略号）
-        const cnSize = 38;
+        const cnSize = H < 1200 ? 28 : 38;
         let cnLines = [];
         if (showCn && text_cn) {
             const cnMax = Math.max(10, Math.floor(avail / (cnSize * 1.02)));   // 中文近似全角
@@ -432,7 +455,7 @@ class PictureBookVideoService {
                 return `<tspan fill="${fill}" font-weight="${weight}" dx="${dx}">${e(t)}</tspan>`;
             }).join('');
             const y = Math.round(engBaseline0 + li * lineGap);
-            return `<text x="540" y="${y}" text-anchor="middle" font-size="${fontSize}" font-family="sans-serif" paint-order="stroke" stroke="#000" stroke-width="5" stroke-linejoin="round" stroke-linecap="round">${tspans}</text>`;
+            return `<text x="${Math.round(W / 2)}" y="${y}" text-anchor="middle" font-size="${fontSize}" font-family="sans-serif" paint-order="stroke" stroke="#000" stroke-width="5" stroke-linejoin="round" stroke-linecap="round">${tspans}</text>`;
         }).join('');
 
         // 中文首行基线 = 英文块底 + 间距 + cnSize*0.88
@@ -440,7 +463,7 @@ class PictureBookVideoService {
         // 中文用细描边 + 柔和投影（避免密集笔画被粗描边糊成黑块，外观更轻盈）
         const cnSvg = cnLines.map((line, li) => {
             const y = Math.round(cnBaseline0 + li * cnGap);
-            return `<text x="540" y="${y}" text-anchor="middle" font-size="${cnSize}" fill="#FFE082" font-weight="500" font-family="sans-serif" filter="url(#cnShadow)" paint-order="stroke" stroke="#000" stroke-width="2" stroke-linejoin="round" stroke-linecap="round">${e(line)}</text>`;
+            return `<text x="${Math.round(W / 2)}" y="${y}" text-anchor="middle" font-size="${cnSize}" fill="#FFE082" font-weight="500" font-family="sans-serif" filter="url(#cnShadow)" paint-order="stroke" stroke="#000" stroke-width="2" stroke-linejoin="round" stroke-linecap="round">${e(line)}</text>`;
         }).join('');
 
         // 4. 完全透明 SVG，文字仅靠描边/投影提升对比度，背景图片完全可见
@@ -514,7 +537,7 @@ class PictureBookVideoService {
 
         const svg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
             <rect width="${W}" height="${H}" fill="#000" fill-opacity="0.55"/>
-            <text x="540" y="960" text-anchor="middle" font-size="180" fill="white" font-weight="800" font-family="serif">The End</text>
+            <text x="${Math.round(W / 2)}" y="${Math.round(H / 2)}" text-anchor="middle" font-size="${H < 1200 ? 120 : 180}" fill="white" font-weight="800" font-family="serif">The End</text>
             ${this._watermarkSvgFragment()}
         </svg>`;
         const overlay = await sharp(Buffer.from(svg)).png().toBuffer();
@@ -618,19 +641,19 @@ class PictureBookVideoService {
         const titleCn = String(book?.title || '').trim();
         const titleEn = String(book?.title_en || '').trim();
         const titleX = W / 2;
-        const titleTop = 380;
+        const titleTop = H < 1200 ? 190 : 380;
         const maxTitleWidth = W - 150;
         const cnLayout = this._wrapTitleText(titleCn, {
             maxWidth: maxTitleWidth,
-            startSize: titleCn.length <= 4 ? 176 : 142,
-            minSize: 62,
+            startSize: H < 1200 ? (titleCn.length <= 4 ? 118 : 96) : (titleCn.length <= 4 ? 176 : 142),
+            minSize: H < 1200 ? 46 : 62,
             maxLines: 2,
             lang: 'zh'
         });
         const enLayout = this._wrapTitleText(titleEn, {
             maxWidth: maxTitleWidth,
-            startSize: titleEn.length <= 24 ? 78 : 66,
-            minSize: 38,
+            startSize: H < 1200 ? (titleEn.length <= 24 ? 54 : 46) : (titleEn.length <= 24 ? 78 : 66),
+            minSize: H < 1200 ? 30 : 38,
             maxLines: 3,
             lang: 'en'
         });
@@ -638,7 +661,9 @@ class PictureBookVideoService {
         const titleGap = titleCn && titleEn ? 58 : 0;
         const enTop = titleTop + cnBlockH + titleGap;
         const titleBlockH = cnBlockH + (titleEn ? titleGap + ((enLayout.lines.length - 1) * enLayout.lineGap + enLayout.fontSize) : 0);
-        const topPanelH = Math.min(820, Math.max(560, titleTop + titleBlockH - 40));
+        const topPanelH = H < 1200
+            ? Math.min(470, Math.max(310, titleTop + titleBlockH - 40))
+            : Math.min(820, Math.max(560, titleTop + titleBlockH - 40));
 
         // 标题位置参考语文课本封面：上方留出呼吸感，小字标识、居中大书名、英文名分层排列。
         const titleSvg = `
@@ -679,7 +704,7 @@ class PictureBookVideoService {
                     anchor: 'middle'
                 })}
             </g>
-            <text x="540" y="1816" text-anchor="middle" font-size="44" fill="white" fill-opacity="0.78" font-weight="700" font-family="Avenir Next, Montserrat, Arial, sans-serif" paint-order="stroke" stroke="#000" stroke-opacity="0.44" stroke-width="3" stroke-linejoin="round">BookMelo</text>
+            <text x="${Math.round(W / 2)}" y="${H - 104}" text-anchor="middle" font-size="${H < 1200 ? 36 : 44}" fill="white" fill-opacity="0.78" font-weight="700" font-family="Avenir Next, Montserrat, Arial, sans-serif" paint-order="stroke" stroke="#000" stroke-opacity="0.44" stroke-width="3" stroke-linejoin="round">BookMelo</text>
         `;
 
         const wmSvg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">${titleSvg}</svg>`;
