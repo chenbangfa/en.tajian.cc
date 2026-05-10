@@ -6,6 +6,7 @@ const axios = require('axios');
 const sharp = require('sharp');
 const { query } = require('../config/database');
 const voiceService = require('./voice.service');
+const aiService = require('./ai.service');
 
 const SERVER_ROOT = path.join(__dirname, '../..');
 const OUTPUT_DIR = path.join(SERVER_ROOT, 'uploads/podcast-videos');
@@ -84,7 +85,7 @@ class PodcastVideoService {
             const segDir = path.join(tempDir, 'segments');
             fs.mkdirSync(segDir, { recursive: true });
 
-            await this._renderCoverFrame(coverPath, content, prepared, dims, mode);
+            await this._renderCoverFrame(coverPath, content, prepared, dims, mode, tempDir);
             const segments = [];
             let segmentIndex = 0;
             const addSegment = async (framePath, audioPath, duration, label) => {
@@ -245,7 +246,7 @@ class PodcastVideoService {
         return /\/tts_yd_/.test(String(audioUrl || ''));
     }
 
-    async _renderCoverFrame(outPath, content, prepared, dims, mode) {
+    async _renderCoverFrame(outPath, content, prepared, dims, mode, tempDir) {
         const { W, H, isVertical } = dims;
         const title = content.title_en || content.title || 'Listening Practice';
         const subtitle = content.title || content.category_name || '';
@@ -255,19 +256,77 @@ class PodcastVideoService {
         const titleSize = isVertical ? 76 : 78;
         const subSize = isVertical ? 36 : 34;
         const top = isVertical ? 310 : 230;
+        const generatedCover = await this._generateTopicCoverImage(content, prepared, dims, mode, tempDir).catch(error => {
+            console.warn('[PodcastVideo] Gemini 封面图生成失败，使用文字封面:', error.message);
+            return null;
+        });
+        const bgSvg = generatedCover
+            ? await this._topicCoverBackgroundSvg(generatedCover, dims)
+            : `<rect width="${W}" height="${H}" fill="url(#bg)"/>${this._softShapes(W, H)}`;
         const svg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
             ${this._defs()}
-            <rect width="${W}" height="${H}" fill="url(#bg)"/>
-            ${this._softShapes(W, H)}
+            ${bgSvg}
+            <rect width="${W}" height="${H}" fill="#0b1d13" opacity="${generatedCover ? 0.34 : 0}"/>
             ${this._watermark(W, H, isVertical)}
-            <rect x="${isVertical ? 64 : 132}" y="${top - 70}" width="${W - (isVertical ? 128 : 264)}" height="${isVertical ? 760 : 520}" rx="${isVertical ? 42 : 48}" fill="rgba(255,255,255,0.86)" stroke="rgba(42,122,83,0.16)"/>
+            <rect x="${isVertical ? 64 : 132}" y="${top - 70}" width="${W - (isVertical ? 128 : 264)}" height="${isVertical ? 760 : 520}" rx="${isVertical ? 42 : 48}" fill="${generatedCover ? 'rgba(255,255,255,0.76)' : 'rgba(255,255,255,0.86)'}" stroke="rgba(255,255,255,0.40)"/>
             <text x="${W / 2}" y="${top}" text-anchor="middle" font-size="${isVertical ? 34 : 30}" fill="#2d7a47" font-weight="900" font-family="Avenir Next, Arial">${this._e(badge)}</text>
             ${this._textBlock(titleLines, W / 2, top + (isVertical ? 110 : 100), titleSize, isVertical ? 92 : 88, '#102116', '900', 'middle')}
-            ${this._textBlock(subLines, W / 2, top + (isVertical ? 480 : 350), subSize, subSize + 15, '#52635b', '700', 'middle')}
-            <line x1="${W / 2 - (isVertical ? 210 : 270)}" x2="${W / 2 + (isVertical ? 210 : 270)}" y1="${H - (isVertical ? 420 : 230)}" y2="${H - (isVertical ? 420 : 230)}" stroke="#9cc8a8" stroke-width="4" stroke-linecap="round"/>
-            <text x="${W / 2}" y="${H - (isVertical ? 350 : 170)}" text-anchor="middle" font-size="${isVertical ? 34 : 30}" fill="#355548" font-weight="800" font-family="Avenir Next, Arial">${prepared.sentences.length} sentences · BookMelo</text>
+            ${this._textBlock(subLines, W / 2, top + (isVertical ? 480 : 350), subSize, subSize + 15, '#355548', '800', 'middle')}
+            <line x1="${W / 2 - (isVertical ? 210 : 270)}" x2="${W / 2 + (isVertical ? 210 : 270)}" y1="${H - (isVertical ? 420 : 230)}" y2="${H - (isVertical ? 420 : 230)}" stroke="${generatedCover ? '#ffffff' : '#9cc8a8'}" stroke-opacity="${generatedCover ? 0.72 : 1}" stroke-width="4" stroke-linecap="round"/>
+            <text x="${W / 2}" y="${H - (isVertical ? 350 : 170)}" text-anchor="middle" font-size="${isVertical ? 34 : 30}" fill="${generatedCover ? '#ffffff' : '#355548'}" font-weight="900" font-family="Avenir Next, Arial" paint-order="stroke" stroke="${generatedCover ? '#173524' : 'transparent'}" stroke-width="3">${prepared.sentences.length} sentences · BookMelo</text>
         </svg>`;
         await sharp(Buffer.from(svg)).jpeg({ quality: 92 }).toFile(outPath);
+    }
+
+    async _generateTopicCoverImage(content, prepared, dims, mode, tempDir) {
+        if (String(process.env.PODCAST_VIDEO_COVER_IMAGE_ENABLED || 'true').toLowerCase() === 'false') return null;
+        const prompt = this._buildCoverImagePrompt(content, prepared, dims, mode);
+        const result = await aiService.generateImage(prompt, { aspectRatio: dims.isVertical ? '9:16' : '16:9' });
+        if (!result.success || !result.imageUrl) {
+            throw new Error(result.error || 'Gemini 未返回封面图');
+        }
+        return this._resolveUrl(result.imageUrl, tempDir, 'podcast_cover_topic');
+    }
+
+    _buildCoverImagePrompt(content, prepared, dims, mode) {
+        const title = content.title_en || content.title || 'English listening practice';
+        const textSample = prepared.sentences
+            .slice(0, 5)
+            .map(s => s.text)
+            .join(' ');
+        const aspectText = dims.isVertical ? 'vertical 9:16' : 'horizontal 16:9';
+        const audience = mode === 'bilingual'
+            ? 'Chinese English learners and beginner ESL learners'
+            : 'global English learners';
+        return `Create a premium YouTube podcast cover image for an English listening lesson.
+
+Aspect ratio: ${aspectText}.
+Lesson title: "${title}".
+Article theme/context: ${textSample}
+Audience: ${audience}.
+
+Visual direction:
+- clean editorial educational cover, warm modern style, trustworthy paid-course feeling
+- cinematic but calm, suitable for English learning and listening practice
+- show a simple symbolic scene related to the article theme, not a busy collage
+- soft natural lighting, gentle green and cream color palette, subtle depth
+- leave a clean central area for title overlay
+- high quality, polished, modern learning brand style
+
+Important restrictions:
+- no text, no letters, no subtitles, no logos, no watermark inside the generated image
+- no distorted faces, no scary imagery, child-safe
+- avoid clutter, avoid many small objects`;
+    }
+
+    async _topicCoverBackgroundSvg(imagePath, dims) {
+        const { W, H } = dims;
+        const data = await sharp(imagePath)
+            .resize(W, H, { fit: 'cover', position: 'centre' })
+            .jpeg({ quality: 88 })
+            .toBuffer();
+        const base64 = data.toString('base64');
+        return `<image href="data:image/jpeg;base64,${base64}" x="0" y="0" width="${W}" height="${H}" preserveAspectRatio="xMidYMid slice"/>`;
     }
 
     async _renderListeningFrame(outPath, content, sentences, activeIndex, dims, mode) {
