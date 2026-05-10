@@ -95,6 +95,15 @@ class PodcastVideoService {
             };
 
             await addSegment(coverPath, null, aspect === '9:16' ? 1.2 : 2.2, 'cover');
+            const firstIntroFrame = path.join(tempDir, 'phase_1_listen_first.png');
+            await this._renderPhaseIntroFrame(firstIntroFrame, content, dims, mode, {
+                step: 'Step 1',
+                kicker: 'LISTEN FIRST',
+                title: 'Listen to the whole passage once.',
+                subtitle: "Don't stop yet. Catch the main idea and familiar words.",
+                zh: '先完整盲听一遍，不暂停，抓住大意和熟悉的词。'
+            });
+            await addSegment(firstIntroFrame, null, aspect === '9:16' ? 1.6 : 2.2, 'phase_1');
             await this._updateJob(jobId, { progress: 22 });
 
             // 第一遍：完整英文朗读。逐句播放，画面显示文章脉络并高亮当前句。
@@ -106,6 +115,16 @@ class PodcastVideoService {
                 await addSegment(frame, sentence.femaleLocal, dur, `full_${i + 1}`);
                 await this._updateJob(jobId, { progress: 22 + Math.round(((i + 1) / prepared.sentences.length) * 28) });
             }
+
+            const secondIntroFrame = path.join(tempDir, 'phase_2_sentence_focus.png');
+            await this._renderPhaseIntroFrame(secondIntroFrame, content, dims, mode, {
+                step: 'Step 2',
+                kicker: 'SENTENCE FOCUS',
+                title: 'Now listen sentence by sentence.',
+                subtitle: 'Compare the female and male voices. Notice key words and patterns.',
+                zh: '现在进入逐句精听，对比女声和男声，注意关键词和句型。'
+            });
+            await addSegment(secondIntroFrame, null, aspect === '9:16' ? 1.6 : 2.2, 'phase_2');
 
             // 第二遍：逐句训练。女声 -> 男声 -> 中文翻译发音(仅双语模板)。
             for (let i = 0; i < prepared.sentences.length; i++) {
@@ -329,6 +348,31 @@ Important restrictions:
         return `<image href="data:image/jpeg;base64,${base64}" x="0" y="0" width="${W}" height="${H}" preserveAspectRatio="xMidYMid slice"/>`;
     }
 
+    async _renderPhaseIntroFrame(outPath, content, dims, mode, stage) {
+        const { W, H, isVertical } = dims;
+        const title = content.title_en || content.title || 'Listening Practice';
+        const panelX = isVertical ? 76 : 210;
+        const panelW = W - panelX * 2;
+        const panelH = isVertical ? 760 : 520;
+        const panelY = Math.round((H - panelH) / 2) + (isVertical ? 30 : 24);
+        const titleLines = this._wrapText(stage.title, isVertical ? 22 : 40, 3);
+        const subLines = this._wrapText(stage.subtitle, isVertical ? 26 : 58, 3);
+        const zhLines = mode === 'bilingual' ? this._wrapText(stage.zh, isVertical ? 18 : 36, 2, true) : [];
+        const svg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
+            ${this._defs()}<rect width="${W}" height="${H}" fill="url(#bg)"/>${this._softShapes(W, H)}
+            <text x="${isVertical ? 70 : 130}" y="${isVertical ? 145 : 82}" font-size="${isVertical ? 28 : 24}" fill="#2d7a47" font-weight="900" font-family="Avenir Next, Arial">${this._e(stage.kicker)}</text>
+            <text x="${isVertical ? 70 : 130}" y="${isVertical ? 195 : 122}" font-size="${isVertical ? 34 : 30}" fill="#17231b" font-weight="900" font-family="Avenir Next, Arial">${this._e(this._shorten(title, isVertical ? 28 : 60))}</text>
+            <rect x="${panelX}" y="${panelY}" width="${panelW}" height="${panelH}" rx="${isVertical ? 54 : 58}" fill="rgba(255,255,255,0.88)" stroke="rgba(39,94,62,0.12)" filter="url(#shadow)"/>
+            <circle cx="${W / 2}" cy="${panelY + (isVertical ? 145 : 105)}" r="${isVertical ? 64 : 54}" fill="#e8f6e9" stroke="#86c790" stroke-width="4"/>
+            <text x="${W / 2}" y="${panelY + (isVertical ? 160 : 118)}" text-anchor="middle" font-size="${isVertical ? 32 : 28}" fill="#2d7a47" font-weight="950" font-family="Avenir Next, Arial">${this._e(stage.step)}</text>
+            ${this._textBlock(titleLines, W / 2, panelY + (isVertical ? 280 : 230), isVertical ? 58 : 48, isVertical ? 74 : 62, '#102116', '950', 'middle')}
+            ${this._textBlock(subLines, W / 2, panelY + (isVertical ? 520 : 385), isVertical ? 31 : 28, isVertical ? 45 : 40, '#52665a', '800', 'middle')}
+            ${zhLines.length ? this._textBlock(zhLines, W / 2, panelY + (isVertical ? 655 : 470), isVertical ? 30 : 26, isVertical ? 42 : 36, '#8a651f', '850', 'middle') : ''}
+            <text x="${W - (isVertical ? 70 : 130)}" y="${H - (isVertical ? 90 : 56)}" text-anchor="end" font-size="${isVertical ? 24 : 22}" fill="#789083" font-weight="800" font-family="Avenir Next, Arial">BookMelo Listening Lab</text>
+        </svg>`;
+        await sharp(Buffer.from(svg)).png().toFile(outPath);
+    }
+
     async _renderListeningFrame(outPath, content, sentences, activeIndex, dims, mode) {
         const { W, H, isVertical } = dims;
         const title = content.title_en || content.title || 'Listening Practice';
@@ -343,18 +387,28 @@ Important restrictions:
         const panelH = H - (isVertical ? 445 : 270);
         const lineSize = isVertical ? 34 : 34;
         const lineGap = isVertical ? 72 : 62;
-        let y = panelY + (isVertical ? 112 : 98);
-        const rows = visible.map((s, idx) => {
+        const rowGap = isVertical ? 16 : 12;
+        const rowData = visible.map((s, idx) => {
             const actualIndex = start + idx;
             const active = actualIndex === activeIndex;
             const lines = this._wrapText(s.text, isVertical ? 31 : 78, active ? 3 : 2);
             const rowH = Math.max(lineGap, lines.length * (lineSize + 10) + 20);
+            return { actualIndex, active, lines, rowH };
+        });
+        const totalRowsH = rowData.reduce((sum, row) => sum + row.rowH, 0) + Math.max(0, rowData.length - 1) * rowGap;
+        let y = panelY + Math.max(isVertical ? 70 : 58, Math.round((panelH - totalRowsH) / 2));
+        const rows = rowData.map(row => {
             const rowY = y;
-            y += rowH + (isVertical ? 16 : 10);
+            const centerY = rowY + row.rowH / 2;
+            y += row.rowH + rowGap;
+            const textSize = row.active ? lineSize + 2 : lineSize - 3;
+            const textGap = lineSize + 13;
+            const blockH = (row.lines.length - 1) * textGap + textSize;
+            const firstBaseline = centerY - blockH / 2 + textSize * 0.78;
             return `<g>
-                <rect x="${panelX + 36}" y="${rowY - lineSize}" width="${panelW - 72}" height="${rowH}" rx="24" fill="${active ? '#e8f6e9' : 'rgba(255,255,255,0.58)'}" stroke="${active ? '#72b77e' : 'rgba(39,94,62,0.08)'}" stroke-width="${active ? 3 : 1}"/>
-                <text x="${panelX + 66}" y="${rowY}" font-size="${isVertical ? 26 : 24}" fill="${active ? '#2d7a47' : '#8b9b91'}" font-weight="900" font-family="Avenir Next, Arial">${actualIndex + 1}</text>
-                ${this._textBlock(lines, panelX + 118, rowY, active ? lineSize + 2 : lineSize - 3, lineSize + 13, active ? '#102116' : '#596960', active ? '900' : '650', 'start')}
+                <rect x="${panelX + 36}" y="${rowY}" width="${panelW - 72}" height="${row.rowH}" rx="24" fill="${row.active ? '#e8f6e9' : 'rgba(255,255,255,0.58)'}" stroke="${row.active ? '#72b77e' : 'rgba(39,94,62,0.08)'}" stroke-width="${row.active ? 3 : 1}"/>
+                <text x="${panelX + 66}" y="${centerY + (isVertical ? 9 : 8)}" font-size="${isVertical ? 26 : 24}" fill="${row.active ? '#2d7a47' : '#8b9b91'}" font-weight="900" font-family="Avenir Next, Arial">${row.actualIndex + 1}</text>
+                ${this._textBlock(row.lines, panelX + 118, firstBaseline, textSize, textGap, row.active ? '#102116' : '#596960', row.active ? '900' : '650', 'start')}
             </g>`;
         }).join('');
         const svg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
@@ -374,7 +428,7 @@ Important restrictions:
         const maxChars = isVertical ? 25 : 58;
         const sentenceLines = this._wrapText(sentence.text, maxChars, isVertical ? 6 : 4);
         const translationLines = mode === 'bilingual' && sentence.translation ? this._wrapText(sentence.translation, isVertical ? 18 : 44, 2, true) : [];
-        const words = (sentence.words || []).slice(0, isVertical ? 3 : 5);
+        const words = (sentence.words || []).slice(0, isVertical ? 3 : 6);
         const grammar = sentence.grammar || '';
         const panelX = isVertical ? 58 : 120;
         const mainY = isVertical ? 260 : 178;
@@ -397,23 +451,28 @@ Important restrictions:
 
     _renderKeyPanel(x, y, w, h, words, grammar, dims) {
         const { isVertical } = dims;
-        const visibleWords = words.slice(0, isVertical ? 3 : 4);
-        const chips = words.map((item, idx) => {
-            const word = this._shorten(item.word || '', isVertical ? 18 : 22);
-            const meaning = this._shorten(item.translation || item.pos || '', isVertical ? 12 : 12);
-            const cols = isVertical ? 1 : 2;
+        const visibleWords = words.slice(0, isVertical ? 3 : 6);
+        const cols = isVertical ? 1 : 3;
+        const chips = visibleWords.map((item, idx) => {
+            const word = this._shorten(item.word || '', isVertical ? 18 : 20);
+            const phonetic = this._shorten(this._formatPhonetic(item.phonetic || item.uk_phonetic || item.us_phonetic || ''), isVertical ? 18 : 22);
+            const meaning = this._compactMeaning(item.translation || item.pos || '', isVertical ? 13 : 18);
             const chipGap = isVertical ? 18 : 24;
-            const chipW = isVertical ? w - 68 : Math.floor((w - 92 - chipGap) / cols);
+            const chipW = isVertical ? w - 68 : Math.floor((w - 92 - chipGap * (cols - 1)) / cols);
             const cx = isVertical ? x + 34 : x + 46 + (idx % cols) * (chipW + chipGap);
-            const cy = isVertical ? y + 128 + idx * 82 : y + 120 + Math.floor(idx / cols) * 82;
-            const wordSize = isVertical ? 25 : (word.length > 16 ? 22 : 24);
-            const meaningSize = isVertical ? 20 : 19;
-            return `<g><rect x="${cx}" y="${cy - 42}" width="${chipW}" height="62" rx="31" fill="#f3faf4" stroke="#cbe8d1"/>
-                <text x="${cx + 24}" y="${cy - 6}" font-size="${wordSize}" fill="#213429" font-weight="900" font-family="Avenir Next, Arial">${this._e(word)}</text>
-                ${meaning ? `<text x="${cx + chipW - 24}" y="${cy - 7}" text-anchor="end" font-size="${meaningSize}" fill="#5f7b69" font-weight="700" font-family="Avenir Next, Arial">${this._e(meaning)}</text>` : ''}</g>`;
-        }).slice(0, isVertical ? 3 : 4).join('');
+            const cy = isVertical ? y + 122 + idx * 82 : y + 118 + Math.floor(idx / cols) * 86;
+            const wordSize = isVertical ? 25 : (word.length > 16 ? 21 : 24);
+            const phoneticSize = isVertical ? 18 : 17;
+            const meaningSize = isVertical ? 20 : 18;
+            return `<g><rect x="${cx}" y="${cy - 44}" width="${chipW}" height="${isVertical ? 64 : 70}" rx="${isVertical ? 32 : 28}" fill="#f3faf4" stroke="#cbe8d1"/>
+                <text x="${cx + 24}" y="${cy - 15}" font-family="Avenir Next, Arial">
+                    <tspan font-size="${wordSize}" fill="#213429" font-weight="900">${this._e(word)}</tspan>
+                    ${phonetic ? `<tspan dx="12" font-size="${phoneticSize}" fill="#7d9185" font-weight="700">${this._e(phonetic)}</tspan>` : ''}
+                </text>
+                ${meaning ? `<text x="${cx + 24}" y="${cy + 12}" font-size="${meaningSize}" fill="#5f7b69" font-weight="750" font-family="Avenir Next, Arial">${this._e(meaning)}</text>` : ''}</g>`;
+        }).join('');
         const grammarLines = this._wrapText(grammar || 'Listen for the sentence rhythm and key expression.', isVertical ? 24 : 64, isVertical ? 3 : 2, /[\u3400-\u9fff]/.test(grammar || ''));
-        const patternY = isVertical ? y + 385 : y + 270;
+        const patternY = isVertical ? y + 385 : y + 330;
         return `<g>
             <rect x="${x}" y="${y}" width="${w}" height="${Math.max(180, h)}" rx="34" fill="rgba(255,255,255,0.72)" stroke="rgba(39,94,62,0.10)"/>
             <text x="${x + 34}" y="${y + 48}" font-size="${isVertical ? 24 : 22}" fill="#2d7a47" font-weight="900" font-family="Avenir Next, Arial">KEY WORDS / GRAMMAR</text>
@@ -652,6 +711,19 @@ Important restrictions:
     _shorten(text, max) {
         const raw = String(text || '').trim();
         return raw.length > max ? `${raw.slice(0, Math.max(1, max - 1))}…` : raw;
+    }
+
+    _compactMeaning(text, max) {
+        let raw = String(text || '').trim();
+        if (raw.length > max && /[（(]/.test(raw)) {
+            raw = raw.replace(/[（(][^）)]*[）)]/g, '').trim();
+        }
+        return this._shorten(raw, max);
+    }
+
+    _formatPhonetic(value) {
+        const raw = String(value || '').trim().replace(/^\/+|\/+$/g, '');
+        return raw ? `/${raw}/` : '';
     }
 
     _e(text) {
