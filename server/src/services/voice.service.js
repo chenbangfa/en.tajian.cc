@@ -84,7 +84,7 @@ class VoiceService {
         return /[\u3400-\u9fff]/.test(cleaned) ? cleaned : original;
     }
 
-    async textToSpeechByEngine(text, engine = 'auto', voice = 'female', speed = 1.0) {
+    async textToSpeechByEngine(text, engine = 'auto', voice = 'female', speed = 1.0, options = {}) {
         const normalizedEngine = this.normalizeEngine(engine);
 
         switch (normalizedEngine) {
@@ -95,7 +95,7 @@ class VoiceService {
             case 'tencent':
                 return this._tencentTTS(text, voice, speed);
             case 'volcengine':
-                return this._volcengineTTS(text, voice, speed);
+                return this._volcengineTTS(text, voice, speed, options);
             default:
                 return this.textToSpeech(text, voice, speed);
         }
@@ -255,6 +255,10 @@ class VoiceService {
                 }
             }
         };
+        if (options.emotion) {
+            payload.req_params.audio_params.emotion = options.emotion;
+            payload.req_params.audio_params.emotion_scale = Number(options.emotionScale || process.env.VOLCENGINE_TTS_EMOTION_SCALE || 3);
+        }
 
         console.log(`[TTS:Volcengine] speaker=${cfg.speaker}, text="${text.substring(0, 40)}..."`);
 

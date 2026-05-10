@@ -175,12 +175,12 @@ class PodcastVideoService {
         let changed = false;
         for (let i = 0; i < sentences.length; i++) {
             const s = sentences[i];
-            if (!s.female_audio_url) {
+            if (!s.female_audio_url || this._shouldRegenerateEnglishAudio(s.female_audio_url)) {
                 const result = await this._ttsEnglish(s.text, 'female', speed);
                 s.female_audio_url = result.audioUrl;
                 changed = true;
             }
-            if (!s.male_audio_url) {
+            if (!s.male_audio_url || this._shouldRegenerateEnglishAudio(s.male_audio_url)) {
                 const result = await this._ttsEnglish(s.text, 'male', speed);
                 s.male_audio_url = result.audioUrl;
                 changed = true;
@@ -216,9 +216,24 @@ class PodcastVideoService {
     }
 
     async _ttsEnglish(text, voice, speed) {
-        const result = await voiceService.textToSpeechByEngine(text, 'youdao', voice, speed);
-        if (!result.success || !result.audioUrl) throw new Error(result.error || `英文${voice}音频生成失败`);
-        return result;
+        const engine = voiceService.normalizeEngine(process.env.PODCAST_VIDEO_EN_TTS_ENGINE || 'volcengine');
+        const emotion = process.env.PODCAST_VIDEO_EN_TTS_EMOTION || 'happy';
+        const result = await voiceService.textToSpeechByEngine(text, engine, voice, speed, {
+            emotion,
+            emotionScale: process.env.PODCAST_VIDEO_EN_TTS_EMOTION_SCALE || 3
+        });
+        if (result.success && result.audioUrl) return result;
+
+        console.warn(`[PodcastVideo] ${engine} 英文${voice}TTS失败，回退有道: ${result.error || '未返回音频'}`);
+        const fallback = await voiceService.textToSpeechByEngine(text, 'youdao', voice, speed);
+        if (!fallback.success || !fallback.audioUrl) throw new Error(fallback.error || `英文${voice}音频生成失败`);
+        return fallback;
+    }
+
+    _shouldRegenerateEnglishAudio(audioUrl) {
+        const engine = voiceService.normalizeEngine(process.env.PODCAST_VIDEO_EN_TTS_ENGINE || 'volcengine');
+        if (engine !== 'volcengine') return false;
+        return /\/tts_yd_/.test(String(audioUrl || ''));
     }
 
     async _renderCoverFrame(outPath, content, prepared, dims, mode) {
@@ -314,23 +329,30 @@ class PodcastVideoService {
 
     _renderKeyPanel(x, y, w, h, words, grammar, dims) {
         const { isVertical } = dims;
+        const visibleWords = words.slice(0, isVertical ? 3 : 4);
         const chips = words.map((item, idx) => {
-            const word = this._shorten(item.word || '', isVertical ? 16 : 24);
-            const meaning = this._shorten(item.translation || item.pos || '', isVertical ? 10 : 16);
-            const chipW = isVertical ? w - 58 : Math.min(285, Math.max(170, word.length * 16 + meaning.length * 14 + 64));
-            const cx = isVertical ? x + 28 : x + 34 + (idx % 3) * 310;
-            const cy = isVertical ? y + 82 + idx * 74 : y + 82 + Math.floor(idx / 3) * 70;
-            return `<g><rect x="${cx}" y="${cy - 38}" width="${chipW}" height="52" rx="26" fill="#f3faf4" stroke="#cbe8d1"/>
-                <text x="${cx + 24}" y="${cy - 4}" font-size="${isVertical ? 26 : 24}" fill="#213429" font-weight="900" font-family="Avenir Next, Arial">${this._e(word)}</text>
-                ${meaning ? `<text x="${cx + chipW - 22}" y="${cy - 5}" text-anchor="end" font-size="${isVertical ? 22 : 20}" fill="#5f7b69" font-weight="700" font-family="Avenir Next, Arial">${this._e(meaning)}</text>` : ''}</g>`;
-        }).join('');
-        const grammarLines = this._wrapText(grammar || 'Listen for the sentence rhythm and key expression.', isVertical ? 24 : 72, isVertical ? 3 : 2, /[\u3400-\u9fff]/.test(grammar || ''));
+            const word = this._shorten(item.word || '', isVertical ? 18 : 22);
+            const meaning = this._shorten(item.translation || item.pos || '', isVertical ? 12 : 12);
+            const cols = isVertical ? 1 : 2;
+            const chipGap = isVertical ? 18 : 24;
+            const chipW = isVertical ? w - 68 : Math.floor((w - 92 - chipGap) / cols);
+            const cx = isVertical ? x + 34 : x + 46 + (idx % cols) * (chipW + chipGap);
+            const cy = isVertical ? y + 128 + idx * 82 : y + 120 + Math.floor(idx / cols) * 82;
+            const wordSize = isVertical ? 25 : (word.length > 16 ? 22 : 24);
+            const meaningSize = isVertical ? 20 : 19;
+            return `<g><rect x="${cx}" y="${cy - 42}" width="${chipW}" height="62" rx="31" fill="#f3faf4" stroke="#cbe8d1"/>
+                <text x="${cx + 24}" y="${cy - 6}" font-size="${wordSize}" fill="#213429" font-weight="900" font-family="Avenir Next, Arial">${this._e(word)}</text>
+                ${meaning ? `<text x="${cx + chipW - 24}" y="${cy - 7}" text-anchor="end" font-size="${meaningSize}" fill="#5f7b69" font-weight="700" font-family="Avenir Next, Arial">${this._e(meaning)}</text>` : ''}</g>`;
+        }).slice(0, isVertical ? 3 : 4).join('');
+        const grammarLines = this._wrapText(grammar || 'Listen for the sentence rhythm and key expression.', isVertical ? 24 : 64, isVertical ? 3 : 2, /[\u3400-\u9fff]/.test(grammar || ''));
+        const patternY = isVertical ? y + 385 : y + 270;
         return `<g>
             <rect x="${x}" y="${y}" width="${w}" height="${Math.max(180, h)}" rx="34" fill="rgba(255,255,255,0.72)" stroke="rgba(39,94,62,0.10)"/>
             <text x="${x + 34}" y="${y + 48}" font-size="${isVertical ? 24 : 22}" fill="#2d7a47" font-weight="900" font-family="Avenir Next, Arial">KEY WORDS / GRAMMAR</text>
             ${chips}
-            <text x="${x + 34}" y="${y + (isVertical ? 340 : 190)}" font-size="${isVertical ? 24 : 22}" fill="#8a651f" font-weight="900" font-family="Avenir Next, Arial">Pattern</text>
-            ${this._textBlock(grammarLines, x + 34, y + (isVertical ? 385 : 228), isVertical ? 25 : 24, isVertical ? 36 : 34, '#6b5b31', '750', 'start')}
+            ${visibleWords.length ? '' : `<text x="${x + 34}" y="${y + 122}" font-size="${isVertical ? 25 : 24}" fill="#5f7b69" font-weight="750" font-family="Avenir Next, Arial">Listen for the sentence rhythm.</text>`}
+            <text x="${x + 34}" y="${patternY}" font-size="${isVertical ? 24 : 22}" fill="#8a651f" font-weight="900" font-family="Avenir Next, Arial">Pattern</text>
+            ${this._textBlock(grammarLines, x + 34, patternY + (isVertical ? 45 : 38), isVertical ? 25 : 23, isVertical ? 36 : 32, '#6b5b31', '750', 'start')}
         </g>`;
     }
 
@@ -344,18 +366,18 @@ class PodcastVideoService {
             }
             if (s.grammar && !grammars.includes(s.grammar)) grammars.push(s.grammar);
         }
-        const wordLines = (words.length ? words.slice(0, isVertical ? 7 : 10).map(w => `${w.word}${w.translation ? ` - ${w.translation}` : ''}`) : ['Listen again and notice the main expressions.']);
-        const grammarLines = (grammars.length ? grammars.slice(0, isVertical ? 3 : 4) : ['Review the sentence rhythm.', 'Repeat the useful sentence patterns.']);
+        const wordLines = (words.length ? words.slice(0, isVertical ? 5 : 6).map(w => `${w.word}${w.translation ? ` - ${w.translation}` : ''}`) : ['Listen again and notice the main expressions.']);
+        const grammarLines = (grammars.length ? grammars.slice(0, isVertical ? 2 : 3) : ['Review the sentence rhythm.', 'Repeat the useful sentence patterns.']);
         const x = isVertical ? 70 : 150;
         const svg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
             ${this._defs()}<rect width="${W}" height="${H}" fill="url(#bg)"/>${this._softShapes(W, H)}${this._watermark(W, H, isVertical)}
             <text x="${x}" y="${isVertical ? 220 : 150}" font-size="${isVertical ? 62 : 60}" fill="#102116" font-weight="950" font-family="Avenir Next, Arial">Review</text>
-            <rect x="${x}" y="${isVertical ? 295 : 225}" width="${W - x * 2}" height="${isVertical ? 620 : 330}" rx="38" fill="rgba(255,255,255,0.84)"/>
+            <rect x="${x}" y="${isVertical ? 295 : 225}" width="${W - x * 2}" height="${isVertical ? 560 : 310}" rx="38" fill="rgba(255,255,255,0.84)"/>
             <text x="${x + 44}" y="${isVertical ? 360 : 285}" font-size="${isVertical ? 30 : 28}" fill="#2d7a47" font-weight="900" font-family="Avenir Next, Arial">Key words</text>
-            ${this._listBlock(wordLines, x + 48, isVertical ? 430 : 345, isVertical ? 32 : 28, isVertical ? 52 : 44, '#17231b', isVertical ? 34 : 52)}
-            <rect x="${x}" y="${isVertical ? 980 : 590}" width="${W - x * 2}" height="${isVertical ? 430 : 260}" rx="38" fill="rgba(255,255,255,0.74)"/>
-            <text x="${x + 44}" y="${isVertical ? 1048 : 650}" font-size="${isVertical ? 30 : 28}" fill="#8a651f" font-weight="900" font-family="Avenir Next, Arial">Patterns</text>
-            ${this._listBlock(grammarLines, x + 48, isVertical ? 1120 : 710, isVertical ? 28 : 26, isVertical ? 48 : 42, '#5d4c26', isVertical ? 26 : 72)}
+            ${this._reviewWordsBlock(wordLines, x + 48, isVertical ? 430 : 345, W - x * 2 - 96, isVertical)}
+            <rect x="${x}" y="${isVertical ? 920 : 590}" width="${W - x * 2}" height="${isVertical ? 430 : 290}" rx="38" fill="rgba(255,255,255,0.74)"/>
+            <text x="${x + 44}" y="${isVertical ? 988 : 650}" font-size="${isVertical ? 30 : 28}" fill="#8a651f" font-weight="900" font-family="Avenir Next, Arial">Patterns</text>
+            ${this._listBlock(grammarLines, x + 48, isVertical ? 1060 : 710, isVertical ? 27 : 24, isVertical ? 46 : 40, '#5d4c26', isVertical ? 25 : 58, isVertical ? 2 : 2)}
             <text x="${W / 2}" y="${H - (isVertical ? 170 : 90)}" text-anchor="middle" font-size="${isVertical ? 34 : 30}" fill="#2d7a47" font-weight="900" font-family="Avenir Next, Arial">The End · BookMelo</text>
         </svg>`;
         await sharp(Buffer.from(svg)).jpeg({ quality: 92 }).toFile(outPath);
@@ -493,7 +515,7 @@ class PodcastVideoService {
     }
 
     _watermark(W, H, isVertical) {
-        return `<text x="${isVertical ? 48 : 64}" y="${isVertical ? 72 : 62}" font-size="${isVertical ? 34 : 30}" fill="#2d7a47" font-weight="950" font-family="Avenir Next, Arial">BookMelo</text>`;
+        return '';
     }
 
     _renderKeyText(item) {
@@ -505,17 +527,32 @@ class PodcastVideoService {
         return lines.map((line, i) => `<text x="${x}" y="${y + i * gap}" text-anchor="${anchor}" font-size="${size}" fill="${fill}" font-weight="${weight}" font-family="Avenir Next, Arial, sans-serif">${this._e(line)}</text>`).join('');
     }
 
-    _listBlock(lines, x, y, size, gap, fill, maxChars) {
+    _listBlock(lines, x, y, size, gap, fill, maxChars, maxLinesPerItem = 2) {
         const out = [];
         let lineIndex = 0;
         for (const line of lines) {
-            const wrapped = this._wrapText(line, maxChars, 2, /[\u3400-\u9fff]/.test(line));
+            const wrapped = this._wrapText(line, maxChars, maxLinesPerItem, /[\u3400-\u9fff]/.test(line));
             for (const sub of wrapped) {
                 out.push(`<text x="${x}" y="${y + lineIndex * gap}" font-size="${size}" fill="${fill}" font-weight="750" font-family="Avenir Next, Arial">${this._e(sub)}</text>`);
                 lineIndex++;
             }
         }
         return out.join('');
+    }
+
+    _reviewWordsBlock(lines, x, y, width, isVertical) {
+        const cols = isVertical ? 1 : 2;
+        const colGap = isVertical ? 0 : 80;
+        const colW = Math.floor((width - colGap * (cols - 1)) / cols);
+        const rowGap = isVertical ? 54 : 48;
+        return lines.map((line, index) => {
+            const col = index % cols;
+            const row = Math.floor(index / cols);
+            const tx = x + col * (colW + colGap);
+            const ty = y + row * rowGap;
+            const short = this._shorten(line, isVertical ? 34 : 38);
+            return `<text x="${tx}" y="${ty}" font-size="${isVertical ? 32 : 27}" fill="#17231b" font-weight="800" font-family="Avenir Next, Arial">${this._e(short)}</text>`;
+        }).join('');
     }
 
     _wrapText(text, maxChars, maxLines = 3, isCjk = false) {
