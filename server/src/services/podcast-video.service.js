@@ -472,7 +472,7 @@ Important restrictions:
                 ${meaning ? `<text x="${cx + 24}" y="${cy + 12}" font-size="${meaningSize}" fill="#5f7b69" font-weight="750" font-family="Avenir Next, Arial">${this._e(meaning)}</text>` : ''}</g>`;
         }).join('');
         const grammarLines = this._wrapText(grammar || 'Listen for the sentence rhythm and key expression.', isVertical ? 24 : 64, isVertical ? 3 : 2, /[\u3400-\u9fff]/.test(grammar || ''));
-        const patternY = isVertical ? y + 385 : y + 330;
+        const patternY = isVertical ? y + 385 : y + 288;
         return `<g>
             <rect x="${x}" y="${y}" width="${w}" height="${Math.max(180, h)}" rx="34" fill="rgba(255,255,255,0.72)" stroke="rgba(39,94,62,0.10)"/>
             <text x="${x + 34}" y="${y + 48}" font-size="${isVertical ? 24 : 22}" fill="#2d7a47" font-weight="900" font-family="Avenir Next, Arial">KEY WORDS / GRAMMAR</text>
