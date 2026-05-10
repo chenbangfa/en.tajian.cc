@@ -218,16 +218,25 @@ class PodcastVideoService {
     async _ttsEnglish(text, voice, speed) {
         const engine = voiceService.normalizeEngine(process.env.PODCAST_VIDEO_EN_TTS_ENGINE || 'volcengine');
         const emotion = process.env.PODCAST_VIDEO_EN_TTS_EMOTION || 'happy';
-        const result = await voiceService.textToSpeechByEngine(text, engine, voice, speed, {
+        const effectiveSpeed = this._resolveEnglishTtsSpeed(voice, speed);
+        const result = await voiceService.textToSpeechByEngine(text, engine, voice, effectiveSpeed, {
             emotion,
             emotionScale: process.env.PODCAST_VIDEO_EN_TTS_EMOTION_SCALE || 3
         });
         if (result.success && result.audioUrl) return result;
 
         console.warn(`[PodcastVideo] ${engine} 英文${voice}TTS失败，回退有道: ${result.error || '未返回音频'}`);
-        const fallback = await voiceService.textToSpeechByEngine(text, 'youdao', voice, speed);
+        const fallback = await voiceService.textToSpeechByEngine(text, 'youdao', voice, effectiveSpeed);
         if (!fallback.success || !fallback.audioUrl) throw new Error(fallback.error || `英文${voice}音频生成失败`);
         return fallback;
+    }
+
+    _resolveEnglishTtsSpeed(voice, baseSpeed) {
+        const base = voiceService.normalizeSpeed(baseSpeed, 0.96);
+        if (voice !== 'male') return base;
+        const maleScale = Number(process.env.PODCAST_VIDEO_EN_MALE_SPEED_SCALE || 0.86);
+        const safeScale = Number.isFinite(maleScale) ? maleScale : 0.86;
+        return voiceService.normalizeSpeed(base * safeScale, 0.82);
     }
 
     _shouldRegenerateEnglishAudio(audioUrl) {
