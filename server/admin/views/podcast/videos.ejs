@@ -1,0 +1,280 @@
+<div class="space-y-6" id="podcast-video-page">
+    <div class="flex items-center justify-between gap-4">
+        <div>
+            <h2 class="text-2xl font-bold text-gray-800">磨耳朵视频工坊</h2>
+            <p class="text-sm text-gray-500 mt-1">把磨耳朵文章生成 YouTube 风格的播客学习视频：完整英文朗读 + 逐句训练。</p>
+        </div>
+        <a href="/podcast/contents" class="text-sm text-sky-600 hover:underline"><i class="fas fa-headphones mr-1"></i>返回磨耳朵内容</a>
+    </div>
+
+    <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <div class="xl:col-span-1 bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div class="p-5 border-b border-gray-100 bg-gradient-to-r from-sky-50 to-emerald-50">
+                <div class="font-bold text-gray-800">选择文章</div>
+                <div class="text-xs text-gray-500 mt-1">优先选择已翻译、已分析的文章；未分析也可以生成基础版。</div>
+                <div class="mt-4 flex gap-2">
+                    <input id="podcast-video-keyword" type="text" placeholder="搜索标题 / 内容" class="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-sky-500">
+                    <button onclick="loadPodcastVideoCandidates(1)" class="px-4 py-2 bg-sky-600 text-white rounded-lg text-sm hover:bg-sky-700">搜索</button>
+                </div>
+            </div>
+            <div id="podcast-video-candidates" class="divide-y divide-gray-100 max-h-[680px] overflow-y-auto"></div>
+            <div class="p-4 border-t border-gray-100 bg-gray-50 flex items-center justify-between text-sm">
+                <button onclick="changePodcastCandidatePage(-1)" class="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-100">上一页</button>
+                <span id="podcast-video-candidate-page" class="text-gray-500">第 1 页</span>
+                <button onclick="changePodcastCandidatePage(1)" class="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-100">下一页</button>
+            </div>
+        </div>
+
+        <div class="xl:col-span-2 space-y-6">
+            <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+                <div class="flex items-start justify-between gap-4">
+                    <div>
+                        <div class="text-xs uppercase tracking-wide text-emerald-600 font-bold">Video Setup</div>
+                        <h3 class="text-xl font-bold text-gray-800 mt-1" id="selected-podcast-title">请选择一篇磨耳朵文章</h3>
+                        <p class="text-sm text-gray-500 mt-1" id="selected-podcast-subtitle">第一版先做单篇文章视频，生成后可预览和下载。</p>
+                    </div>
+                    <div id="selected-podcast-badge" class="hidden px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold">已选择</div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+                    <div>
+                        <label class="block text-sm text-gray-600 mb-1">视频比例</label>
+                        <select id="podcast-video-aspect" onchange="togglePodcastShortOptions()" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white outline-none focus:border-emerald-500">
+                            <option value="16:9" selected>16:9 YouTube 长视频</option>
+                            <option value="9:16">9:16 Shorts 试剪</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-600 mb-1">内容模板</label>
+                        <select id="podcast-video-mode" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white outline-none focus:border-emerald-500">
+                            <option value="english_only" selected>English Only 国际版</option>
+                            <option value="bilingual">Bilingual 中文学习版</option>
+                        </select>
+                    </div>
+                    <div id="podcast-short-options" class="hidden">
+                        <label class="block text-sm text-gray-600 mb-1">Shorts 句子数</label>
+                        <input id="podcast-video-max-sentences" type="number" min="1" max="8" value="5" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-emerald-500">
+                    </div>
+                </div>
+
+                <div class="mt-6 rounded-2xl bg-slate-50 border border-slate-100 p-5 text-sm text-slate-600 leading-relaxed">
+                    <div class="font-bold text-slate-800 mb-2">当前视频结构</div>
+                    <div>1. 封面：标题 / 等级 / BookMelo</div>
+                    <div>2. Full Listening：完整英文朗读，逐句高亮文章内容</div>
+                    <div>3. Sentence Training：女声一句 → 男声一句 → <span class="text-emerald-700 font-semibold">双语模板才播放中文翻译</span></div>
+                    <div>4. Review：重点词和句型总结</div>
+                </div>
+
+                <div class="mt-6 flex items-center justify-end gap-3">
+                    <button onclick="generatePodcastVideo()" id="podcast-video-generate-btn" class="px-5 py-2.5 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                        <i class="fas fa-wand-magic-sparkles mr-2"></i>生成视频
+                    </button>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                <div class="p-5 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
+                    <div>
+                        <div class="font-bold text-gray-800">生成任务</div>
+                        <div class="text-xs text-gray-500 mt-1">任务会排队生成，页面会自动刷新进度。</div>
+                    </div>
+                    <button onclick="loadPodcastVideoJobs()" class="px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-600 text-sm hover:bg-gray-100"><i class="fas fa-rotate-right mr-1"></i>刷新</button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-gray-50 text-gray-500 uppercase tracking-wide">
+                            <tr>
+                                <th class="px-5 py-3">封面</th>
+                                <th class="px-5 py-3">文章</th>
+                                <th class="px-5 py-3">配置</th>
+                                <th class="px-5 py-3">状态</th>
+                                <th class="px-5 py-3 text-right">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="podcast-video-jobs" class="divide-y divide-gray-100"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="podcast-video-preview" class="hidden fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onclick="closePodcastVideoPreview(event)">
+        <div id="podcast-video-preview-box" class="rounded-2xl overflow-hidden bg-black" style="max-height:84vh; aspect-ratio:16/9;" onclick="event.stopPropagation()">
+            <video id="podcast-video-player" controls class="w-full h-full"></video>
+        </div>
+    </div>
+</div>
+
+<script>
+    let podcastVideoSelected = null;
+    let podcastVideoCandidatePage = 1;
+    let podcastVideoCandidateTotal = 0;
+    let podcastVideoPollTimer = null;
+
+    function escapeHtml(value) {
+        return String(value || '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+    }
+
+    function parseJobConfig(job) {
+        try { return typeof job.config_json === 'string' ? JSON.parse(job.config_json || '{}') : (job.config_json || {}); }
+        catch { return {}; }
+    }
+
+    async function loadPodcastVideoCandidates(page = podcastVideoCandidatePage) {
+        podcastVideoCandidatePage = Math.max(1, page);
+        const keyword = document.getElementById('podcast-video-keyword').value || '';
+        const box = document.getElementById('podcast-video-candidates');
+        box.innerHTML = `<div class="p-10 text-center text-gray-400"><i class="fas fa-spinner fa-spin mr-2"></i>加载文章...</div>`;
+        const params = new URLSearchParams({ page: podcastVideoCandidatePage, page_size: 20, keyword });
+        const res = await fetch('/podcast-videos/api/candidates?' + params.toString()).then(r => r.json());
+        if (!res.success) {
+            box.innerHTML = `<div class="p-10 text-center text-red-400">${escapeHtml(res.message || '加载失败')}</div>`;
+            return;
+        }
+        const list = res.data.list || [];
+        podcastVideoCandidateTotal = Number(res.data.total || 0);
+        document.getElementById('podcast-video-candidate-page').textContent = `第 ${podcastVideoCandidatePage} 页 / 共 ${podcastVideoCandidateTotal} 条`;
+        if (!list.length) {
+            box.innerHTML = `<div class="p-10 text-center text-gray-400">没有找到文章</div>`;
+            return;
+        }
+        box.innerHTML = list.map(item => {
+            const selected = podcastVideoSelected && podcastVideoSelected.id === item.id;
+            const latest = item.latest_video_url ? `<span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 text-xs font-bold">已有视频</span>` : '';
+            const analyzed = Number(item.has_sentences) === 1 ? `<span class="px-2 py-0.5 rounded bg-blue-50 text-blue-700 text-xs font-bold">已分析</span>` : `<span class="px-2 py-0.5 rounded bg-amber-50 text-amber-700 text-xs font-bold">基础拆句</span>`;
+            return `<div onclick='selectPodcastVideoCandidate(${JSON.stringify(item).replace(/'/g, '&#39;')})' class="p-4 cursor-pointer hover:bg-sky-50 transition ${selected ? 'bg-sky-50 border-l-4 border-sky-500' : ''}">
+                <div class="font-bold text-gray-800 line-clamp-2">${escapeHtml(item.title_en || item.title)}</div>
+                <div class="text-xs text-gray-500 mt-1 line-clamp-1">${escapeHtml(item.title || '')}</div>
+                <div class="mt-3 flex items-center gap-2 flex-wrap">${analyzed}${latest}<span class="px-2 py-0.5 rounded bg-gray-100 text-gray-500 text-xs">Lv.${item.difficulty_level || '-'}</span></div>
+            </div>`;
+        }).join('');
+    }
+
+    function changePodcastCandidatePage(delta) {
+        const next = podcastVideoCandidatePage + delta;
+        if (next < 1) return;
+        loadPodcastVideoCandidates(next);
+    }
+
+    function selectPodcastVideoCandidate(item) {
+        podcastVideoSelected = item;
+        document.getElementById('selected-podcast-title').textContent = item.title_en || item.title || `文章 ${item.id}`;
+        document.getElementById('selected-podcast-subtitle').textContent = `${item.title || ''} · ${item.category_name || '未分类'} · Lv.${item.difficulty_level || '-'}`;
+        document.getElementById('selected-podcast-badge').classList.remove('hidden');
+        document.getElementById('podcast-video-generate-btn').disabled = false;
+        loadPodcastVideoCandidates(podcastVideoCandidatePage);
+    }
+
+    function togglePodcastShortOptions() {
+        const aspect = document.getElementById('podcast-video-aspect').value;
+        document.getElementById('podcast-short-options').classList.toggle('hidden', aspect !== '9:16');
+    }
+
+    async function generatePodcastVideo() {
+        if (!podcastVideoSelected) return alert('请先选择文章');
+        const btn = document.getElementById('podcast-video-generate-btn');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>创建中...';
+        try {
+            const payload = {
+                content_id: podcastVideoSelected.id,
+                aspect_ratio: document.getElementById('podcast-video-aspect').value,
+                template_mode: document.getElementById('podcast-video-mode').value,
+                max_sentences: document.getElementById('podcast-video-max-sentences').value || 5
+            };
+            const res = await fetch('/podcast-videos/api/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }).then(r => r.json());
+            if (!res.success) throw new Error(res.message || '创建失败');
+            await loadPodcastVideoJobs();
+            startPodcastVideoPolling();
+        } catch (error) {
+            alert(error.message || '创建失败');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-wand-magic-sparkles mr-2"></i>生成视频';
+        }
+    }
+
+    async function loadPodcastVideoJobs() {
+        const tbody = document.getElementById('podcast-video-jobs');
+        const res = await fetch('/podcast-videos/api/jobs?page=1&page_size=20').then(r => r.json());
+        if (!res.success) {
+            tbody.innerHTML = `<tr><td colspan="5" class="px-5 py-10 text-center text-red-400">${escapeHtml(res.message || '加载失败')}</td></tr>`;
+            return;
+        }
+        const list = res.data.list || [];
+        if (!list.length) {
+            tbody.innerHTML = `<tr><td colspan="5" class="px-5 py-10 text-center text-gray-400">暂无视频任务</td></tr>`;
+            return;
+        }
+        tbody.innerHTML = list.map(job => renderPodcastVideoJob(job)).join('');
+    }
+
+    function renderPodcastVideoJob(job) {
+        const cfg = parseJobConfig(job);
+        const statusMap = {
+            pending: ['排队中', 'bg-gray-100 text-gray-600'],
+            processing: [`生成中 ${job.progress || 0}%`, 'bg-blue-100 text-blue-700'],
+            done: ['已完成', 'bg-emerald-100 text-emerald-700'],
+            failed: ['失败', 'bg-red-100 text-red-700']
+        };
+        const [statusText, statusClass] = statusMap[job.status] || [job.status, 'bg-gray-100 text-gray-600'];
+        const cover = job.cover_url ? `<img src="${job.cover_url}" class="w-24 h-14 object-cover rounded-lg border border-gray-200">` : `<div class="w-24 h-14 rounded-lg bg-gray-100 flex items-center justify-center text-gray-300"><i class="fas fa-video"></i></div>`;
+        const actions = job.status === 'done'
+            ? `<button onclick="previewPodcastVideo('${job.video_url}', '${cfg.aspect_ratio || '16:9'}')" class="px-3 py-1.5 rounded-lg bg-sky-600 text-white hover:bg-sky-700">预览</button><a href="${job.video_url}" download class="px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700">下载</a>`
+            : '';
+        return `<tr class="hover:bg-gray-50">
+            <td class="px-5 py-4">${cover}</td>
+            <td class="px-5 py-4"><div class="font-bold text-gray-800 line-clamp-1">${escapeHtml(job.podcast_title_en || job.content_title || job.podcast_title)}</div><div class="text-xs text-gray-500 mt-1">${escapeHtml(job.podcast_title || '')}</div>${job.error_message ? `<div class="text-xs text-red-500 mt-1">${escapeHtml(job.error_message)}</div>` : ''}</td>
+            <td class="px-5 py-4"><div class="flex gap-2 flex-wrap"><span class="px-2 py-1 rounded bg-gray-100 text-gray-600 text-xs font-bold">${escapeHtml(cfg.aspect_ratio || '16:9')}</span><span class="px-2 py-1 rounded bg-green-50 text-green-700 text-xs font-bold">${cfg.template_mode === 'bilingual' ? 'Bilingual' : 'English Only'}</span><span class="px-2 py-1 rounded bg-purple-50 text-purple-700 text-xs font-bold">${job.sentence_count || 0} 句</span></div></td>
+            <td class="px-5 py-4"><span class="px-3 py-1 rounded-full text-xs font-bold ${statusClass}">${statusText}</span></td>
+            <td class="px-5 py-4 text-right"><div class="flex justify-end gap-2">${actions}<button onclick="deletePodcastVideoJob(${job.id})" class="px-3 py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-100">删除</button></div></td>
+        </tr>`;
+    }
+
+    function previewPodcastVideo(url, aspect) {
+        const modal = document.getElementById('podcast-video-preview');
+        const box = document.getElementById('podcast-video-preview-box');
+        const player = document.getElementById('podcast-video-player');
+        box.style.aspectRatio = aspect === '9:16' ? '9/16' : '16/9';
+        player.src = url;
+        modal.classList.remove('hidden');
+        setTimeout(() => player.play().catch(() => {}), 100);
+    }
+
+    function closePodcastVideoPreview(event) {
+        const modal = document.getElementById('podcast-video-preview');
+        const player = document.getElementById('podcast-video-player');
+        player.pause();
+        player.src = '';
+        modal.classList.add('hidden');
+    }
+
+    async function deletePodcastVideoJob(id) {
+        if (!confirm('确定删除这个视频任务和物理文件吗？')) return;
+        const res = await fetch(`/podcast-videos/api/job/${id}`, { method: 'DELETE' }).then(r => r.json());
+        if (!res.success) return alert(res.message || '删除失败');
+        loadPodcastVideoJobs();
+    }
+
+    function startPodcastVideoPolling() {
+        if (podcastVideoPollTimer) clearInterval(podcastVideoPollTimer);
+        podcastVideoPollTimer = setInterval(async () => {
+            await loadPodcastVideoJobs();
+            const rows = Array.from(document.querySelectorAll('#podcast-video-jobs tr')).map(r => r.textContent).join(' ');
+            if (!rows.includes('生成中') && !rows.includes('排队中')) clearInterval(podcastVideoPollTimer);
+        }, 5000);
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadPodcastVideoCandidates(1);
+        loadPodcastVideoJobs();
+        togglePodcastShortOptions();
+        document.getElementById('podcast-video-keyword').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') loadPodcastVideoCandidates(1);
+        });
+    });
+</script>

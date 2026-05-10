@@ -227,6 +227,7 @@ app.use('/api/admin/ielts', requireAuth, require('./routes/ielts'));
 app.use('/api/admin/dialogue', requireAuth, require('./routes/dialogue'));
 app.use('/picture-books/categories', requireAuth, require('./routes/picturebook_categories'));
 app.use('/picturebook-videos', requireAuth, require('./routes/picturebook_videos'));
+app.use('/podcast-videos', requireAuth, require('./routes/podcast_videos'));
 app.use('/dialogue-videos', requireAuth, require('./routes/dialogue_videos'));
 app.use('/picture-books', requireAuth, require('./routes/picturebooks'));
 app.use('/api/admin/pet-stages', requireAuth, require('./routes/pet_stages'));
