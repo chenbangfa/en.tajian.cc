@@ -93,17 +93,31 @@ class PodcastVideoService {
                 await this._imageToVideo(framePath, audioPath, duration, out, dims);
                 segments.push(out);
             };
+            const addSpokenSegments = async (framePath, speechItems, fallbackDuration, label) => {
+                const validItems = speechItems.filter(item => item && item.local);
+                if (!validItems.length) {
+                    await addSegment(framePath, null, fallbackDuration, label);
+                    return;
+                }
+                for (let i = 0; i < validItems.length; i++) {
+                    const item = validItems[i];
+                    const duration = Math.max(item.minDuration || 1.2, await this._getAudioDuration(item.local)) + SEGMENT_GAP;
+                    await addSegment(framePath, item.local, duration, `${label}_${i + 1}`);
+                }
+            };
 
-            await addSegment(coverPath, null, aspect === '9:16' ? 1.2 : 2.2, 'cover');
+            const coverSpeech = await this._prepareCoverSpeech(content, mode, tempDir);
+            await addSpokenSegments(coverPath, coverSpeech, aspect === '9:16' ? 1.2 : 2.2, 'cover');
             const firstIntroFrame = path.join(tempDir, 'phase_1_listen_first.png');
-            await this._renderPhaseIntroFrame(firstIntroFrame, content, dims, mode, {
+            const firstIntro = {
                 step: 'Step 1',
                 kicker: 'LISTEN FIRST',
                 title: 'Listen to the whole passage once.',
                 subtitle: "Don't stop yet. Catch the main idea and familiar words.",
                 zh: '先完整盲听一遍，不暂停，抓住大意和熟悉的词。'
-            });
-            await addSegment(firstIntroFrame, null, aspect === '9:16' ? 1.6 : 2.2, 'phase_1');
+            };
+            await this._renderPhaseIntroFrame(firstIntroFrame, content, dims, mode, firstIntro);
+            await addSpokenSegments(firstIntroFrame, await this._prepareIntroSpeech(firstIntro, mode, tempDir, 'phase_1'), aspect === '9:16' ? 1.6 : 2.2, 'phase_1');
             await this._updateJob(jobId, { progress: 22 });
 
             // 第一遍：完整英文朗读。逐句播放，画面显示文章脉络并高亮当前句。
@@ -117,14 +131,15 @@ class PodcastVideoService {
             }
 
             const secondIntroFrame = path.join(tempDir, 'phase_2_sentence_focus.png');
-            await this._renderPhaseIntroFrame(secondIntroFrame, content, dims, mode, {
+            const secondIntro = {
                 step: 'Step 2',
                 kicker: 'SENTENCE FOCUS',
                 title: 'Now listen sentence by sentence.',
                 subtitle: 'Compare the female and male voices. Notice key words and patterns.',
                 zh: '现在进入逐句精听，对比女声和男声，注意关键词和句型。'
-            });
-            await addSegment(secondIntroFrame, null, aspect === '9:16' ? 1.6 : 2.2, 'phase_2');
+            };
+            await this._renderPhaseIntroFrame(secondIntroFrame, content, dims, mode, secondIntro);
+            await addSpokenSegments(secondIntroFrame, await this._prepareIntroSpeech(secondIntro, mode, tempDir, 'phase_2'), aspect === '9:16' ? 1.6 : 2.2, 'phase_2');
 
             // 第二遍：逐句训练。女声 -> 男声 -> 中文翻译发音(仅双语模板)。
             for (let i = 0; i < prepared.sentences.length; i++) {
@@ -265,13 +280,56 @@ class PodcastVideoService {
         return /\/tts_yd_/.test(String(audioUrl || ''));
     }
 
+    async _prepareCoverSpeech(content, mode, tempDir) {
+        const speed = voiceService.getGoogleTtsSpeed('podcast');
+        const items = [];
+        const englishTitle = this._getEnglishTitle(content);
+        const chineseTitle = this._getChineseTitle(content);
+        if (englishTitle) {
+            items.push(await this._createSpeechItem(englishTitle, 'en', 'female', speed, tempDir, 'cover_title_en', 1.2));
+        }
+        if (mode === 'bilingual' && chineseTitle) {
+            items.push(await this._createSpeechItem(chineseTitle, 'zh', 'female', speed, tempDir, 'cover_title_zh', 1.0));
+        }
+        return items;
+    }
+
+    async _prepareIntroSpeech(stage, mode, tempDir, name) {
+        const speed = voiceService.getGoogleTtsSpeed('podcast');
+        const englishText = [stage.title, stage.subtitle].filter(Boolean).join(' ');
+        const items = [];
+        if (englishText) {
+            items.push(await this._createSpeechItem(englishText, 'en', 'female', speed, tempDir, `${name}_en`, 1.5));
+        }
+        if (mode === 'bilingual' && stage.zh) {
+            items.push(await this._createSpeechItem(stage.zh, 'zh', 'female', speed, tempDir, `${name}_zh`, 1.2));
+        }
+        return items;
+    }
+
+    async _createSpeechItem(text, lang, voice, speed, tempDir, name, minDuration) {
+        try {
+            const result = lang === 'zh'
+                ? await voiceService.textToSpeechChinese(text, voice, speed)
+                : await this._ttsEnglish(text, voice, speed);
+            if (!result.success || !result.audioUrl) return null;
+            return {
+                local: await this._resolveUrl(result.audioUrl, tempDir, name),
+                minDuration
+            };
+        } catch (error) {
+            console.warn(`[PodcastVideo] ${name} 提示音频生成失败:`, error.message);
+            return null;
+        }
+    }
+
     async _renderCoverFrame(outPath, content, prepared, dims, mode, tempDir) {
         const { W, H, isVertical } = dims;
-        const title = content.title_en || content.title || 'Listening Practice';
-        const subtitle = content.title || content.category_name || '';
+        const title = this._getEnglishTitle(content);
+        const subtitle = mode === 'bilingual' ? this._getChineseTitle(content) : '';
         const badge = mode === 'bilingual' ? 'Bilingual Listening' : 'English Listening';
         const titleLines = this._wrapText(title, isVertical ? 19 : 34, isVertical ? 4 : 3);
-        const subLines = this._wrapText(subtitle, isVertical ? 16 : 30, 2, true);
+        const subLines = subtitle ? this._wrapText(subtitle, isVertical ? 16 : 30, 2, true) : [];
         const titleSize = isVertical ? 76 : 78;
         const subSize = isVertical ? 36 : 34;
         const top = isVertical ? 310 : 230;
@@ -290,7 +348,7 @@ class PodcastVideoService {
             <rect x="${isVertical ? 64 : 132}" y="${top - 70}" width="${W - (isVertical ? 128 : 264)}" height="${isVertical ? 760 : 520}" rx="${isVertical ? 42 : 48}" fill="${generatedCover ? 'rgba(255,255,255,0.76)' : 'rgba(255,255,255,0.86)'}" stroke="rgba(255,255,255,0.40)"/>
             <text x="${W / 2}" y="${top}" text-anchor="middle" font-size="${isVertical ? 34 : 30}" fill="#2d7a47" font-weight="900" font-family="Avenir Next, Arial">${this._e(badge)}</text>
             ${this._textBlock(titleLines, W / 2, top + (isVertical ? 110 : 100), titleSize, isVertical ? 92 : 88, '#102116', '900', 'middle')}
-            ${this._textBlock(subLines, W / 2, top + (isVertical ? 480 : 350), subSize, subSize + 15, '#355548', '800', 'middle')}
+            ${subLines.length ? this._textBlock(subLines, W / 2, top + (isVertical ? 480 : 350), subSize, subSize + 15, '#355548', '800', 'middle') : ''}
             <line x1="${W / 2 - (isVertical ? 210 : 270)}" x2="${W / 2 + (isVertical ? 210 : 270)}" y1="${H - (isVertical ? 420 : 230)}" y2="${H - (isVertical ? 420 : 230)}" stroke="${generatedCover ? '#ffffff' : '#9cc8a8'}" stroke-opacity="${generatedCover ? 0.72 : 1}" stroke-width="4" stroke-linecap="round"/>
             <text x="${W / 2}" y="${H - (isVertical ? 350 : 170)}" text-anchor="middle" font-size="${isVertical ? 34 : 30}" fill="${generatedCover ? '#ffffff' : '#355548'}" font-weight="900" font-family="Avenir Next, Arial" paint-order="stroke" stroke="${generatedCover ? '#173524' : 'transparent'}" stroke-width="3">${prepared.sentences.length} sentences · BookMelo</text>
         </svg>`;
@@ -493,21 +551,53 @@ Important restrictions:
             }
             if (s.grammar && !grammars.includes(s.grammar)) grammars.push(s.grammar);
         }
-        const wordLines = (words.length ? words.slice(0, isVertical ? 5 : 6).map(w => `${w.word}${w.translation ? ` - ${w.translation}` : ''}`) : ['Listen again and notice the main expressions.']);
         const grammarLines = (grammars.length ? grammars.slice(0, isVertical ? 2 : 3) : ['Review the sentence rhythm.', 'Repeat the useful sentence patterns.']);
         const x = isVertical ? 70 : 150;
+        const wordPanelY = isVertical ? 295 : 215;
+        const wordPanelH = isVertical ? 590 : 390;
+        const patternY = isVertical ? 940 : 640;
         const svg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
             ${this._defs()}<rect width="${W}" height="${H}" fill="url(#bg)"/>${this._softShapes(W, H)}${this._watermark(W, H, isVertical)}
             <text x="${x}" y="${isVertical ? 220 : 150}" font-size="${isVertical ? 62 : 60}" fill="#102116" font-weight="950" font-family="Avenir Next, Arial">Review</text>
-            <rect x="${x}" y="${isVertical ? 295 : 225}" width="${W - x * 2}" height="${isVertical ? 560 : 310}" rx="38" fill="rgba(255,255,255,0.84)"/>
-            <text x="${x + 44}" y="${isVertical ? 360 : 285}" font-size="${isVertical ? 30 : 28}" fill="#2d7a47" font-weight="900" font-family="Avenir Next, Arial">Key words</text>
-            ${this._reviewWordsBlock(wordLines, x + 48, isVertical ? 430 : 345, W - x * 2 - 96, isVertical)}
-            <rect x="${x}" y="${isVertical ? 920 : 590}" width="${W - x * 2}" height="${isVertical ? 430 : 290}" rx="38" fill="rgba(255,255,255,0.74)"/>
-            <text x="${x + 44}" y="${isVertical ? 988 : 650}" font-size="${isVertical ? 30 : 28}" fill="#8a651f" font-weight="900" font-family="Avenir Next, Arial">Patterns</text>
-            ${this._listBlock(grammarLines, x + 48, isVertical ? 1060 : 710, isVertical ? 27 : 24, isVertical ? 46 : 40, '#5d4c26', isVertical ? 25 : 58, isVertical ? 2 : 2)}
+            ${this._renderReviewKeyWordsPanel(x, wordPanelY, W - x * 2, wordPanelH, words, dims)}
+            <rect x="${x}" y="${patternY}" width="${W - x * 2}" height="${isVertical ? 430 : 285}" rx="38" fill="rgba(255,255,255,0.74)"/>
+            <text x="${x + 44}" y="${patternY + (isVertical ? 68 : 60)}" font-size="${isVertical ? 30 : 28}" fill="#8a651f" font-weight="900" font-family="Avenir Next, Arial">Patterns</text>
+            ${this._listBlock(grammarLines, x + 48, patternY + (isVertical ? 140 : 120), isVertical ? 27 : 24, isVertical ? 46 : 40, '#5d4c26', isVertical ? 25 : 58, isVertical ? 2 : 2)}
             <text x="${W / 2}" y="${H - (isVertical ? 170 : 90)}" text-anchor="middle" font-size="${isVertical ? 34 : 30}" fill="#2d7a47" font-weight="900" font-family="Avenir Next, Arial">The End · BookMelo</text>
         </svg>`;
         await sharp(Buffer.from(svg)).jpeg({ quality: 92 }).toFile(outPath);
+    }
+
+    _renderReviewKeyWordsPanel(x, y, w, h, words, dims) {
+        const { isVertical } = dims;
+        const visibleWords = words.slice(0, isVertical ? 6 : 9);
+        const cols = isVertical ? 1 : 3;
+        const chipGap = isVertical ? 16 : 24;
+        const chipW = isVertical ? w - 88 : Math.floor((w - 96 - chipGap * (cols - 1)) / cols);
+        const chipH = isVertical ? 70 : 74;
+        const chips = visibleWords.map((item, idx) => {
+            const word = this._shorten(item.word || '', isVertical ? 18 : 20);
+            const phonetic = this._shorten(this._formatPhonetic(item.phonetic || item.uk_phonetic || item.us_phonetic || ''), isVertical ? 18 : 22);
+            const meaning = this._compactMeaning(item.translation || item.pos || '', isVertical ? 14 : 18);
+            const col = idx % cols;
+            const row = Math.floor(idx / cols);
+            const cx = isVertical ? x + 44 : x + 48 + col * (chipW + chipGap);
+            const cy = y + (isVertical ? 134 : 122) + row * (chipH + (isVertical ? 14 : 18));
+            const wordSize = isVertical ? 26 : (word.length > 16 ? 22 : 24);
+            return `<g>
+                <rect x="${cx}" y="${cy - 44}" width="${chipW}" height="${chipH}" rx="${isVertical ? 32 : 28}" fill="#f3faf4" stroke="#cbe8d1"/>
+                <text x="${cx + 24}" y="${cy - 14}" font-family="Avenir Next, Arial">
+                    <tspan font-size="${wordSize}" fill="#213429" font-weight="900">${this._e(word)}</tspan>
+                    ${phonetic ? `<tspan dx="12" font-size="${isVertical ? 18 : 17}" fill="#7d9185" font-weight="700">${this._e(phonetic)}</tspan>` : ''}
+                </text>
+                ${meaning ? `<text x="${cx + 24}" y="${cy + 14}" font-size="${isVertical ? 20 : 18}" fill="#5f7b69" font-weight="750" font-family="Avenir Next, Arial">${this._e(meaning)}</text>` : ''}
+            </g>`;
+        }).join('');
+        return `<g>
+            <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="38" fill="rgba(255,255,255,0.84)"/>
+            <text x="${x + 44}" y="${y + (isVertical ? 65 : 62)}" font-size="${isVertical ? 30 : 28}" fill="#2d7a47" font-weight="900" font-family="Avenir Next, Arial">Key words</text>
+            ${chips || `<text x="${x + 44}" y="${y + 145}" font-size="${isVertical ? 28 : 26}" fill="#5f7b69" font-weight="800" font-family="Avenir Next, Arial">Listen again and notice the main expressions.</text>`}
+        </g>`;
     }
 
     async _imageToVideo(imagePath, audioPath, duration, outputPath, dims) {
@@ -622,6 +712,18 @@ Important restrictions:
 
     _normalizeMode(value) {
         return String(value || '').trim() === 'bilingual' ? 'bilingual' : 'english_only';
+    }
+
+    _getEnglishTitle(content) {
+        return String(content?.title_en || content?.title || 'Listening Practice').trim();
+    }
+
+    _getChineseTitle(content) {
+        const title = String(content?.title || '').trim();
+        if (!title || !/[\u3400-\u9fff]/.test(title)) return '';
+        const englishTitle = String(content?.title_en || '').trim().toLowerCase();
+        if (englishTitle && title.toLowerCase() === englishTitle) return '';
+        return title;
     }
 
     _defs() {
