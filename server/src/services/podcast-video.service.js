@@ -85,6 +85,12 @@ class PodcastVideoService {
             const segDir = path.join(tempDir, 'segments');
             fs.mkdirSync(segDir, { recursive: true });
 
+            const generatedCover = await this._generateTopicCoverImage(content, prepared, dims, mode, tempDir).catch(error => {
+                console.warn('[PodcastVideo] Gemini 封面图生成失败，使用文字封面:', error.message);
+                return null;
+            });
+            dims.backgroundSvg = generatedCover ? await this._topicCoverBackgroundSvg(generatedCover, dims) : '';
+
             await this._renderCoverFrame(coverPath, content, prepared, dims, mode, tempDir);
             const segments = [];
             let segmentIndex = 0;
@@ -101,7 +107,7 @@ class PodcastVideoService {
                 }
                 for (let i = 0; i < validItems.length; i++) {
                     const item = validItems[i];
-                    const duration = Math.max(item.minDuration || 1.2, await this._getAudioDuration(item.local)) + SEGMENT_GAP;
+                    const duration = Math.max(item.minDuration || 1.2, await this._getAudioDuration(item.local)) + SEGMENT_GAP + (item.tailPadding || 0);
                     await addSegment(framePath, item.local, duration, `${label}_${i + 1}`);
                 }
             };
@@ -153,7 +159,7 @@ class PodcastVideoService {
                 if (mode === 'bilingual' && sentence.translation && sentence.chineseLocal) {
                     const cnFrame = path.join(tempDir, `train_${String(i + 1).padStart(3, '0')}_cn.png`);
                     await this._renderTrainingFrame(cnFrame, content, sentence, i, prepared.sentences.length, dims, mode, 'Chinese meaning', 'translation');
-                    await addSegment(cnFrame, sentence.chineseLocal, Math.max(1.2, await this._getAudioDuration(sentence.chineseLocal)) + SEGMENT_GAP, `train_${i + 1}_cn`);
+                    await addSegment(cnFrame, sentence.chineseLocal, Math.max(1.2, await this._getAudioDuration(sentence.chineseLocal)) + SEGMENT_GAP + 0.9, `train_${i + 1}_cn`);
                 }
                 await this._updateJob(jobId, { progress: 50 + Math.round(((i + 1) / prepared.sentences.length) * 38) });
             }
@@ -315,7 +321,8 @@ class PodcastVideoService {
             if (!result.success || !result.audioUrl) return null;
             return {
                 local: await this._resolveUrl(result.audioUrl, tempDir, name),
-                minDuration
+                minDuration,
+                tailPadding: lang === 'zh' ? 0.75 : 0.25
             };
         } catch (error) {
             console.warn(`[PodcastVideo] ${name} 提示音频生成失败:`, error.message);
@@ -331,26 +338,23 @@ class PodcastVideoService {
         const titleLines = this._wrapText(title, isVertical ? 19 : 34, isVertical ? 4 : 3);
         const subLines = subtitle ? this._wrapText(subtitle, isVertical ? 16 : 30, 2, true) : [];
         const titleSize = isVertical ? 76 : 78;
-        const subSize = isVertical ? 36 : 34;
+        const subSize = isVertical ? 44 : 46;
         const top = isVertical ? 310 : 230;
-        const generatedCover = await this._generateTopicCoverImage(content, prepared, dims, mode, tempDir).catch(error => {
-            console.warn('[PodcastVideo] Gemini 封面图生成失败，使用文字封面:', error.message);
-            return null;
-        });
-        const bgSvg = generatedCover
-            ? await this._topicCoverBackgroundSvg(generatedCover, dims)
+        const hasGeneratedCover = Boolean(dims.backgroundSvg);
+        const bgSvg = hasGeneratedCover
+            ? dims.backgroundSvg
             : `<rect width="${W}" height="${H}" fill="url(#bg)"/>${this._softShapes(W, H)}`;
         const svg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
             ${this._defs()}
             ${bgSvg}
-            <rect width="${W}" height="${H}" fill="#0b1d13" opacity="${generatedCover ? 0.34 : 0}"/>
+            <rect width="${W}" height="${H}" fill="#0b1d13" opacity="${hasGeneratedCover ? 0.34 : 0}"/>
             ${this._watermark(W, H, isVertical)}
-            <rect x="${isVertical ? 64 : 132}" y="${top - 70}" width="${W - (isVertical ? 128 : 264)}" height="${isVertical ? 760 : 520}" rx="${isVertical ? 42 : 48}" fill="${generatedCover ? 'rgba(255,255,255,0.76)' : 'rgba(255,255,255,0.86)'}" stroke="rgba(255,255,255,0.40)"/>
+            <rect x="${isVertical ? 64 : 132}" y="${top - 70}" width="${W - (isVertical ? 128 : 264)}" height="${isVertical ? 760 : 520}" rx="${isVertical ? 42 : 48}" fill="${hasGeneratedCover ? 'rgba(255,255,255,0.76)' : 'rgba(255,255,255,0.86)'}" stroke="rgba(255,255,255,0.40)"/>
             <text x="${W / 2}" y="${top}" text-anchor="middle" font-size="${isVertical ? 34 : 30}" fill="#2d7a47" font-weight="900" font-family="Avenir Next, Arial">${this._e(badge)}</text>
             ${this._textBlock(titleLines, W / 2, top + (isVertical ? 110 : 100), titleSize, isVertical ? 92 : 88, '#102116', '900', 'middle')}
-            ${subLines.length ? this._textBlock(subLines, W / 2, top + (isVertical ? 480 : 350), subSize, subSize + 15, '#355548', '800', 'middle') : ''}
-            <line x1="${W / 2 - (isVertical ? 210 : 270)}" x2="${W / 2 + (isVertical ? 210 : 270)}" y1="${H - (isVertical ? 420 : 230)}" y2="${H - (isVertical ? 420 : 230)}" stroke="${generatedCover ? '#ffffff' : '#9cc8a8'}" stroke-opacity="${generatedCover ? 0.72 : 1}" stroke-width="4" stroke-linecap="round"/>
-            <text x="${W / 2}" y="${H - (isVertical ? 350 : 170)}" text-anchor="middle" font-size="${isVertical ? 34 : 30}" fill="${generatedCover ? '#ffffff' : '#355548'}" font-weight="900" font-family="Avenir Next, Arial" paint-order="stroke" stroke="${generatedCover ? '#173524' : 'transparent'}" stroke-width="3">${prepared.sentences.length} sentences · BookMelo</text>
+            ${subLines.length ? this._textBlock(subLines, W / 2, top + (isVertical ? 490 : 365), subSize, subSize + 16, '#355548', '850', 'middle') : ''}
+            <line x1="${W / 2 - (isVertical ? 210 : 270)}" x2="${W / 2 + (isVertical ? 210 : 270)}" y1="${H - (isVertical ? 420 : 230)}" y2="${H - (isVertical ? 420 : 230)}" stroke="${hasGeneratedCover ? '#ffffff' : '#9cc8a8'}" stroke-opacity="${hasGeneratedCover ? 0.72 : 1}" stroke-width="4" stroke-linecap="round"/>
+            <text x="${W / 2}" y="${H - (isVertical ? 350 : 170)}" text-anchor="middle" font-size="${isVertical ? 34 : 30}" fill="${hasGeneratedCover ? '#ffffff' : '#355548'}" font-weight="900" font-family="Avenir Next, Arial" paint-order="stroke" stroke="${hasGeneratedCover ? '#173524' : 'transparent'}" stroke-width="3">${prepared.sentences.length} sentences · BookMelo</text>
         </svg>`;
         await sharp(Buffer.from(svg)).jpeg({ quality: 92 }).toFile(outPath);
     }
@@ -366,7 +370,7 @@ class PodcastVideoService {
     }
 
     _buildCoverImagePrompt(content, prepared, dims, mode) {
-        const title = content.title_en || content.title || 'English listening practice';
+        const title = this._getEnglishTitle(content);
         const textSample = prepared.sentences
             .slice(0, 5)
             .map(s => s.text)
@@ -383,10 +387,13 @@ Article theme/context: ${textSample}
 Audience: ${audience}.
 
 Visual direction:
+- YouTube-thumbnail-worthy but still premium and educational
+- one strong, instantly readable focal subject related to the article theme
+- emotional curiosity hook: make viewers wonder what the listening story is about
 - clean editorial educational cover, warm modern style, trustworthy paid-course feeling
 - cinematic but calm, suitable for English learning and listening practice
-- show a simple symbolic scene related to the article theme, not a busy collage
-- soft natural lighting, gentle green and cream color palette, subtle depth
+- strong depth, clear foreground/background separation, not a busy collage
+- soft natural lighting, gentle green and cream color palette, subtle contrast
 - leave a clean central area for title overlay
 - high quality, polished, modern learning brand style
 
@@ -417,7 +424,7 @@ Important restrictions:
         const subLines = this._wrapText(stage.subtitle, isVertical ? 26 : 58, 3);
         const zhLines = mode === 'bilingual' ? this._wrapText(stage.zh, isVertical ? 18 : 36, 2, true) : [];
         const svg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
-            ${this._defs()}<rect width="${W}" height="${H}" fill="url(#bg)"/>${this._softShapes(W, H)}
+            ${this._defs()}${this._frameBackground(dims)}
             <text x="${isVertical ? 70 : 130}" y="${isVertical ? 145 : 82}" font-size="${isVertical ? 28 : 24}" fill="#2d7a47" font-weight="900" font-family="Avenir Next, Arial">${this._e(stage.kicker)}</text>
             <text x="${isVertical ? 70 : 130}" y="${isVertical ? 195 : 122}" font-size="${isVertical ? 34 : 30}" fill="#17231b" font-weight="900" font-family="Avenir Next, Arial">${this._e(this._shorten(title, isVertical ? 28 : 60))}</text>
             <rect x="${panelX}" y="${panelY}" width="${panelW}" height="${panelH}" rx="${isVertical ? 54 : 58}" fill="rgba(255,255,255,0.88)" stroke="rgba(39,94,62,0.12)" filter="url(#shadow)"/>
@@ -470,7 +477,7 @@ Important restrictions:
             </g>`;
         }).join('');
         const svg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
-            ${this._defs()}<rect width="${W}" height="${H}" fill="url(#bg)"/>${this._softShapes(W, H)}${this._watermark(W, H, isVertical)}
+            ${this._defs()}${this._frameBackground(dims)}${this._watermark(W, H, isVertical)}
             <text x="${panelX}" y="${isVertical ? 150 : 90}" font-size="${isVertical ? 28 : 24}" fill="#2d7a47" font-weight="900" font-family="Avenir Next, Arial">FULL LISTENING</text>
             <text x="${panelX}" y="${isVertical ? 205 : 128}" font-size="${isVertical ? 40 : 36}" fill="#17231b" font-weight="900" font-family="Avenir Next, Arial">${this._e(this._shorten(title, isVertical ? 30 : 60))}</text>
             <rect x="${panelX}" y="${panelY}" width="${panelW}" height="${panelH}" rx="38" fill="rgba(255,255,255,0.82)" stroke="rgba(39,94,62,0.12)"/>
@@ -483,8 +490,6 @@ Important restrictions:
     async _renderTrainingFrame(outPath, content, sentence, index, total, dims, mode, voiceLabel, highlight = 'sentence') {
         const { W, H, isVertical } = dims;
         const title = this._getEnglishTitle(content);
-        const maxChars = isVertical ? 24 : 50;
-        const sentenceLines = this._wrapText(sentence.text, maxChars, isVertical ? 6 : 4);
         const translationLines = mode === 'bilingual' && sentence.translation ? this._wrapText(sentence.translation, isVertical ? 18 : 44, 2, true) : [];
         const words = (sentence.words || []).slice(0, isVertical ? 3 : 6);
         const grammar = sentence.grammar || '';
@@ -493,12 +498,14 @@ Important restrictions:
         const mainW = W - panelX * 2;
         const mainH = isVertical ? 700 : 420;
         const keyY = mainY + mainH + (isVertical ? 46 : 36);
-        const sentenceFont = isVertical ? (sentenceLines.length > 3 ? 52 : 60) : (sentenceLines.length > 2 ? 54 : 62);
+        const sentenceLayout = this._fitSentenceText(sentence.text, mainW - 108, isVertical);
+        const sentenceLines = sentenceLayout.lines;
+        const sentenceFont = sentenceLayout.fontSize;
         const sentenceGap = isVertical ? Math.round(sentenceFont * 1.34) : Math.round(sentenceFont * 1.25);
         const translationFont = isVertical ? 38 : 38;
         const translationGap = isVertical ? 52 : 48;
         const svg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
-            ${this._defs()}<rect width="${W}" height="${H}" fill="url(#bg)"/>${this._softShapes(W, H)}${this._watermark(W, H, isVertical)}
+            ${this._defs()}${this._frameBackground(dims)}${this._watermark(W, H, isVertical)}
             <text x="${panelX}" y="${isVertical ? 140 : 84}" font-size="${isVertical ? 28 : 24}" fill="#2d7a47" font-weight="900" font-family="Avenir Next, Arial">SENTENCE TRAINING</text>
             <text x="${panelX}" y="${isVertical ? 195 : 124}" font-size="${isVertical ? 36 : 32}" fill="#17231b" font-weight="900" font-family="Avenir Next, Arial">${this._e(this._shorten(title, isVertical ? 28 : 62))}</text>
             <rect x="${panelX}" y="${mainY}" width="${mainW}" height="${mainH}" rx="42" fill="rgba(255,255,255,0.88)" stroke="${highlight === 'translation' ? '#e8b65f' : '#72b77e'}" stroke-width="4"/>
@@ -561,7 +568,7 @@ Important restrictions:
         const wordPanelH = isVertical ? 590 : 390;
         const patternY = isVertical ? 940 : 640;
         const svg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
-            ${this._defs()}<rect width="${W}" height="${H}" fill="url(#bg)"/>${this._softShapes(W, H)}${this._watermark(W, H, isVertical)}
+            ${this._defs()}${this._frameBackground(dims)}${this._watermark(W, H, isVertical)}
             <text x="${x}" y="${isVertical ? 220 : 150}" font-size="${isVertical ? 62 : 60}" fill="#102116" font-weight="950" font-family="Avenir Next, Arial">Review</text>
             ${this._renderReviewKeyWordsPanel(x, wordPanelY, W - x * 2, wordPanelH, words, dims)}
             <rect x="${x}" y="${patternY}" width="${W - x * 2}" height="${isVertical ? 430 : 285}" rx="38" fill="rgba(255,255,255,0.74)"/>
@@ -744,6 +751,16 @@ Important restrictions:
         </defs>`;
     }
 
+    _frameBackground(dims) {
+        const { W, H } = dims;
+        if (dims.backgroundSvg) {
+            return `${dims.backgroundSvg}
+                <rect width="${W}" height="${H}" fill="#f6fbf3" opacity="0.78"/>
+                <rect width="${W}" height="${H}" fill="url(#bg)" opacity="0.46"/>`;
+        }
+        return `<rect width="${W}" height="${H}" fill="url(#bg)"/>${this._softShapes(W, H)}`;
+    }
+
     _softShapes(W, H) {
         return `<circle cx="${W * 0.08}" cy="${H * 0.08}" r="${Math.min(W, H) * 0.18}" fill="#cfead1" opacity="0.42"/>
             <circle cx="${W * 0.92}" cy="${H * 0.22}" r="${Math.min(W, H) * 0.22}" fill="#fff7d8" opacity="0.7"/>
@@ -815,6 +832,29 @@ Important restrictions:
             lines[maxLines - 1] = this._shorten(lines[maxLines - 1], Math.max(4, maxChars - 1));
         }
         return lines;
+    }
+
+    _fitSentenceText(text, maxWidth, isVertical) {
+        const raw = String(text || '').trim();
+        const maxLines = isVertical ? 6 : 4;
+        const candidates = isVertical ? [60, 56, 52, 48, 44] : [62, 58, 54, 50, 46, 42];
+        for (const fontSize of candidates) {
+            const maxChars = Math.max(isVertical ? 17 : 28, Math.floor(maxWidth / (fontSize * 0.68)));
+            const lines = this._wrapText(raw, maxChars, maxLines);
+            const longest = lines.reduce((max, line) => Math.max(max, line.length), 0);
+            const estimatedWidth = longest * fontSize * 0.64;
+            const blockHeight = lines.length * fontSize * (isVertical ? 1.34 : 1.25);
+            const heightLimit = isVertical ? 430 : 255;
+            if (estimatedWidth <= maxWidth && blockHeight <= heightLimit) {
+                return { lines, fontSize };
+            }
+        }
+        const fallbackFont = isVertical ? 42 : 42;
+        const fallbackChars = Math.max(isVertical ? 16 : 26, Math.floor(maxWidth / (fallbackFont * 0.68)));
+        return {
+            lines: this._wrapText(raw, fallbackChars, maxLines),
+            fontSize: fallbackFont
+        };
     }
 
     _shorten(text, max) {
