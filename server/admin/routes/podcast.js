@@ -9,6 +9,17 @@ const voiceService = require('../../src/services/voice.service');
 const config = require('../../src/config');
 const { getPodcastCategorySnapshot, collectDescendantIds } = require('../utils/podcast-category-tree');
 
+let podcastContentsSchemaReady = false;
+
+async function ensurePodcastContentsSchema() {
+    if (podcastContentsSchemaReady) return;
+    const cols = await query("SHOW COLUMNS FROM podcast_contents LIKE 'title_zh'");
+    if (!cols.length) {
+        await query("ALTER TABLE podcast_contents ADD COLUMN title_zh VARCHAR(200) NULL COMMENT '中文标题' AFTER title_en");
+    }
+    podcastContentsSchemaReady = true;
+}
+
 // ==================== 分类管理 ====================
 
 // 获取所有分类
@@ -83,6 +94,7 @@ router.delete('/categories/:id', async (req, res) => {
 // 获取内容列表
 router.get('/', async (req, res) => {
     try {
+        await ensurePodcastContentsSchema();
         const {
             category_id,
             page = 1,
@@ -100,7 +112,7 @@ router.get('/', async (req, res) => {
             effectiveCategoryIds = collectDescendantIds(snapshot.flat, category_id);
         }
 
-        let sql = `SELECT c.id, c.title, c.title_en, c.category_id, c.difficulty_level,
+        let sql = `SELECT c.id, c.title, c.title_en, c.title_zh, c.category_id, c.difficulty_level,
                           c.is_free, c.sort_order, c.male_audio_url, c.female_audio_url, c.chinese_audio_url,
                           CASE WHEN c.sentences_data = 'processing' THEN -1
                                WHEN c.sentences_data IS NOT NULL THEN 1
@@ -198,6 +210,7 @@ router.get('/', async (req, res) => {
 // 获取单个内容
 router.get('/:id', async (req, res) => {
     try {
+        await ensurePodcastContentsSchema();
         const [content] = await query(
             `SELECT c.*, cat.name as category_name 
              FROM podcast_contents c 
@@ -226,12 +239,14 @@ router.get('/:id', async (req, res) => {
 // 创建内容
 router.post('/', async (req, res) => {
     try {
+        await ensurePodcastContentsSchema();
         const {
-            title, title_en, category_id, difficulty_level = 1,
+            title, title_en, title_zh, category_id, difficulty_level = 1,
             content_text, translation, is_free = true, sort_order = 0
         } = req.body;
 
-        if (!title || !content_text) {
+        const finalTitle = title || title_en || title_zh;
+        if (!finalTitle || !content_text) {
             return res.status(400).json({ success: false, message: '标题和内容不能为空' });
         }
 
@@ -239,11 +254,12 @@ router.post('/', async (req, res) => {
         // 建议执行迁移将 category 字段设为 NULL 或删除
         const result = await query(
             `INSERT INTO podcast_contents 
-             (title, title_en, category_id, difficulty_level, content_text, translation, is_free, sort_order, category) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             (title, title_en, title_zh, category_id, difficulty_level, content_text, translation, is_free, sort_order, category) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
-                title,
+                finalTitle,
                 title_en || null,
+                title_zh || null,
                 category_id || null, // 允许为空
                 difficulty_level,
                 content_text,
@@ -264,16 +280,19 @@ router.post('/', async (req, res) => {
 // 更新内容
 router.put('/:id', async (req, res) => {
     try {
+        await ensurePodcastContentsSchema();
         const { id } = req.params;
         const {
-            title, title_en, category_id, difficulty_level,
+            title, title_en, title_zh, category_id, difficulty_level,
             content_text, translation, is_free, sort_order
         } = req.body;
+        const finalTitle = title || title_en || title_zh;
 
         // 构建更新字段，避免覆盖未传的音频字段
         const updates = [
-            title,
+            finalTitle,
             title_en || null,
+            title_zh || null,
             category_id || null,
             difficulty_level,
             content_text,
@@ -285,7 +304,7 @@ router.put('/:id', async (req, res) => {
 
         await query(
             `UPDATE podcast_contents SET
-             title = ?, title_en = ?, category_id = ?, difficulty_level = ?,
+             title = ?, title_en = ?, title_zh = ?, category_id = ?, difficulty_level = ?,
              content_text = ?, translation = ?, is_free = ?, sort_order = ?
              WHERE id = ?`,
             updates

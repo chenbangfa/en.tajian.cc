@@ -123,10 +123,15 @@
         <form id="podcast-content-form" class="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
             <input type="hidden" id="pcontent-id">
 
-            <div class="grid grid-cols-2 gap-4">
+            <div class="grid grid-cols-3 gap-4">
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">标题 *</label>
-                    <input type="text" id="pcontent-title" required
+                    <label class="block text-sm font-medium text-gray-700 mb-1">英文标题 *</label>
+                    <input type="text" id="pcontent-title-en" required placeholder="A dentist came to school!"
+                        class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">中文标题</label>
+                    <input type="text" id="pcontent-title-zh" placeholder="牙医来到学校"
                         class="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
                 </div>
                 <div>
@@ -326,8 +331,9 @@
                 </td>
                 <td class="px-6 py-4 text-gray-500">#${c.id}</td>
                 <td class="px-6 py-4">
-                    <div class="font-medium text-gray-900 max-w-[16rem]"><span class="block truncate" title="${c.title}">${c.title}</span></div>
-                    ${c.title_en ? `<div class="text-xs text-gray-400 mt-1 max-w-[16rem] truncate" title="${c.title_en}">${c.title_en}</div>` : ''}
+                    <div class="font-medium text-gray-900 max-w-[16rem]"><span class="block truncate" title="${c.title_en || c.title}">${c.title_en || c.title}</span></div>
+                    ${c.title_zh ? `<div class="text-xs text-emerald-600 mt-1 max-w-[16rem] truncate" title="${c.title_zh}">${c.title_zh}</div>` : ''}
+                    ${(!c.title_zh && c.title && /[\u3400-\u9fff]/.test(c.title)) ? `<div class="text-xs text-emerald-600 mt-1 max-w-[16rem] truncate" title="${c.title}">${c.title}</div>` : ''}
                 </td>
                 <td class="px-6 py-4">
                     <div class="text-xs text-gray-400">${breadcrumb.join(' / ') || '未分类'}</div>
@@ -580,7 +586,8 @@
 
     function openPodcastContentModal() {
         document.getElementById('pcontent-id').value = '';
-        document.getElementById('pcontent-title').value = '';
+        document.getElementById('pcontent-title-en').value = '';
+        document.getElementById('pcontent-title-zh').value = '';
         document.getElementById('pcontent-text').value = '';
         document.getElementById('pcontent-category').value = '';
         document.getElementById('pcontent-difficulty').value = '1';
@@ -612,7 +619,10 @@
             if (data.success) {
                 const c = data.data;
                 document.getElementById('pcontent-id').value = c.id;
-                document.getElementById('pcontent-title').value = c.title;
+                const titleValue = c.title || '';
+                const titleLooksChinese = /[\u3400-\u9fff]/.test(titleValue);
+                document.getElementById('pcontent-title-en').value = c.title_en || (titleLooksChinese ? '' : titleValue);
+                document.getElementById('pcontent-title-zh').value = c.title_zh || (titleLooksChinese ? titleValue : '');
                 document.getElementById('pcontent-text').value = c.content_text || '';
                 document.getElementById('pcontent-category').value = c.category_id || '';
                 document.getElementById('pcontent-difficulty').value = c.difficulty_level || 1;
@@ -647,8 +657,12 @@
     document.getElementById('podcast-content-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         const id = document.getElementById('pcontent-id').value;
+        const titleEn = document.getElementById('pcontent-title-en').value.trim();
+        const titleZh = document.getElementById('pcontent-title-zh').value.trim();
         const data = {
-            title: document.getElementById('pcontent-title').value,
+            title: titleZh || titleEn,
+            title_en: titleEn,
+            title_zh: titleZh,
             content_text: document.getElementById('pcontent-text').value,
             category_id: document.getElementById('pcontent-category').value || null,
             difficulty_level: parseInt(document.getElementById('pcontent-difficulty').value) || 1,

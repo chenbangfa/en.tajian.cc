@@ -241,6 +241,7 @@ CREATE TABLE `podcast_contents` (
   `category_id` int DEFAULT NULL,
   `title` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '标题',
   `title_en` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '英文标题',
+  `title_zh` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '中文标题',
   `category` enum('daily_phrases','scene_dialogues','stories','songs') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `difficulty_level` tinyint DEFAULT '1' COMMENT '难度等级',
   `content_text` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT '英文内容',

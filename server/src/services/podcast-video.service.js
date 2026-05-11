@@ -408,7 +408,7 @@ Important restrictions:
 
     async _renderPhaseIntroFrame(outPath, content, dims, mode, stage) {
         const { W, H, isVertical } = dims;
-        const title = content.title_en || content.title || 'Listening Practice';
+        const title = this._getEnglishTitle(content);
         const panelX = isVertical ? 76 : 210;
         const panelW = W - panelX * 2;
         const panelH = isVertical ? 760 : 520;
@@ -433,7 +433,7 @@ Important restrictions:
 
     async _renderListeningFrame(outPath, content, sentences, activeIndex, dims, mode) {
         const { W, H, isVertical } = dims;
-        const title = content.title_en || content.title || 'Listening Practice';
+        const title = this._getEnglishTitle(content);
         const windowSize = isVertical ? 5 : 7;
         const half = Math.floor(windowSize / 2);
         let start = Math.max(0, activeIndex - half);
@@ -482,8 +482,8 @@ Important restrictions:
 
     async _renderTrainingFrame(outPath, content, sentence, index, total, dims, mode, voiceLabel, highlight = 'sentence') {
         const { W, H, isVertical } = dims;
-        const title = content.title_en || content.title || 'Listening Practice';
-        const maxChars = isVertical ? 25 : 58;
+        const title = this._getEnglishTitle(content);
+        const maxChars = isVertical ? 24 : 50;
         const sentenceLines = this._wrapText(sentence.text, maxChars, isVertical ? 6 : 4);
         const translationLines = mode === 'bilingual' && sentence.translation ? this._wrapText(sentence.translation, isVertical ? 18 : 44, 2, true) : [];
         const words = (sentence.words || []).slice(0, isVertical ? 3 : 6);
@@ -493,14 +493,18 @@ Important restrictions:
         const mainW = W - panelX * 2;
         const mainH = isVertical ? 700 : 420;
         const keyY = mainY + mainH + (isVertical ? 46 : 36);
+        const sentenceFont = isVertical ? (sentenceLines.length > 3 ? 52 : 60) : (sentenceLines.length > 2 ? 54 : 62);
+        const sentenceGap = isVertical ? Math.round(sentenceFont * 1.34) : Math.round(sentenceFont * 1.25);
+        const translationFont = isVertical ? 38 : 38;
+        const translationGap = isVertical ? 52 : 48;
         const svg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
             ${this._defs()}<rect width="${W}" height="${H}" fill="url(#bg)"/>${this._softShapes(W, H)}${this._watermark(W, H, isVertical)}
             <text x="${panelX}" y="${isVertical ? 140 : 84}" font-size="${isVertical ? 28 : 24}" fill="#2d7a47" font-weight="900" font-family="Avenir Next, Arial">SENTENCE TRAINING</text>
             <text x="${panelX}" y="${isVertical ? 195 : 124}" font-size="${isVertical ? 36 : 32}" fill="#17231b" font-weight="900" font-family="Avenir Next, Arial">${this._e(this._shorten(title, isVertical ? 28 : 62))}</text>
             <rect x="${panelX}" y="${mainY}" width="${mainW}" height="${mainH}" rx="42" fill="rgba(255,255,255,0.88)" stroke="${highlight === 'translation' ? '#e8b65f' : '#72b77e'}" stroke-width="4"/>
             <text x="${panelX + 46}" y="${mainY + 64}" font-size="${isVertical ? 30 : 26}" fill="#5e7668" font-weight="900" font-family="Avenir Next, Arial">${this._e(voiceLabel)} · ${index + 1}/${total}</text>
-            ${this._textBlock(sentenceLines, panelX + 54, mainY + (isVertical ? 165 : 145), isVertical ? 56 : 48, isVertical ? 76 : 64, '#102116', '900', 'start')}
-            ${translationLines.length ? this._textBlock(translationLines, panelX + 56, mainY + mainH - (isVertical ? 170 : 115), isVertical ? 34 : 30, isVertical ? 48 : 42, highlight === 'translation' ? '#b27714' : '#5e7668', '800', 'start') : ''}
+            ${this._textBlock(sentenceLines, panelX + 54, mainY + (isVertical ? 168 : 155), sentenceFont, sentenceGap, '#102116', '900', 'start')}
+            ${translationLines.length ? this._textBlock(translationLines, panelX + 56, mainY + mainH - (isVertical ? 165 : 100), translationFont, translationGap, highlight === 'translation' ? '#b27714' : '#5e7668', '850', 'start') : ''}
             ${this._renderKeyPanel(panelX, keyY, mainW, H - keyY - (isVertical ? 145 : 80), words, grammar, dims)}
             <text x="${W - panelX}" y="${H - (isVertical ? 86 : 48)}" text-anchor="end" font-size="${isVertical ? 24 : 22}" fill="#789083" font-weight="800" font-family="Avenir Next, Arial">BookMelo Listening Lab</text>
         </svg>`;
@@ -715,11 +719,14 @@ Important restrictions:
     }
 
     _getEnglishTitle(content) {
-        return String(content?.title_en || content?.title || 'Listening Practice').trim();
+        const titleEn = String(content?.title_en || '').trim();
+        if (titleEn) return titleEn;
+        const title = String(content?.title || '').trim();
+        return title && !/[\u3400-\u9fff]/.test(title) ? title : 'Listening Practice';
     }
 
     _getChineseTitle(content) {
-        const title = String(content?.title || '').trim();
+        const title = String(content?.title_zh || content?.title || '').trim();
         if (!title || !/[\u3400-\u9fff]/.test(title)) return '';
         const englishTitle = String(content?.title_en || '').trim().toLowerCase();
         if (englishTitle && title.toLowerCase() === englishTitle) return '';
