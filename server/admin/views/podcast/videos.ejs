@@ -36,7 +36,7 @@
                     <div id="selected-podcast-badge" class="hidden px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold">已选择</div>
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6">
                     <div>
                         <label class="block text-sm text-gray-600 mb-1">视频比例</label>
                         <select id="podcast-video-aspect" onchange="togglePodcastShortOptions()" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white outline-none focus:border-emerald-500">
@@ -51,6 +51,15 @@
                             <option value="bilingual">Bilingual 中文学习版</option>
                         </select>
                     </div>
+                    <div>
+                        <label class="block text-sm text-gray-600 mb-1">播放节奏</label>
+                        <select id="podcast-video-pacing" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white outline-none focus:border-emerald-500">
+                            <option value="auto" selected>自动匹配</option>
+                            <option value="standard">标准学习</option>
+                            <option value="slow_learning">慢速学习</option>
+                            <option value="shorts_compact">Shorts 紧凑</option>
+                        </select>
+                    </div>
                     <div id="podcast-short-options" class="hidden">
                         <label class="block text-sm text-gray-600 mb-1">Shorts 句子数</label>
                         <input id="podcast-video-max-sentences" type="number" min="1" max="8" value="5" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-emerald-500">
@@ -59,10 +68,10 @@
 
                 <div class="mt-6 rounded-2xl bg-slate-50 border border-slate-100 p-5 text-sm text-slate-600 leading-relaxed">
                     <div class="font-bold text-slate-800 mb-2">当前视频结构</div>
-                    <div>1. 封面：标题 / 等级 / BookMelo</div>
-                    <div>2. Full Listening：完整英文朗读，逐句高亮文章内容</div>
-                    <div>3. Sentence Training：女声一句 → 男声一句 → <span class="text-emerald-700 font-semibold">双语模板才播放中文翻译</span></div>
-                    <div>4. Review：重点词和句型总结</div>
+                    <div>1. 封面：标题发音，双语模板会追加中文标题发音</div>
+                    <div>2. Step 1 / Full Listening：先播放阶段提示，再完整英文朗读；句间会保留短停顿</div>
+                    <div>3. Step 2 / Sentence Training：先播放阶段提示，再女声一句 → 男声一句 → <span class="text-emerald-700 font-semibold">双语模板才播放中文翻译</span></div>
+                    <div>4. Review：重点词和句型总结；Shorts 会自动走更紧凑的节奏</div>
                 </div>
 
                 <div class="mt-6 flex items-center justify-end gap-3">
@@ -168,6 +177,10 @@
     function togglePodcastShortOptions() {
         const aspect = document.getElementById('podcast-video-aspect').value;
         document.getElementById('podcast-short-options').classList.toggle('hidden', aspect !== '9:16');
+        const pacing = document.getElementById('podcast-video-pacing');
+        if (pacing && pacing.value === 'auto') {
+            pacing.title = aspect === '9:16' ? '自动使用 Shorts 紧凑节奏' : '自动使用标准学习节奏';
+        }
     }
 
     async function generatePodcastVideo() {
@@ -180,6 +193,7 @@
                 content_id: podcastVideoSelected.id,
                 aspect_ratio: document.getElementById('podcast-video-aspect').value,
                 template_mode: document.getElementById('podcast-video-mode').value,
+                pacing: document.getElementById('podcast-video-pacing').value,
                 max_sentences: document.getElementById('podcast-video-max-sentences').value || 5
             };
             const res = await fetch('/podcast-videos/api/generate', {
@@ -229,10 +243,20 @@
         return `<tr class="hover:bg-gray-50">
             <td class="px-5 py-4">${cover}</td>
             <td class="px-5 py-4"><div class="font-bold text-gray-800 line-clamp-1">${escapeHtml(job.podcast_title_en || job.content_title || job.podcast_title)}</div><div class="text-xs text-gray-500 mt-1">${escapeHtml(job.podcast_title || '')}</div>${job.error_message ? `<div class="text-xs text-red-500 mt-1">${escapeHtml(job.error_message)}</div>` : ''}</td>
-            <td class="px-5 py-4"><div class="flex gap-2 flex-wrap"><span class="px-2 py-1 rounded bg-gray-100 text-gray-600 text-xs font-bold">${escapeHtml(cfg.aspect_ratio || '16:9')}</span><span class="px-2 py-1 rounded bg-green-50 text-green-700 text-xs font-bold">${cfg.template_mode === 'bilingual' ? 'Bilingual' : 'English Only'}</span><span class="px-2 py-1 rounded bg-purple-50 text-purple-700 text-xs font-bold">${job.sentence_count || 0} 句</span></div></td>
+            <td class="px-5 py-4"><div class="flex gap-2 flex-wrap"><span class="px-2 py-1 rounded bg-gray-100 text-gray-600 text-xs font-bold">${escapeHtml(cfg.aspect_ratio || '16:9')}</span><span class="px-2 py-1 rounded bg-green-50 text-green-700 text-xs font-bold">${cfg.template_mode === 'bilingual' ? 'Bilingual' : 'English Only'}</span><span class="px-2 py-1 rounded bg-sky-50 text-sky-700 text-xs font-bold">${escapeHtml(pacingLabel(cfg.pacing, cfg.aspect_ratio))}</span><span class="px-2 py-1 rounded bg-purple-50 text-purple-700 text-xs font-bold">${job.sentence_count || 0} 句</span></div></td>
             <td class="px-5 py-4"><span class="px-3 py-1 rounded-full text-xs font-bold ${statusClass}">${statusText}</span></td>
             <td class="px-5 py-4 text-right"><div class="flex justify-end gap-2">${actions}<button onclick="deletePodcastVideoJob(${job.id})" class="px-3 py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-100">删除</button></div></td>
         </tr>`;
+    }
+
+    function pacingLabel(value, aspect) {
+        const map = {
+            standard: '标准节奏',
+            slow_learning: '慢速节奏',
+            shorts_compact: 'Shorts紧凑'
+        };
+        if (map[value]) return map[value];
+        return aspect === '9:16' ? '自动Shorts' : '自动标准';
     }
 
     function previewPodcastVideo(url, aspect) {

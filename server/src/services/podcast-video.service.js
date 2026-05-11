@@ -19,6 +19,9 @@ const safeSeconds = (value, fallback) => {
 };
 const FULL_LISTENING_GAP = safeSeconds(process.env.PODCAST_VIDEO_FULL_LISTENING_GAP, 0.72);
 const PHASE_INTRO_TAIL_GAP = safeSeconds(process.env.PODCAST_VIDEO_PHASE_INTRO_TAIL_GAP, 0.55);
+const SHORTS_SEGMENT_GAP = safeSeconds(process.env.PODCAST_VIDEO_SHORTS_SEGMENT_GAP, 0.12);
+const SHORTS_FULL_LISTENING_GAP = safeSeconds(process.env.PODCAST_VIDEO_SHORTS_FULL_LISTENING_GAP, 0.48);
+const SHORTS_PHASE_INTRO_TAIL_GAP = safeSeconds(process.env.PODCAST_VIDEO_SHORTS_PHASE_INTRO_TAIL_GAP, 0.32);
 
 let H264_ENCODER = 'libx264';
 try {
@@ -68,6 +71,7 @@ class PodcastVideoService {
             const dims = aspect === '9:16'
                 ? { W: 1080, H: 1920, isVertical: true, maxSentences: Number(config.max_sentences || 5) }
                 : { W: 1920, H: 1080, isVertical: false, maxSentences: Number(config.max_sentences || 0) };
+            const pacing = this._resolvePacing(aspect, config);
 
             const [content] = await query(`
                 SELECT c.*, cat.name AS category_name, cat.name_en AS category_name_en
@@ -113,13 +117,13 @@ class PodcastVideoService {
                 }
                 for (let i = 0; i < validItems.length; i++) {
                     const item = validItems[i];
-                    const duration = Math.max(item.minDuration || 1.2, await this._getAudioDuration(item.local)) + SEGMENT_GAP + (item.tailPadding || 0);
+                    const duration = Math.max(item.minDuration || 1.2, await this._getAudioDuration(item.local)) + pacing.segmentGap + (item.tailPadding || 0);
                     await addSegment(framePath, item.local, duration, `${label}_${i + 1}`);
                 }
             };
 
             const coverSpeech = await this._prepareCoverSpeech(content, mode, tempDir);
-            await addSpokenSegments(coverPath, coverSpeech, aspect === '9:16' ? 1.2 : 2.2, 'cover');
+            await addSpokenSegments(coverPath, coverSpeech, pacing.coverFallbackDuration, 'cover');
             const firstIntroFrame = path.join(tempDir, 'phase_1_listen_first.png');
             const firstIntro = {
                 step: 'Step 1',
@@ -127,11 +131,15 @@ class PodcastVideoService {
                 title: 'Listen to the whole passage once.',
                 subtitle: "Don't stop yet. Catch the main idea and familiar words.",
                 zh: '先完整盲听一遍，不暂停，抓住大意和熟悉的词。',
-                spokenEn: "Step one. Listen first. Listen to the whole passage once. Don't stop yet. Catch the main idea and familiar words.",
-                spokenZh: '第一步，先完整盲听一遍。不要暂停，抓住大意和熟悉的词。'
+                spokenEn: dims.isVertical
+                    ? 'Step one. Listen first. Catch the main idea.'
+                    : "Step one. Listen first. Listen to the whole passage once. Don't stop yet. Catch the main idea and familiar words.",
+                spokenZh: dims.isVertical
+                    ? '第一步，先听一遍，抓住大意。'
+                    : '第一步，先完整盲听一遍。不要暂停，抓住大意和熟悉的词。'
             };
             await this._renderPhaseIntroFrame(firstIntroFrame, content, dims, mode, firstIntro);
-            await addSpokenSegments(firstIntroFrame, await this._prepareIntroSpeech(firstIntro, mode, tempDir, 'phase_1'), aspect === '9:16' ? 1.6 : 2.2, 'phase_1');
+            await addSpokenSegments(firstIntroFrame, await this._prepareIntroSpeech(firstIntro, mode, tempDir, 'phase_1', pacing), pacing.phaseIntroFallbackDuration, 'phase_1');
             await this._updateJob(jobId, { progress: 22 });
 
             // 第一遍：完整英文朗读。逐句播放，画面显示文章脉络并高亮当前句。
@@ -139,7 +147,7 @@ class PodcastVideoService {
                 const sentence = prepared.sentences[i];
                 const frame = path.join(tempDir, `full_${String(i + 1).padStart(3, '0')}.png`);
                 await this._renderListeningFrame(frame, content, prepared.sentences, i, dims, mode);
-                const dur = Math.max(1.4, await this._getAudioDuration(sentence.femaleLocal)) + FULL_LISTENING_GAP;
+                const dur = Math.max(1.4, await this._getAudioDuration(sentence.femaleLocal)) + pacing.fullListeningGap;
                 await addSegment(frame, sentence.femaleLocal, dur, `full_${i + 1}`);
                 await this._updateJob(jobId, { progress: 22 + Math.round(((i + 1) / prepared.sentences.length) * 28) });
             }
@@ -151,11 +159,15 @@ class PodcastVideoService {
                 title: 'Now listen sentence by sentence.',
                 subtitle: 'Compare the female and male voices. Notice key words and patterns.',
                 zh: '现在进入逐句精听，对比女声和男声，注意关键词和句型。',
-                spokenEn: 'Step two. Sentence focus. Now listen sentence by sentence. Compare the female and male voices. Notice key words and patterns.',
-                spokenZh: '第二步，逐句精听。对比女声和男声，注意关键词和句型。'
+                spokenEn: dims.isVertical
+                    ? 'Step two. Sentence focus. Listen sentence by sentence.'
+                    : 'Step two. Sentence focus. Now listen sentence by sentence. Compare the female and male voices. Notice key words and patterns.',
+                spokenZh: dims.isVertical
+                    ? '第二步，逐句精听。'
+                    : '第二步，逐句精听。对比女声和男声，注意关键词和句型。'
             };
             await this._renderPhaseIntroFrame(secondIntroFrame, content, dims, mode, secondIntro);
-            await addSpokenSegments(secondIntroFrame, await this._prepareIntroSpeech(secondIntro, mode, tempDir, 'phase_2'), aspect === '9:16' ? 1.6 : 2.2, 'phase_2');
+            await addSpokenSegments(secondIntroFrame, await this._prepareIntroSpeech(secondIntro, mode, tempDir, 'phase_2', pacing), pacing.phaseIntroFallbackDuration, 'phase_2');
 
             // 第二遍：逐句训练。女声 -> 男声 -> 中文翻译发音(仅双语模板)。
             for (let i = 0; i < prepared.sentences.length; i++) {
@@ -164,19 +176,19 @@ class PodcastVideoService {
                 const maleFrame = path.join(tempDir, `train_${String(i + 1).padStart(3, '0')}_male.png`);
                 await this._renderTrainingFrame(femaleFrame, content, sentence, i, prepared.sentences.length, dims, mode, 'Female voice');
                 await this._renderTrainingFrame(maleFrame, content, sentence, i, prepared.sentences.length, dims, mode, 'Male voice');
-                await addSegment(femaleFrame, sentence.femaleLocal, Math.max(1.4, await this._getAudioDuration(sentence.femaleLocal)) + SEGMENT_GAP, `train_${i + 1}_female`);
-                await addSegment(maleFrame, sentence.maleLocal, Math.max(1.4, await this._getAudioDuration(sentence.maleLocal)) + SEGMENT_GAP, `train_${i + 1}_male`);
+                await addSegment(femaleFrame, sentence.femaleLocal, Math.max(1.4, await this._getAudioDuration(sentence.femaleLocal)) + pacing.trainingGap, `train_${i + 1}_female`);
+                await addSegment(maleFrame, sentence.maleLocal, Math.max(1.4, await this._getAudioDuration(sentence.maleLocal)) + pacing.trainingGap, `train_${i + 1}_male`);
                 if (mode === 'bilingual' && sentence.translation && sentence.chineseLocal) {
                     const cnFrame = path.join(tempDir, `train_${String(i + 1).padStart(3, '0')}_cn.png`);
                     await this._renderTrainingFrame(cnFrame, content, sentence, i, prepared.sentences.length, dims, mode, 'Chinese meaning', 'translation');
-                    await addSegment(cnFrame, sentence.chineseLocal, Math.max(1.2, await this._getAudioDuration(sentence.chineseLocal)) + SEGMENT_GAP + 0.9, `train_${i + 1}_cn`);
+                    await addSegment(cnFrame, sentence.chineseLocal, Math.max(1.2, await this._getAudioDuration(sentence.chineseLocal)) + pacing.trainingGap + pacing.chineseTranslationTailGap, `train_${i + 1}_cn`);
                 }
                 await this._updateJob(jobId, { progress: 50 + Math.round(((i + 1) / prepared.sentences.length) * 38) });
             }
 
             const reviewFrame = path.join(tempDir, 'review.png');
             await this._renderReviewFrame(reviewFrame, content, prepared, dims, mode);
-            await addSegment(reviewFrame, null, aspect === '9:16' ? 2.2 : 4.2, 'review');
+            await addSegment(reviewFrame, null, pacing.reviewDuration, 'review');
             await this._updateJob(jobId, { progress: 92 });
 
             await this._concatVideos(segments, outputPath, tempDir);
@@ -310,16 +322,17 @@ class PodcastVideoService {
         return items;
     }
 
-    async _prepareIntroSpeech(stage, mode, tempDir, name) {
+    async _prepareIntroSpeech(stage, mode, tempDir, name, pacing = {}) {
         const speed = voiceService.getGoogleTtsSpeed('podcast');
         const englishText = stage.spokenEn || [stage.step, stage.kicker, stage.title, stage.subtitle].filter(Boolean).join('. ');
         const chineseText = stage.spokenZh || stage.zh;
+        const phaseTail = Number.isFinite(pacing.phaseIntroTailGap) ? pacing.phaseIntroTailGap : PHASE_INTRO_TAIL_GAP;
         const items = [];
         if (englishText) {
-            items.push(await this._createSpeechItem(englishText, 'en', 'female', speed, tempDir, `${name}_en`, 1.7, PHASE_INTRO_TAIL_GAP));
+            items.push(await this._createSpeechItem(englishText, 'en', 'female', speed, tempDir, `${name}_en`, 1.7, phaseTail));
         }
         if (mode === 'bilingual' && chineseText) {
-            items.push(await this._createSpeechItem(chineseText, 'zh', 'female', speed, tempDir, `${name}_zh`, 1.3, PHASE_INTRO_TAIL_GAP + 0.25));
+            items.push(await this._createSpeechItem(chineseText, 'zh', 'female', speed, tempDir, `${name}_zh`, 1.3, phaseTail + 0.25));
         }
         return items;
     }
@@ -734,6 +747,25 @@ Important restrictions:
 
     _normalizeMode(value) {
         return String(value || '').trim() === 'bilingual' ? 'bilingual' : 'english_only';
+    }
+
+    _resolvePacing(aspect, config = {}) {
+        const isShorts = aspect === '9:16';
+        const requested = String(config.pacing || '').trim();
+        const preset = requested && requested !== 'auto' ? requested : (isShorts ? 'shorts_compact' : 'standard');
+        const isSlow = preset === 'slow_learning';
+        const isCompact = preset === 'shorts_compact';
+        return {
+            preset,
+            segmentGap: safeSeconds(config.segment_gap, isCompact ? SHORTS_SEGMENT_GAP : (isSlow ? 0.28 : SEGMENT_GAP)),
+            fullListeningGap: safeSeconds(config.full_listening_gap, isCompact ? SHORTS_FULL_LISTENING_GAP : (isSlow ? 0.95 : FULL_LISTENING_GAP)),
+            trainingGap: safeSeconds(config.training_gap, isCompact ? 0.16 : (isSlow ? 0.36 : 0.22)),
+            chineseTranslationTailGap: safeSeconds(config.chinese_translation_tail_gap, isCompact ? 0.72 : (isSlow ? 1.15 : 0.9)),
+            phaseIntroTailGap: safeSeconds(config.phase_intro_tail_gap, isCompact ? SHORTS_PHASE_INTRO_TAIL_GAP : (isSlow ? 0.72 : PHASE_INTRO_TAIL_GAP)),
+            coverFallbackDuration: safeSeconds(config.cover_fallback_duration, isShorts ? 1.4 : 2.2),
+            phaseIntroFallbackDuration: safeSeconds(config.phase_intro_fallback_duration, isShorts ? 1.8 : 2.4),
+            reviewDuration: safeSeconds(config.review_duration, isShorts ? 2.8 : 4.2)
+        };
     }
 
     _getEnglishTitle(content) {

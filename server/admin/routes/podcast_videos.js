@@ -22,6 +22,11 @@ function normalizeTemplateMode(value) {
     return String(value || '').trim() === 'bilingual' ? 'bilingual' : 'english_only';
 }
 
+function normalizePacing(value) {
+    const pacing = String(value || '').trim();
+    return ['auto', 'standard', 'slow_learning', 'shorts_compact'].includes(pacing) ? pacing : 'auto';
+}
+
 async function ensurePodcastVideoTable() {
     await query(`CREATE TABLE IF NOT EXISTS podcast_video_jobs (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -128,6 +133,7 @@ router.post('/api/generate', async (req, res) => {
         const config = {
             aspect_ratio: aspectRatio,
             template_mode: templateMode,
+            pacing: normalizePacing(req.body.pacing),
             max_sentences: maxSentences
         };
 
