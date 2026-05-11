@@ -13,6 +13,12 @@ const OUTPUT_DIR = path.join(SERVER_ROOT, 'uploads/podcast-videos');
 const FPS = 30;
 const AUDIO_VOLUME = 1.45;
 const SEGMENT_GAP = 0.18;
+const safeSeconds = (value, fallback) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+};
+const FULL_LISTENING_GAP = safeSeconds(process.env.PODCAST_VIDEO_FULL_LISTENING_GAP, 0.72);
+const PHASE_INTRO_TAIL_GAP = safeSeconds(process.env.PODCAST_VIDEO_PHASE_INTRO_TAIL_GAP, 0.55);
 
 let H264_ENCODER = 'libx264';
 try {
@@ -120,7 +126,9 @@ class PodcastVideoService {
                 kicker: 'LISTEN FIRST',
                 title: 'Listen to the whole passage once.',
                 subtitle: "Don't stop yet. Catch the main idea and familiar words.",
-                zh: '先完整盲听一遍，不暂停，抓住大意和熟悉的词。'
+                zh: '先完整盲听一遍，不暂停，抓住大意和熟悉的词。',
+                spokenEn: "Step one. Listen first. Listen to the whole passage once. Don't stop yet. Catch the main idea and familiar words.",
+                spokenZh: '第一步，先完整盲听一遍。不要暂停，抓住大意和熟悉的词。'
             };
             await this._renderPhaseIntroFrame(firstIntroFrame, content, dims, mode, firstIntro);
             await addSpokenSegments(firstIntroFrame, await this._prepareIntroSpeech(firstIntro, mode, tempDir, 'phase_1'), aspect === '9:16' ? 1.6 : 2.2, 'phase_1');
@@ -131,7 +139,7 @@ class PodcastVideoService {
                 const sentence = prepared.sentences[i];
                 const frame = path.join(tempDir, `full_${String(i + 1).padStart(3, '0')}.png`);
                 await this._renderListeningFrame(frame, content, prepared.sentences, i, dims, mode);
-                const dur = Math.max(1.4, await this._getAudioDuration(sentence.femaleLocal)) + SEGMENT_GAP;
+                const dur = Math.max(1.4, await this._getAudioDuration(sentence.femaleLocal)) + FULL_LISTENING_GAP;
                 await addSegment(frame, sentence.femaleLocal, dur, `full_${i + 1}`);
                 await this._updateJob(jobId, { progress: 22 + Math.round(((i + 1) / prepared.sentences.length) * 28) });
             }
@@ -142,7 +150,9 @@ class PodcastVideoService {
                 kicker: 'SENTENCE FOCUS',
                 title: 'Now listen sentence by sentence.',
                 subtitle: 'Compare the female and male voices. Notice key words and patterns.',
-                zh: '现在进入逐句精听，对比女声和男声，注意关键词和句型。'
+                zh: '现在进入逐句精听，对比女声和男声，注意关键词和句型。',
+                spokenEn: 'Step two. Sentence focus. Now listen sentence by sentence. Compare the female and male voices. Notice key words and patterns.',
+                spokenZh: '第二步，逐句精听。对比女声和男声，注意关键词和句型。'
             };
             await this._renderPhaseIntroFrame(secondIntroFrame, content, dims, mode, secondIntro);
             await addSpokenSegments(secondIntroFrame, await this._prepareIntroSpeech(secondIntro, mode, tempDir, 'phase_2'), aspect === '9:16' ? 1.6 : 2.2, 'phase_2');
@@ -302,18 +312,19 @@ class PodcastVideoService {
 
     async _prepareIntroSpeech(stage, mode, tempDir, name) {
         const speed = voiceService.getGoogleTtsSpeed('podcast');
-        const englishText = [stage.title, stage.subtitle].filter(Boolean).join(' ');
+        const englishText = stage.spokenEn || [stage.step, stage.kicker, stage.title, stage.subtitle].filter(Boolean).join('. ');
+        const chineseText = stage.spokenZh || stage.zh;
         const items = [];
         if (englishText) {
-            items.push(await this._createSpeechItem(englishText, 'en', 'female', speed, tempDir, `${name}_en`, 1.5));
+            items.push(await this._createSpeechItem(englishText, 'en', 'female', speed, tempDir, `${name}_en`, 1.7, PHASE_INTRO_TAIL_GAP));
         }
-        if (mode === 'bilingual' && stage.zh) {
-            items.push(await this._createSpeechItem(stage.zh, 'zh', 'female', speed, tempDir, `${name}_zh`, 1.2));
+        if (mode === 'bilingual' && chineseText) {
+            items.push(await this._createSpeechItem(chineseText, 'zh', 'female', speed, tempDir, `${name}_zh`, 1.3, PHASE_INTRO_TAIL_GAP + 0.25));
         }
         return items;
     }
 
-    async _createSpeechItem(text, lang, voice, speed, tempDir, name, minDuration) {
+    async _createSpeechItem(text, lang, voice, speed, tempDir, name, minDuration, tailPadding) {
         try {
             const result = lang === 'zh'
                 ? await voiceService.textToSpeechChinese(text, voice, speed)
@@ -322,7 +333,7 @@ class PodcastVideoService {
             return {
                 local: await this._resolveUrl(result.audioUrl, tempDir, name),
                 minDuration,
-                tailPadding: lang === 'zh' ? 0.75 : 0.25
+                tailPadding: Number.isFinite(tailPadding) ? tailPadding : (lang === 'zh' ? 0.75 : 0.25)
             };
         } catch (error) {
             console.warn(`[PodcastVideo] ${name} 提示音频生成失败:`, error.message);
