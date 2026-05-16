@@ -36,12 +36,12 @@
                     <div id="selected-podcast-badge" class="hidden px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold">已选择</div>
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
                     <div>
                         <label class="block text-sm text-gray-600 mb-1">视频比例</label>
                         <select id="podcast-video-aspect" onchange="togglePodcastShortOptions()" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white outline-none focus:border-emerald-500">
                             <option value="16:9" selected>16:9 YouTube 长视频</option>
-                            <option value="9:16">9:16 Shorts 试剪</option>
+                            <option value="9:16">9:16 Shorts 全篇</option>
                         </select>
                     </div>
                     <div>
@@ -60,10 +60,6 @@
                             <option value="shorts_compact">Shorts 紧凑</option>
                         </select>
                     </div>
-                    <div id="podcast-short-options" class="hidden">
-                        <label class="block text-sm text-gray-600 mb-1">Shorts 句子数</label>
-                        <input id="podcast-video-max-sentences" type="number" min="1" max="8" value="5" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-emerald-500">
-                    </div>
                 </div>
 
                 <div class="mt-6 rounded-2xl bg-slate-50 border border-slate-100 p-5 text-sm text-slate-600 leading-relaxed">
@@ -71,7 +67,7 @@
                     <div>1. 封面：标题发音，双语模板会追加中文标题发音</div>
                     <div>2. Step 1 / Full Listening：先播放阶段提示，再完整英文朗读；句间会保留短停顿</div>
                     <div>3. Step 2 / Sentence Training：先播放阶段提示，再女声一句 → 男声一句 → <span class="text-emerald-700 font-semibold">双语模板才播放中文翻译</span></div>
-                    <div>4. Review：重点词和句型总结；Shorts 会自动走更紧凑的节奏</div>
+                    <div>4. Review：重点词和句型总结；Shorts 会生成全篇内容，并自动走更紧凑的节奏</div>
                 </div>
 
                 <div class="mt-6 flex items-center justify-end gap-3">
@@ -176,7 +172,6 @@
 
     function togglePodcastShortOptions() {
         const aspect = document.getElementById('podcast-video-aspect').value;
-        document.getElementById('podcast-short-options').classList.toggle('hidden', aspect !== '9:16');
         const pacing = document.getElementById('podcast-video-pacing');
         if (pacing && pacing.value === 'auto') {
             pacing.title = aspect === '9:16' ? '自动使用 Shorts 紧凑节奏' : '自动使用标准学习节奏';
@@ -193,8 +188,7 @@
                 content_id: podcastVideoSelected.id,
                 aspect_ratio: document.getElementById('podcast-video-aspect').value,
                 template_mode: document.getElementById('podcast-video-mode').value,
-                pacing: document.getElementById('podcast-video-pacing').value,
-                max_sentences: document.getElementById('podcast-video-max-sentences').value || 5
+                pacing: document.getElementById('podcast-video-pacing').value
             };
             const res = await fetch('/podcast-videos/api/generate', {
                 method: 'POST',

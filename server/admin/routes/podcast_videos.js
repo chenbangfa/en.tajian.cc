@@ -127,14 +127,11 @@ router.post('/api/generate', async (req, res) => {
 
         const aspectRatio = normalizeAspectRatio(req.body.aspect_ratio || req.body.aspectRatio);
         const templateMode = normalizeTemplateMode(req.body.template_mode || req.body.templateMode);
-        const maxSentences = aspectRatio === '9:16'
-            ? Math.max(1, Math.min(8, Number(req.body.max_sentences || req.body.maxSentences || 5)))
-            : 0;
         const config = {
             aspect_ratio: aspectRatio,
             template_mode: templateMode,
             pacing: normalizePacing(req.body.pacing),
-            max_sentences: maxSentences
+            max_sentences: 0
         };
 
         const result = await query(

@@ -69,7 +69,7 @@ class PodcastVideoService {
             const aspect = this._normalizeAspect(config.aspect_ratio);
             const mode = this._normalizeMode(config.template_mode);
             const dims = aspect === '9:16'
-                ? { W: 1080, H: 1920, isVertical: true, maxSentences: Number(config.max_sentences || 5) }
+                ? { W: 1080, H: 1920, isVertical: true, maxSentences: Number(config.max_sentences || 0) }
                 : { W: 1920, H: 1080, isVertical: false, maxSentences: Number(config.max_sentences || 0) };
             const pacing = this._resolvePacing(aspect, config);
 
@@ -515,27 +515,36 @@ Important restrictions:
         const { W, H, isVertical } = dims;
         const title = this._getEnglishTitle(content);
         const translationLines = mode === 'bilingual' && sentence.translation ? this._wrapText(sentence.translation, isVertical ? 18 : 44, 2, true) : [];
-        const words = (sentence.words || []).slice(0, isVertical ? 3 : 6);
+        const words = sentence.words || [];
         const grammar = sentence.grammar || '';
-        const panelX = isVertical ? 58 : 120;
-        const mainY = isVertical ? 260 : 178;
+        const panelX = isVertical ? 54 : 120;
+        const mainY = isVertical ? 238 : 178;
         const mainW = W - panelX * 2;
-        const mainH = isVertical ? 700 : 420;
-        const keyY = mainY + mainH + (isVertical ? 46 : 36);
         const sentenceLayout = this._fitSentenceText(sentence.text, mainW - 108, isVertical);
         const sentenceLines = sentenceLayout.lines;
         const sentenceFont = sentenceLayout.fontSize;
-        const sentenceGap = isVertical ? Math.round(sentenceFont * 1.34) : Math.round(sentenceFont * 1.25);
-        const translationFont = isVertical ? 38 : 38;
-        const translationGap = isVertical ? 52 : 48;
+        const sentenceGap = isVertical ? Math.round(sentenceFont * 1.23) : Math.round(sentenceFont * 1.25);
+        const translationFont = isVertical ? 34 : 38;
+        const translationGap = isVertical ? 46 : 48;
+        const sentenceBlockH = Math.max(sentenceFont, (sentenceLines.length - 1) * sentenceGap + sentenceFont);
+        const translationBlockH = translationLines.length ? (translationLines.length - 1) * translationGap + translationFont : 0;
+        const mainH = isVertical
+            ? Math.min(620, Math.max(390, 120 + sentenceBlockH + (translationLines.length ? 48 + translationBlockH : 0) + 54))
+            : 420;
+        const keyY = mainY + mainH + (isVertical ? 28 : 36);
+        const sentenceY = mainY + (isVertical ? 154 : 155);
+        const translationY = sentenceY + sentenceBlockH + (isVertical ? 42 : Math.max(58, mainH - 255));
+        const mainStroke = highlight === 'translation' ? '#e8b65f' : (isVertical ? 'url(#accentStroke)' : '#72b77e');
+        const mainFilter = isVertical ? ' filter="url(#softGlow)"' : '';
         const svg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
             ${this._defs()}${this._frameBackground(dims)}${this._watermark(W, H, isVertical)}
-            <text x="${panelX}" y="${isVertical ? 140 : 84}" font-size="${isVertical ? 28 : 24}" fill="#2d7a47" font-weight="900" font-family="Avenir Next, Arial">SENTENCE TRAINING</text>
-            <text x="${panelX}" y="${isVertical ? 195 : 124}" font-size="${isVertical ? 36 : 32}" fill="#17231b" font-weight="900" font-family="Avenir Next, Arial">${this._e(this._shorten(title, isVertical ? 28 : 62))}</text>
-            <rect x="${panelX}" y="${mainY}" width="${mainW}" height="${mainH}" rx="42" fill="rgba(255,255,255,0.88)" stroke="${highlight === 'translation' ? '#e8b65f' : '#72b77e'}" stroke-width="4"/>
-            <text x="${panelX + 46}" y="${mainY + 64}" font-size="${isVertical ? 30 : 26}" fill="#5e7668" font-weight="900" font-family="Avenir Next, Arial">${this._e(voiceLabel)} · ${index + 1}/${total}</text>
-            ${this._textBlock(sentenceLines, panelX + 54, mainY + (isVertical ? 168 : 155), sentenceFont, sentenceGap, '#102116', '900', 'start')}
-            ${translationLines.length ? this._textBlock(translationLines, panelX + 56, mainY + mainH - (isVertical ? 165 : 100), translationFont, translationGap, highlight === 'translation' ? '#b27714' : '#5e7668', '850', 'start') : ''}
+            <text x="${panelX}" y="${isVertical ? 112 : 84}" font-size="${isVertical ? 27 : 24}" fill="#2d7a47" font-weight="950" letter-spacing="1.5" font-family="Avenir Next, Arial">SENTENCE TRAINING</text>
+            <text x="${panelX}" y="${isVertical ? 164 : 124}" font-size="${isVertical ? 34 : 32}" fill="#17231b" font-weight="950" font-family="Avenir Next, Arial">${this._e(this._shorten(title, isVertical ? 28 : 62))}</text>
+            <rect x="${panelX}" y="${mainY}" width="${mainW}" height="${mainH}" rx="${isVertical ? 46 : 42}" fill="${isVertical ? 'rgba(255,255,255,0.84)' : 'rgba(255,255,255,0.88)'}" stroke="${mainStroke}" stroke-width="${isVertical ? 5 : 4}"${mainFilter}/>
+            <rect x="${panelX + 34}" y="${mainY + 34}" width="${isVertical ? 310 : 250}" height="${isVertical ? 54 : 46}" rx="${isVertical ? 27 : 23}" fill="${highlight === 'translation' ? '#fff6df' : '#eef9f0'}"/>
+            <text x="${panelX + 58}" y="${mainY + (isVertical ? 70 : 64)}" font-size="${isVertical ? 26 : 26}" fill="${highlight === 'translation' ? '#9b6b15' : '#3d6f50'}" font-weight="950" font-family="Avenir Next, Arial">${this._e(voiceLabel)} · ${index + 1}/${total}</text>
+            ${this._textBlock(sentenceLines, panelX + 58, sentenceY, sentenceFont, sentenceGap, '#102116', '950', 'start')}
+            ${translationLines.length ? this._textBlock(translationLines, panelX + 60, translationY, translationFont, translationGap, highlight === 'translation' ? '#b27714' : '#5e7668', '900', 'start') : ''}
             ${this._renderKeyPanel(panelX, keyY, mainW, H - keyY - (isVertical ? 145 : 80), words, grammar, dims)}
             <text x="${W - panelX}" y="${H - (isVertical ? 86 : 48)}" text-anchor="end" font-size="${isVertical ? 24 : 22}" fill="#789083" font-weight="800" font-family="Avenir Next, Arial">BookMelo Listening Lab</text>
         </svg>`;
@@ -544,31 +553,39 @@ Important restrictions:
 
     _renderKeyPanel(x, y, w, h, words, grammar, dims) {
         const { isVertical } = dims;
-        const visibleWords = words.slice(0, isVertical ? 3 : 6);
-        const cols = isVertical ? 1 : 3;
+        const visibleWords = words.slice(0, isVertical ? 8 : 6);
+        const cols = isVertical ? 2 : 3;
+        const rows = Math.ceil(visibleWords.length / cols);
         const chips = visibleWords.map((item, idx) => {
-            const word = this._shorten(item.word || '', isVertical ? 18 : 20);
-            const phonetic = this._shorten(this._formatPhonetic(item.phonetic || item.uk_phonetic || item.us_phonetic || ''), isVertical ? 18 : 22);
-            const meaning = this._compactMeaning(item.translation || item.pos || '', isVertical ? 13 : 18);
-            const chipGap = isVertical ? 18 : 24;
-            const chipW = isVertical ? w - 68 : Math.floor((w - 92 - chipGap * (cols - 1)) / cols);
-            const cx = isVertical ? x + 34 : x + 46 + (idx % cols) * (chipW + chipGap);
-            const cy = isVertical ? y + 122 + idx * 82 : y + 118 + Math.floor(idx / cols) * 86;
-            const wordSize = isVertical ? 25 : (word.length > 16 ? 21 : 24);
-            const phoneticSize = isVertical ? 18 : 17;
-            const meaningSize = isVertical ? 20 : 18;
-            return `<g><rect x="${cx}" y="${cy - 44}" width="${chipW}" height="${isVertical ? 64 : 70}" rx="${isVertical ? 32 : 28}" fill="#f3faf4" stroke="#cbe8d1"/>
-                <text x="${cx + 24}" y="${cy - 15}" font-family="Avenir Next, Arial">
+            const word = this._shorten(item.word || '', isVertical ? 14 : 20);
+            const phonetic = this._shorten(this._formatPhonetic(item.phonetic || item.uk_phonetic || item.us_phonetic || ''), isVertical ? 14 : 22);
+            const meaning = this._compactMeaning(item.translation || item.pos || '', isVertical ? 12 : 18);
+            const chipGap = isVertical ? 20 : 24;
+            const chipW = Math.floor((w - (isVertical ? 88 : 92) - chipGap * (cols - 1)) / cols);
+            const cx = x + (isVertical ? 34 : 46) + (idx % cols) * (chipW + chipGap);
+            const cy = y + (isVertical ? 122 : 118) + Math.floor(idx / cols) * (isVertical ? 86 : 86);
+            const wordSize = isVertical ? (word.length > 11 ? 21 : 23) : (word.length > 16 ? 21 : 24);
+            const phoneticSize = isVertical ? 16 : 17;
+            const meaningSize = isVertical ? 18 : 18;
+            return `<g><rect x="${cx}" y="${cy - 44}" width="${chipW}" height="${isVertical ? 68 : 70}" rx="${isVertical ? 28 : 28}" fill="#f3faf4" stroke="#cbe8d1"/>
+                <text x="${cx + 20}" y="${cy - 16}" font-family="Avenir Next, Arial">
                     <tspan font-size="${wordSize}" fill="#213429" font-weight="900">${this._e(word)}</tspan>
-                    ${phonetic ? `<tspan dx="12" font-size="${phoneticSize}" fill="#7d9185" font-weight="700">${this._e(phonetic)}</tspan>` : ''}
+                    ${phonetic ? `<tspan dx="8" font-size="${phoneticSize}" fill="#7d9185" font-weight="700">${this._e(phonetic)}</tspan>` : ''}
                 </text>
-                ${meaning ? `<text x="${cx + 24}" y="${cy + 12}" font-size="${meaningSize}" fill="#5f7b69" font-weight="750" font-family="Avenir Next, Arial">${this._e(meaning)}</text>` : ''}</g>`;
+                ${meaning ? `<text x="${cx + 20}" y="${cy + 14}" font-size="${meaningSize}" fill="#5f7b69" font-weight="800" font-family="Avenir Next, Arial">${this._e(meaning)}</text>` : ''}</g>`;
         }).join('');
-        const grammarLines = this._wrapText(grammar || 'Listen for the sentence rhythm and key expression.', isVertical ? 24 : 64, isVertical ? 3 : 2, /[\u3400-\u9fff]/.test(grammar || ''));
-        const patternY = isVertical ? y + 385 : y + 288;
+        const grammarLines = this._wrapText(grammar || 'Listen for the sentence rhythm and key expression.', isVertical ? 24 : 64, isVertical ? 4 : 2, /[\u3400-\u9fff]/.test(grammar || ''));
+        const patternY = isVertical ? y + 122 + Math.max(1, rows) * 86 + 46 : y + 288;
+        const panelH = isVertical
+            ? Math.max(360, Math.min(h, patternY - y + 72 + grammarLines.length * 36))
+            : Math.max(180, h);
+        const moreBadge = words.length > visibleWords.length
+            ? `<text x="${x + w - 48}" y="${y + 48}" text-anchor="end" font-size="${isVertical ? 20 : 18}" fill="#5f7b69" font-weight="900" font-family="Avenir Next, Arial">+${words.length - visibleWords.length}</text>`
+            : '';
         return `<g>
-            <rect x="${x}" y="${y}" width="${w}" height="${Math.max(180, h)}" rx="34" fill="rgba(255,255,255,0.72)" stroke="rgba(39,94,62,0.10)"/>
+            <rect x="${x}" y="${y}" width="${w}" height="${panelH}" rx="34" fill="${isVertical ? 'rgba(255,255,255,0.78)' : 'rgba(255,255,255,0.72)'}" stroke="rgba(39,94,62,0.10)" filter="${isVertical ? 'url(#softGlow)' : ''}"/>
             <text x="${x + 34}" y="${y + 48}" font-size="${isVertical ? 24 : 22}" fill="#2d7a47" font-weight="900" font-family="Avenir Next, Arial">KEY WORDS / GRAMMAR</text>
+            ${moreBadge}
             ${chips}
             ${visibleWords.length ? '' : `<text x="${x + 34}" y="${y + 122}" font-size="${isVertical ? 25 : 24}" fill="#5f7b69" font-weight="750" font-family="Avenir Next, Arial">Listen for the sentence rhythm.</text>`}
             <text x="${x + 34}" y="${patternY}" font-size="${isVertical ? 24 : 22}" fill="#8a651f" font-weight="900" font-family="Avenir Next, Arial">Pattern</text>
@@ -605,18 +622,18 @@ Important restrictions:
 
     _renderReviewKeyWordsPanel(x, y, w, h, words, dims) {
         const { isVertical } = dims;
-        const visibleWords = words.slice(0, isVertical ? 6 : 9);
-        const cols = isVertical ? 1 : 3;
+        const visibleWords = words.slice(0, isVertical ? 10 : 9);
+        const cols = isVertical ? 2 : 3;
         const chipGap = isVertical ? 16 : 24;
-        const chipW = isVertical ? w - 88 : Math.floor((w - 96 - chipGap * (cols - 1)) / cols);
+        const chipW = Math.floor((w - 96 - chipGap * (cols - 1)) / cols);
         const chipH = isVertical ? 70 : 74;
         const chips = visibleWords.map((item, idx) => {
-            const word = this._shorten(item.word || '', isVertical ? 18 : 20);
-            const phonetic = this._shorten(this._formatPhonetic(item.phonetic || item.uk_phonetic || item.us_phonetic || ''), isVertical ? 18 : 22);
-            const meaning = this._compactMeaning(item.translation || item.pos || '', isVertical ? 14 : 18);
+            const word = this._shorten(item.word || '', isVertical ? 14 : 20);
+            const phonetic = this._shorten(this._formatPhonetic(item.phonetic || item.uk_phonetic || item.us_phonetic || ''), isVertical ? 14 : 22);
+            const meaning = this._compactMeaning(item.translation || item.pos || '', isVertical ? 12 : 18);
             const col = idx % cols;
             const row = Math.floor(idx / cols);
-            const cx = isVertical ? x + 44 : x + 48 + col * (chipW + chipGap);
+            const cx = x + 48 + col * (chipW + chipGap);
             const cy = y + (isVertical ? 134 : 122) + row * (chipH + (isVertical ? 14 : 18));
             const wordSize = isVertical ? 26 : (word.length > 16 ? 22 : 24);
             return `<g>
@@ -790,7 +807,13 @@ Important restrictions:
                 <stop offset="48%" stop-color="#eef8ed"/>
                 <stop offset="100%" stop-color="#e7f1eb"/>
             </linearGradient>
+            <linearGradient id="accentStroke" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#48b36b"/>
+                <stop offset="52%" stop-color="#93d0ff"/>
+                <stop offset="100%" stop-color="#f1c86b"/>
+            </linearGradient>
             <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#25543b" flood-opacity="0.13"/></filter>
+            <filter id="softGlow" x="-18%" y="-18%" width="136%" height="136%"><feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#214c35" flood-opacity="0.16"/></filter>
         </defs>`;
     }
 
@@ -798,8 +821,8 @@ Important restrictions:
         const { W, H } = dims;
         if (dims.backgroundSvg) {
             return `${dims.backgroundSvg}
-                <rect width="${W}" height="${H}" fill="#f6fbf3" opacity="0.78"/>
-                <rect width="${W}" height="${H}" fill="url(#bg)" opacity="0.46"/>`;
+                <rect width="${W}" height="${H}" fill="#f6fbf3" opacity="${dims.isVertical ? 0.56 : 0.78}"/>
+                <rect width="${W}" height="${H}" fill="url(#bg)" opacity="${dims.isVertical ? 0.34 : 0.46}"/>`;
         }
         return `<rect width="${W}" height="${H}" fill="url(#bg)"/>${this._softShapes(W, H)}`;
     }
